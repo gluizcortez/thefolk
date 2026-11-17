@@ -66,6 +66,8 @@ export function starterHouse(seed = 20001): WorldSeed {
       // bloco 1: lixeira na cozinha e latão na calçada
       { defId: 'trashcan', x: 13, y: 5 },
       { defId: 'curbbin', x: 9, y: 13 },
+      // bloco 2: caixa de correio na calçada (o jornal cai do lado da condução)
+      { defId: 'mailbox', x: 5, y: 13 },
     ],
     funds: STARTING_FUNDS,
     exit: HOUSE_EXIT,

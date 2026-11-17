@@ -99,7 +99,7 @@ manter a ordem é metade do jogo.
 limpa e algo quebra e é consertado; objeto quebrado bloqueia uso; testes de
 sujeira, desgaste, conserto e migração v5→v6.
 
-## Bloco 2 — Despensa, correio e prestadores de serviço (save v7)
+## Bloco 2 — Despensa, correio e prestadores de serviço (save v7) — feito em 17/11/2026
 
 **Lacuna**: comida brota da geladeira, contas são descontadas sozinhas e
 ninguém de fora trabalha na casa.
@@ -131,6 +131,15 @@ ninguém de fora trabalha na casa.
 **Pronto quando**: sem compras, a casa fica sem refeição e a IA pede comida
 ou compra; conta não paga leva à penhora; faxineira limpa sozinha; testes de
 estoque, contas, penhora e serviços.
+
+**Como ficou**: módulo `sim/services.ts`. Entraram despensa (24 porções por
+geladeira), comida pronta, mercado, faxineira diária, técnico, contas em
+carta detalhadas com penhora após 3 dias de atraso, jornal das 6h com
+notícias do bairro e classificados (as vagas só aparecem depois de ler),
+campainha para todo visitante e feira de sábado na caixa de correio. Os
+prestadores são vizinhos (Zeca, Marta, Ivo, Plácido); Marta espalha a notícia
+"a casa vive uma bagunça". O **jardineiro ficou para o bloco 13**, junto com
+as plantas que secam.
 
 ## Bloco 3 — Ambiente por cômodo, dia e noite (save v8)
 
@@ -373,7 +382,8 @@ sobe para dormir; testes de navegação entre andares e de obra.
 - Cercas, portões e muretas; caminhos de pedra.
 - Árvores, arbustos e flores de compra; **jardim vivo**: plantas crescem,
   precisam de água, murcham, dão flores ou frutos (frutos vão para a despensa
-  do bloco 2). Jardineiro do bloco 2 cuida delas.
+  do bloco 2). Jardineiro (adiado do bloco 2) cuida delas, como prestador de
+  serviço do mesmo jeito que a faxineira.
 - Churrasqueira, mesa de jardim, rede.
 - Terreno com desnível simples (subir e baixar o chão em degraus), se couber.
 

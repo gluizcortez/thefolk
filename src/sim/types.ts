@@ -48,8 +48,16 @@ export interface InteractionDef {
   skill?: SkillGain;
   /** visitas não usam (cama, chuveiro) */
   residentOnly?: boolean;
-  /** efeito especial ao terminar: 'invite' = convida o vizinho `otherId` da ação */
-  special?: 'invite';
+  /**
+   * efeito especial: 'invite' = convida o vizinho `otherId` da ação;
+   * 'services' = liga para um serviço (`serviceId` da ação); 'payBills' =
+   * paga as contas da caixa de correio; 'fair' = compra na feira da rua.
+   */
+  special?: 'invite' | 'services' | 'payBills' | 'fair';
+  /** bloco 2: porções que tira da despensa ao começar (sem estoque, não dá) */
+  portions?: number;
+  /** bloco 2: come da comida pronta que chegou pela entrega */
+  takeout?: boolean;
   /**
    * trabalho por conta própria feito neste objeto: 'gig' = adianta o frila
    * do folk; 'business' = cuida do negócio próprio. Só vale com um frila ou
@@ -77,7 +85,7 @@ export interface InteractionDef {
 export type CareKind = 'clean' | 'repair' | 'service' | 'empty' | 'dishes' | 'dump';
 
 /** Bagunça solta: prato sujo, poça, lixo no chão. */
-export type MessKind = 'plate' | 'puddle' | 'trash';
+export type MessKind = 'plate' | 'puddle' | 'trash' | 'paper';
 
 /** Como um objeto se suja e se gasta com o uso (por minuto de uso). */
 export interface UpkeepDef {
@@ -134,6 +142,10 @@ export interface ObjectDef {
   slots?: number;
   /** bloco 1: como suja, gasta e quebra */
   upkeep?: UpkeepDef;
+  /** bloco 2: quantas porções de comida guarda (geladeira) */
+  pantry?: number;
+  /** bloco 2: o oficial de penhora não leva (caixa de correio, latão) */
+  fixture?: boolean;
 }
 
 export interface SkillDef {
@@ -408,6 +420,8 @@ export interface Neighbor {
   traits: string[];
   look: Folk['look'];
   skills: Record<string, number>;
+  /** bloco 2: presta serviço para as casas do bairro */
+  service?: ServiceKind;
   /** onde trabalha (o turno dele não é simulado, mas ele é colega de verdade) */
   career: { id: string; level: number } | null;
   /** manda no lugar onde trabalha */
@@ -421,6 +435,64 @@ export interface Visit {
   leaving: boolean;
   /** quem convidou (0 = apareceu sem avisar) */
   hostId: number;
+  /** bloco 2: já entrou (antes disso espera na porta) */
+  admitted: boolean;
+  /** tick em que tocou a campainha (-1 = ainda não tocou) */
+  rang: number;
+  /** veio trabalhar na casa */
+  service: ServiceVisit | null;
+}
+
+// ---------- Bloco 2: despensa, correio e serviços ----------
+
+/** Quem trabalha para a casa: entregador, faxineira, técnico, oficial de penhora. */
+export type ServiceKind = 'courier' | 'maid' | 'repair' | 'bailiff';
+
+/** O que dá para pedir pelo telefone. */
+export type ServiceOrder = 'groceries' | 'takeout' | 'maid' | 'repair';
+
+export interface ServiceVisit {
+  kind: ServiceKind;
+  /** o que trouxe (entregas) */
+  order: ServiceOrder | null;
+  /** quanto cobra quando entrega ou vai embora */
+  fee: number;
+  /** tick em que começou a trabalhar dentro da casa */
+  started: number;
+  /** tarefas feitas (bagunças, limpezas, consertos) */
+  done: number;
+  /** objeto que o oficial de penhora vai levar */
+  target: number;
+  /** quem mais deixou bagunça (para a fofoca da faxineira) */
+  blame: number;
+}
+
+/** Pedido feito por telefone, a caminho. */
+export interface Order {
+  id: number;
+  kind: ServiceOrder;
+  /** tick em que chega */
+  at: number;
+  /** tick prometido (comida pronta: atrasou, sai pela metade) */
+  promised: number;
+  /** quem pediu */
+  by: number;
+  /** quanto custa (mercado já foi pago no telefone) */
+  price: number;
+}
+
+/** Uma conta que chegou pelo correio. */
+export interface Bill {
+  id: number;
+  /** tick em que chegou */
+  tick: number;
+  /** tick do vencimento */
+  due: number;
+  power: number;
+  water: number;
+  furniture: number;
+  /** quanto já foi coberto (pago ou penhorado) */
+  covered: number;
 }
 
 export interface PendingVisit {
@@ -555,7 +627,7 @@ export type ActionPhase = 'queued' | 'walking' | 'using';
  * 'social' = puxar conversa com `otherId`; 'listen' = dar atenção a quem puxou;
  * 'leave' = visita indo embora.
  */
-export type ActionKind = 'use' | 'goto' | 'work' | 'social' | 'listen' | 'leave' | 'tidy';
+export type ActionKind = 'use' | 'goto' | 'work' | 'social' | 'listen' | 'leave' | 'tidy' | 'door';
 
 export interface Action {
   id: number;
@@ -569,6 +641,10 @@ export interface Action {
   socialId?: string;
   /** bagunça que vai recolher (tidy) */
   messId?: number;
+  /** serviço pedido no telefone */
+  serviceId?: ServiceOrder;
+  /** atender a porta: deixa entrar (true) ou dispensa (false) */
+  welcome?: boolean;
   /** resultado da conversa, sorteado quando ela começa */
   accepted?: boolean;
   /** minutos esperando um objeto ou alguém ficar livre */
@@ -698,8 +774,22 @@ export interface Household {
   funds: number;
   /** próximo tick em que as contas chegam */
   nextBills: number;
-  /** valor da última conta paga */
+  /** valor da última conta que chegou */
   lastBill: number;
+  /** bloco 2: porções de comida na despensa (geladeira) */
+  pantry: number;
+  /** porções de comida pronta que chegaram pela entrega */
+  takeout: number;
+  /** contas na caixa de correio, ainda não pagas */
+  bills: Bill[];
+  /** pedidos a caminho */
+  orders: Order[];
+  /** faxineira contratada (vem todo dia de manhã) */
+  maid: boolean;
+  /** último dia (índice) em que o jornal chegou */
+  paperDay: number;
+  /** dia em que alguém da casa leu o jornal (classificados abertos) */
+  readDay: number;
 }
 
 export interface LogEntry {
@@ -747,6 +837,9 @@ export type Command =
   | { type: 'queueUse'; folkId: number; objectId: number; interactionId: string }
   | { type: 'queueGoto'; folkId: number; x: number; y: number }
   | { type: 'queueTidy'; folkId: number; messId: number }
+  | { type: 'callService'; folkId: number; service: ServiceOrder }
+  | { type: 'dismissService'; service: 'maid' }
+  | { type: 'answerDoor'; folkId: number; otherId: number; welcome: boolean }
   | { type: 'cancel'; folkId: number; actionId: number }
   | { type: 'setAutonomy'; folkId: number; on: boolean }
   | { type: 'setSpeed'; speed: Speed }

@@ -14,7 +14,7 @@ import {
   scoreOptions,
   serialize,
 } from '../src/sim';
-import { crowd, householdSim, run } from './helpers';
+import { arriveAndAdmit, crowd, householdSim, run } from './helpers';
 
 const ids = (sim: ReturnType<typeof crowd>) => sim.world.folks.map((f) => f.id);
 
@@ -292,7 +292,7 @@ describe('visitas', () => {
     expect(sim.world.log.some((l) => l.key === 'log.inviteYes')).toBe(true);
     expect(sim.dispatch({ type: 'invite', folkId: host.id, neighborId: n.id })).toBe(false);
     expect(sim.lastProblem).toBe('alreadyComing');
-    run(sim, 90);
+    arriveAndAdmit(sim, n.id, 90);
     expect(sim.findFolk(n.id)?.visit).toBeTruthy();
     // não dá para mandar na visita
     expect(sim.dispatch({ type: 'setAutonomy', folkId: n.id, on: false })).toBe(false);
@@ -318,7 +318,7 @@ describe('visitas', () => {
     sim.world.lastDropIn = sim.world.tick + 99999;
     const n = sim.world.neighbors[1];
     sim.world.pendingVisits.push({ neighborId: n.id, at: sim.world.tick + 1, hostId: host.id });
-    run(sim, 2);
+    arriveAndAdmit(sim, n.id, 2);
     const guest = sim.findFolk(n.id)!;
     guest.autonomy = false;
     expect(sim.dispatch({ type: 'queueSocial', folkId: host.id, otherId: guest.id, socialId: 'sendHome' })).toBe(true);
@@ -337,7 +337,7 @@ describe('visitas', () => {
       sim.world.lastDropIn = sim.world.tick + 99999;
       const n = sim.world.neighbors[0];
       sim.world.pendingVisits.push({ neighborId: n.id, at: sim.world.tick + 1, hostId: host.id });
-      run(sim, 2);
+      arriveAndAdmit(sim, n.id, 2);
       const guest = sim.findFolk(n.id)!;
       guest.autonomy = false;
       applyDelta(sim.world, CATALOG, host, guest, { friendship: 70 });

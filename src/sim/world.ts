@@ -2,6 +2,7 @@ import { fullNeeds } from './needs';
 import { introduce } from './gossip';
 import { personOf } from './people';
 import { ensureRelation } from './relations';
+import { START_PANTRY } from './services';
 import { freshState } from './upkeep';
 import type { EdgeKind, Folk, Grid, Neighbor, Needs, Rotation, Vec, World } from './types';
 
@@ -96,6 +97,8 @@ export interface WorldSeed {
   exit: Vec;
   neighbors?: NeighborSeed[];
   relations?: RelationSeed[];
+  /** porções na despensa no começo (padrão START_PANTRY) */
+  pantry?: number;
 }
 
 /** De quanto em quanto tempo as contas chegam, em minutos. */
@@ -109,6 +112,11 @@ export function firstBillAfter(tick: number): number {
   return day * 1440 + BILL_HOUR * 60 + BILL_INTERVAL;
 }
 
+/** Despensa, correio e serviços de uma casa nova (bloco 2). */
+export function freshHousehold(pantry: number): Omit<World['household'], 'funds' | 'nextBills'> {
+  return { lastBill: 0, pantry, takeout: 0, bills: [], orders: [], maid: false, paperDay: -1, readDay: -1 };
+}
+
 /** Vizinhos com ids novos a partir de `nextId`. */
 export function seedNeighbors(seeds: NeighborSeed[], nextId: number): Neighbor[] {
   return seeds.map((n, i) => ({
@@ -119,6 +127,11 @@ export function seedNeighbors(seeds: NeighborSeed[], nextId: number): Neighbor[]
     skills: { ...n.skills },
     career: n.career ? { ...n.career } : null,
   }));
+}
+
+/** Vizinhos que só prestam serviço não aparecem sem avisar nem viram colegas. */
+export function isServiceNeighbor(n: Neighbor): boolean {
+  return n.service !== undefined;
 }
 
 /**
@@ -215,7 +228,7 @@ export function createWorld(seed: WorldSeed): World {
     grid: seed.grid,
     objects,
     folks,
-    household: { funds: seed.funds, nextBills: firstBillAfter(seed.startTick), lastBill: 0 },
+    household: { ...freshHousehold(seed.pantry ?? START_PANTRY), funds: seed.funds, nextBills: firstBillAfter(seed.startTick) },
     exit: { ...seed.exit },
     log: [],
     neighbors,

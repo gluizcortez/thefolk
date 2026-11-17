@@ -312,7 +312,7 @@ describe('bloco 1: a IA cuida da casa', () => {
       { x: 3, y: 1 },
     ]);
     const [lazy, neat, guest] = sim.world.folks;
-    guest.visit = { until: 9999, leaving: false, hostId: 0 };
+    guest.visit = { until: 9999, leaving: false, hostId: 0, admitted: true, rang: -1, service: null };
     expect(careDrive(CATALOG, neat, 70)).toBeGreaterThan(careDrive(CATALOG, lazy, 70) * 3);
     expect(careDrive(CATALOG, guest, 70)).toBe(0);
     // de mau humor, até o caprichoso empurra para depois

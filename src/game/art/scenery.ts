@@ -287,12 +287,7 @@ export function buildScenery(grid: Grid, free: (x: number, y: number) => boolean
   // cerca de ripas nos fundos e nas laterais
   g.add(fence(-0.6, -0.6, w + 0.6, -0.6), fence(-0.6, -0.6, -0.6, h + 0.6), fence(w + 0.6, -0.6, w + 0.6, h + 0.6));
 
-  // caixa de correio perto da calçada
-  g.add(
-    box(0.08, 0.95, 0.08, colorMat(PAL.walnut), w / 2 + 1.6, 0, front - 0.25),
-    box(0.22, 0.2, 0.42, colorMat(0xc9382f, { gloss: 0.6 }), w / 2 + 1.6, 0.95, front - 0.25),
-    box(0.02, 0.16, 0.06, colorMat(PAL.mustard), w / 2 + 1.72, 1.02, front - 0.14),
-  );
+  // bloco 2: a caixa de correio virou objeto de verdade (data/objects.ts)
 
   // árvores, arbustos e vizinhos
   const trees: [number, number, number][] = [

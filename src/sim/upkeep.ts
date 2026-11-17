@@ -295,7 +295,7 @@ export function afterCare(obj: WorldObject, it: InteractionDef): Chain {
 
 /** Minutos para recolher cada tipo de bagunça, pelo Capricho. */
 export function tidyMinutes(kind: MessKind, folk: Folk): number {
-  const base = kind === 'plate' ? 2 : kind === 'puddle' ? 8 : 5;
+  const base = kind === 'plate' ? 2 : kind === 'puddle' ? 8 : kind === 'paper' ? 3 : 5;
   return Math.max(1, Math.round(base * (1 - 0.06 * skillLevel(folk, TIDINESS))));
 }
 
@@ -323,6 +323,12 @@ export function messTiles(world: World, nav: Nav, mess: Mess): Vec[] {
  */
 export function finishTidy(world: World, catalog: Catalog, log: Logger, folk: Folk, mess: Mess): Chain {
   world.mess = world.mess.filter((m) => m.id !== mess.id);
+  if (mess.kind === 'paper') {
+    // jornal (lido ou velho) vai para a lixeira
+    const bin = nearestBin(world, catalog, folk);
+    if (bin && stateOf(bin).fill + 5 <= BIN_FULL) stateOf(bin).fill += 5;
+    return null;
+  }
   const culprit = mess.by && mess.by !== folk.id ? world.folks.find((f) => f.id === mess.by && !f.visit) : undefined;
   if (culprit && messSenseOf(catalog, folk) >= 1.25) {
     const rel = relationOf(world, folk.id, culprit.id);
@@ -347,7 +353,7 @@ export function finishTidy(world: World, catalog: Catalog, log: Logger, folk: Fo
 // ---------- ambiente ----------
 
 /** Quanto a bagunça de cada tipo pesa no ambiente em volta. */
-export const MESS_AMBIENCE: Record<MessKind, number> = { plate: -5, puddle: -6, trash: -9 };
+export const MESS_AMBIENCE: Record<MessKind, number> = { plate: -5, puddle: -6, trash: -9, paper: -2 };
 
 /** Quanto o estado do objeto tira do ambiente (sujeira, quebrado, lixo fedendo). */
 export function stateAmbience(obj: WorldObject, def: ObjectDef): number {
@@ -394,6 +400,8 @@ export function objectCareScore(obj: WorldObject, it: InteractionDef): number {
 /** Nota base de recolher uma bagunça (prato velho incomoda mais). */
 export function messScore(mess: Mess, tick: number): number {
   if (mess.kind === 'plate') return 16 + Math.min(20, ((tick - mess.tick) / 60) * 2);
+  // jornal do dia: vontade de ler; jornal velho: só papel acumulando
+  if (mess.kind === 'paper') return Math.floor(mess.tick / 1440) === Math.floor(tick / 1440) ? 20 : 12;
   return mess.kind === 'puddle' ? 22 : 26;
 }
 

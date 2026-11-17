@@ -938,6 +938,29 @@ const curbbin: FurnitureSpec = {
   },
 };
 
+// bloco 2: caixa de correio na calçada (poste de madeira, caixa de lata com
+// fresta e plaquinha amarela; nada de bandeirinha)
+const mailbox: FurnitureSpec = {
+  build() {
+    const post = texMat('pine', { color: 0x9a6a3c, gloss: 0.2 });
+    const tin = colorMat(0x2f7a78, { gloss: 0.7 });
+    const trim = colorMat(0x1f5553, { gloss: 0.7 });
+    const g = group(
+      box(0.1, 0.9, 0.1, post, 0, 0, 0),
+      box(0.3, 0.04, 0.3, post, 0, 0, 0),
+      rbox(0.44, 0.34, 0.3, 0.05, tin, 0, 0.86, 0),
+      rbox(0.48, 0.05, 0.34, 0.02, trim, 0, 1.19, 0),
+      // fresta das cartas
+      box(0.26, 0.025, 0.02, colorMat(0x1a1c20), 0, 1.08, 0.152),
+      // plaquinha com o número da casa
+      box(0.14, 0.07, 0.01, colorMat(0xe8c43a, { gloss: 0.5 }), 0, 0.93, 0.155),
+      box(0.03, 0.04, 0.012, colorMat(0x3a2a1c), -0.03, 0.945, 0.16),
+      box(0.03, 0.04, 0.012, colorMat(0x3a2a1c), 0.02, 0.945, 0.16),
+    );
+    return { group: g };
+  },
+};
+
 const workbench: FurnitureSpec = {
   build(seed) {
     const pine = texMat('pine', { gloss: 0.2 });
@@ -1204,6 +1227,7 @@ const SPECS: Record<string, FurnitureSpec> = {
   kitchensink,
   trashcan,
   curbbin,
+  mailbox,
   workbench,
 };
 

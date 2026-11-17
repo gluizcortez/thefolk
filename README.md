@@ -53,8 +53,9 @@ npm run preview  # serve o dist/ localmente
   câmera), baixas e inteiras.
 - A chave "Age por conta própria" liga e desliga a IA do folk.
 - **Dinheiro**: o saldo fica no relógio, ao lado do dia da semana. Passe o mouse
-  para ver quando chegam as próximas contas. Comida da geladeira e do fogão e
-  ligações custam alguns tostões.
+  para ver as contas na caixa de correio e quando chega a próxima; um selinho
+  ✉ no saldo avisa que tem conta esperando. Lanche e ligações custam alguns
+  tostões.
 - **Trabalho**: botão no cartão do folk (ou clique no saldo). Os classificados
   mostram três carreiras; aceite uma vaga e, uma hora antes do turno, o folk vai
   sozinho até a calçada pegar a condução. Ele some de casa durante o turno e
@@ -180,6 +181,37 @@ npm run preview  # serve o dist/ localmente
   perto, muito mais para quem é caprichoso ou caseiro. Quem se incomoda e
   recolhe o prato de outro morador reclama e guarda a lembrança "deixou
   bagunça para eu limpar".
+- **Despensa (bloco 2)**: a geladeira guarda porções (até 24 por geladeira;
+  o menu mostra quantas sobram). Refeição e cozinhar no fogão gastam uma
+  porção; sem estoque só sobra o lanche ou pedir comida. A casa começa com 16.
+- **Telefone → Pedir um serviço**: **mercado** (12 porções, pago na hora,
+  chega em uma ou duas horas, entre 8h e 21h), **comida pronta** (3 porções,
+  das 10h às 23h, prometida para uma hora: se atrasa, sai pela metade; paga na
+  porta, com gorjeta), **faxineira** (vem todo dia às 9h, cobra a diária ao
+  terminar; o mesmo item dispensa) e **técnico** (conserta tudo o que quebrou
+  sem gambiarra e revisa o que está gasto; cobra visita mais hora). Com a
+  geladeira vazia e fome, a IA pede sozinha.
+- **Campainha**: visitas, entregador, faxineira e técnico tocam e esperam do
+  lado de fora da porta da frente. Clique em quem está na porta para
+  **convidar para entrar**, **dispensar** ou **receber a entrega**; com a IA
+  ligada alguém da casa larga o que faz e atende. Ninguém atendeu: a visita
+  vai embora chateada ("me deixou plantado na porta"), o mercado e a comida
+  ficam na porta, faxineira e técnico entram com a chave.
+- **Caixa de correio** na calçada: as contas chegam como cartas (luz, água e
+  móveis, com vencimento em três dias) e são pagas ali. Conta vencida há mais
+  de três dias traz o **oficial de penhora** às 10h: ele entra sem tocar,
+  carimba e leva os móveis de mais valor até cobrir a dívida (e o bairro fica
+  sabendo). A IA paga as contas sozinha quando tem dinheiro.
+- **Jornal**: chega às 6h na calçada. Quem pega lê uma notícia do bairro (a
+  fofoca também sai no jornal) e abre os **classificados do dia**: as vagas de
+  emprego só aparecem no painel de trabalho depois disso. Jornal não
+  recolhido vira papel velho acumulando (até 4).
+- **Feira de sábado**: de 6h às 10h, a caixa de correio oferece "Comprar na
+  feira da rua": 12 porções mais baratas que o mercado, para quem vai a pé.
+- **Prestadores são vizinhos**: Zeca (entregador), Marta (faxineira), Ivo
+  (técnico) e Plácido (oficial de penhora) têm traços, relações e lembranças
+  como qualquer um. Marta é fofoqueira: se a casa estava uma bagunça, conta
+  por aí sobre quem mais sujou.
 - **Salvar / Carregar / Novo jogo** no canto superior direito. O jogo também
   salva sozinho a cada 30 segundos e continua de onde parou ao reabrir.
 
@@ -217,6 +249,7 @@ src/
     relations.ts    relações dirigidas (amizade, romance, respeito), afinidade, lembranças
     social.ts       quem pode conversar com quem e a chance de o outro topar
     economy.ts      tostões, contas, preço de revenda e regras de onde um objeto cabe
+    services.ts     bloco 2: despensa, cartas de conta, penhora, jornal, pedidos e campainha
     build.ts        modo construção: planos de obra, custo, validação, desfazer
   data/       conteúdo como dados: objetos (com preço e categoria), pisos,
               revestimentos e preço de parede, porta e janela (build.ts), traços,
@@ -271,7 +304,8 @@ Decisões principais do núcleo:
   com mais moradores. Pode ficar negativo quando as contas chegam; com saldo
   negativo nada se compra.
 - **Contas** a cada três dias, às 10:00: uma parte fixa mais 1,2% do valor dos
-  móveis da casa.
+  móveis da casa. Desde o bloco 2 chegam como carta (`household.bills`,
+  detalhada em luz, água e móveis) e só saem do caixa quando alguém paga.
 - **Habilidades** guardam experiência (1 ponto ≈ 1 minuto de treino puxado). O
   nível n custa `60 × n` pontos a mais que o anterior, até o nível 10. Uma
   interação pode "turbinar" uma necessidade com a habilidade (quem cozinha
@@ -326,6 +360,18 @@ Decisões principais do núcleo:
   seguinte na frente da fila. Bagunça é recolhida pela ação `tidy`. A IA soma
   as opções de cuidado com nota própria vezes `careDrive` (traços `tidy` e
   humor); o ambiente soma o estado dos objetos e a bagunça vezes `messSense`.
+- **Despensa, correio e serviços (bloco 2)** moram em `sim/services.ts`.
+  `household` ganhou `pantry`, `takeout`, `bills`, `orders`, `maid`,
+  `paperDay` e `readDay`. Interações novas: `portions` e `takeout` (consomem
+  da casa ao começar) e `special` `services`, `payBills` e `fair`;
+  `interactionReady`/`canUse` dizem se a casa tem o que precisa. Prestadores
+  são `Neighbor` com `service` e entram no lote como visita com
+  `visit.service`; toda visita nasce com `admitted: false`, anda até
+  `frontDoor`, toca (`rang`) e espera a ação `door` de um morador. A
+  faxineira e o técnico escolhem tarefas com `serviceTask` e usam as mesmas
+  interações de cuidado e a ação `tidy` do bloco 1; o oficial anda até o
+  objeto (`seizeTarget`) e a `Sim` remove. O jornal é bagunça do tipo
+  `paper`, recolhida pela ação `tidy`.
 - **Objetos de vários lugares** (`slots`): sofá, mesa e caixa de som aceitam
   dois. Quem chega num objeto cheio espera até meia hora e desiste.
 - **Objetos giram** em quartos de volta (`rot`): a área ocupada e os lados de uso
@@ -405,6 +451,10 @@ Decisões principais do núcleo:
   prontas no topo de `objects.ts` (`clean()`, `repair()`, `service()`,
   `dishes()`). `leaves` numa interação deixa prato ou poça; `trash` manda lixo
   para a lixeira.
+- **Serviço novo**: um vizinho com `service` em `neighbors.ts`; o pedido em
+  `ServiceOrder` e `placeOrder`/`servicePrice` em `sim/services.ts`.
+- **Comida que gasta estoque**: `portions` (despensa) ou `takeout: true`
+  (comida pedida) na interação; `pantry` no objeto diz quantas porções cabem.
 - **Mudou o formato do `World`?** Aumente `SAVE_VERSION` em `src/sim/save.ts` e
   registre a migração no mesmo arquivo.
 
@@ -420,15 +470,28 @@ O próximo passo está em [docs/plano-evolucao.md](docs/plano-evolucao.md): 17 b
 que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
 
 - **Bloco 1 (feito)**: casa viva: sujeira, desgaste, conserto, Jeito e Capricho (save v6).
-- Próximo: bloco 2, despensa, correio e prestadores de serviço.
+- **Bloco 2 (feito)**: despensa, correio com contas e penhora, telefone com
+  serviços, jornal com classificados, campainha e feira de sábado (save v7).
+- Próximo: bloco 3, ambiente por cômodo, dia e noite.
+
+## Limitações conhecidas do bloco 2
+
+- Ninguém carrega sacola, prato de comida pronta ou jornal na mão: as porções
+  aparecem na geladeira quando a entrega é recebida, e o jornal some ao ser lido.
+- O jardineiro ficou para o bloco 13 (jardim vivo): hoje as plantas não secam.
+- A feira não tem barraca na rua: é uma interação da caixa de correio, só no
+  sábado de manhã. O latão da calçada continua sem caminhão de lixo.
+- Visitas comem a comida pedida, mas não a da despensa. Saves antigos ganham a
+  caixa de correio na calçada só se houver lugar perto da saída.
+- Pedidos feitos de madrugada ficam para a manhã seguinte; comida pronta não
+  atende fora do horário.
 
 ## Limitações conhecidas do bloco 1
 
 - Sujeira só nasce do uso: a casa parada não acumula poeira. Pisos e paredes
   não sujam (o ambiente por cômodo vem no bloco 3).
 - O folk não carrega o prato nem o saco na mão: ele só anda até a pia ou o
-  latão. O latão da calçada nunca enche (o caminhão de lixo fica para quando
-  houver serviços, no bloco 2).
+  latão. O latão da calçada nunca enche.
 - Saves antigos não ganham lixeira, pia da cozinha nem latão: sem lixeira o
   lixo some, sem latão o saco é levado até a rua. Dá para comprar os três.
 - Choque é só um susto (conforto, energia e higiene); o perigo de verdade
@@ -516,8 +579,8 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
   esse tempo "no trabalho"; não espera na rua.
 - O turno em si não treina habilidades; só objetos, frilas, negócio e alguns
   eventos do expediente treinam.
-- Não há falência nem cobrador: com saldo negativo só não se compra nada.
-  As contas são um valor único, sem detalhe de luz, água etc.
+- (Resolvido no bloco 2: as contas vêm detalhadas e conta atrasada traz o
+  oficial de penhora.)
 - O catálogo tem 21 objetos, um modelo de cada (sem variações de cor ou de
   qualidade, sem "versão barata" e "versão cara").
 - Objetos giram, mas não ficam colados na parede sozinhos e não há desfazer no

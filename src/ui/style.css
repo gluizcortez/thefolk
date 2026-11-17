@@ -673,6 +673,25 @@ button {
   background: #fbe2d8;
 }
 
+/* bloco 2: carta esperando na caixa de correio */
+.funds {
+  position: relative;
+}
+
+.funds.mail::after {
+  content: attr(data-mail-text);
+  position: absolute;
+  top: -9px;
+  right: -8px;
+  padding: 0 5px;
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  background: #f2c94c;
+  color: var(--ink);
+  font-size: 10px;
+  line-height: 14px;
+}
+
 .btn-small {
   padding: 4px 9px;
   font-size: 12px;

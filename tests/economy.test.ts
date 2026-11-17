@@ -93,19 +93,29 @@ describe('dinheiro e modo compra', () => {
     expect(sim.getNav().isFree(2, 2)).toBe(true);
   });
 
-  it('interações com custo cobram e a IA não escolhe o que não pode pagar', () => {
-    const sim = openField(6, 6, [{ defId: 'fridge', x: 2, y: 2 }], { x: 2, y: 3, needs: { hunger: 5 } }, 1, 0);
-    run(sim, 30);
-    expect(sim.world.folks[0].queue.some((a) => a.objectId === sim.world.objects[0].id)).toBe(false);
-    expect(sim.world.folks[0].needs.hunger).toBeLessThan(5);
+  it('a refeição sai da despensa, o lanche cobra e a IA não escolhe o que não pode pagar', () => {
+    const broke = openField(6, 6, [{ defId: 'fridge', x: 2, y: 2 }], { x: 2, y: 3, needs: { hunger: 5 } }, 1, 0);
+    broke.world.household.pantry = 0;
+    run(broke, 30);
+    expect(broke.world.folks[0].queue.some((a) => a.objectId === broke.world.objects[0].id)).toBe(false);
+    expect(broke.world.folks[0].needs.hunger).toBeLessThan(5);
 
-    const paid = openField(6, 6, [{ defId: 'fridge', x: 2, y: 2 }], { x: 2, y: 3, needs: { hunger: 5 } }, 1, 100);
-    run(paid, 30);
-    expect(paid.world.folks[0].needs.hunger).toBeGreaterThan(20);
-    expect(paid.world.household.funds).toBeLessThan(100);
+    // com comida na geladeira, come mesmo sem dinheiro
+    const stocked = openField(6, 6, [{ defId: 'fridge', x: 2, y: 2 }], { x: 2, y: 3, needs: { hunger: 5 } }, 1, 0);
+    run(stocked, 30);
+    expect(stocked.world.folks[0].needs.hunger).toBeGreaterThan(20);
+    expect(stocked.world.household.pantry).toBeLessThan(16);
+    expect(stocked.world.household.funds).toBe(0);
+
+    // sem estoque, sobra o lanche, que é pago
+    const snack = openField(6, 6, [{ defId: 'fridge', x: 2, y: 2 }], { x: 2, y: 3, needs: { hunger: 5 } }, 1, 100);
+    snack.world.household.pantry = 0;
+    run(snack, 30);
+    expect(snack.world.folks[0].needs.hunger).toBeGreaterThan(20);
+    expect(snack.world.household.funds).toBeLessThan(100);
   });
 
-  it('as contas chegam a cada três dias e crescem com o valor dos móveis', () => {
+  it('as contas chegam pelo correio a cada três dias e crescem com o valor dos móveis', () => {
     const sim = starterSim(3);
     const house = sim.world.household;
     const first = house.nextBills;
@@ -117,7 +127,10 @@ describe('dinheiro e modo compra', () => {
     while (sim.world.tick < first) sim.step();
     expect(house.nextBills).toBe(first + BILL_INTERVAL);
     expect(house.lastBill).toBe(amount);
-    expect(house.funds).toBeLessThanOrEqual(funds - amount);
+    // bloco 2: a conta chega como carta e só sai do caixa quando alguém paga
+    expect(house.bills).toHaveLength(1);
+    expect(house.bills[0].power + house.bills[0].water + house.bills[0].furniture).toBe(amount);
+    expect(house.funds).toBe(funds);
     sim.dispatch({ type: 'buy', defId: 'tv', x: 14, y: 10, rot: 0 });
     expect(billAmount(sim.world, CATALOG)).toBeGreaterThan(amount);
   });

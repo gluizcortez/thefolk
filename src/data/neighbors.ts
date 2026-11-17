@@ -80,6 +80,40 @@ export const NEIGHBORS: NeighborSeed[] = [
     skills: { cooking: 180, fitness: 60 },
     career: { id: 'kitchen', level: 1 },
   },
+  // bloco 2: quem presta serviço no bairro. São vizinhos como os outros:
+  // dá para fazer amizade, e a faxineira comenta o que viu nas casas.
+  {
+    name: 'Zeca Soleira',
+    traits: ['agitado', 'tagarela'],
+    look: { skin: 2, hair: 0, shirt: 1, pants: 0 },
+    skills: { fitness: 360 },
+    career: null,
+    service: 'courier',
+  },
+  {
+    name: 'Marta Rodapé',
+    traits: ['caprichoso', 'fofoqueiro'],
+    look: { skin: 3, hair: 3, shirt: 4, pants: 3 },
+    skills: { tidiness: 1260, cooking: 180 },
+    career: null,
+    service: 'maid',
+  },
+  {
+    name: 'Ivo Tomada',
+    traits: ['reservado', 'caprichoso'],
+    look: { skin: 1, hair: 4, shirt: 5, pants: 1 },
+    skills: { handiness: 1680, logic: 180 },
+    career: null,
+    service: 'repair',
+  },
+  {
+    name: 'Plácido Carimbo',
+    traits: ['reservado', 'ambicioso'],
+    look: { skin: 0, hair: 4, shirt: 3, pants: 0 },
+    skills: { logic: 360, charisma: 180 },
+    career: null,
+    service: 'bailiff',
+  },
 ];
 
 /**
@@ -92,4 +126,8 @@ export const NEIGHBOR_TIES: RelationSeed[] = [
   { a: 'Rosa Cancela', b: 'Bento Lajota', friendship: 25 },
   { a: 'Otto Mirante', b: 'Bento Lajota', friendship: 30 },
   { a: 'Dora Alpendre', b: 'Nina Varal', friendship: 20 },
+  // a faxineira conhece meio bairro (é por ela que a fofoca da casa sai)
+  { a: 'Marta Rodapé', b: 'Dora Alpendre', friendship: 35 },
+  { a: 'Marta Rodapé', b: 'Otto Mirante', friendship: 25 },
+  { a: 'Zeca Soleira', b: 'Caio Telhado', friendship: 30 },
 ];

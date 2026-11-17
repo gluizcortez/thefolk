@@ -40,6 +40,18 @@ import {
   DIRTY_AT,
   careAvailable,
   stateOf,
+  FAIR,
+  GROCERIES,
+  MAID,
+  REPAIR,
+  TAKEOUT,
+  classifiedsOpen,
+  debtOf,
+  doorTaken,
+  freshPaper,
+  interactionReady,
+  orderProblem,
+  unpaidBills,
 } from '../sim';
 import type {
   Action,
@@ -51,6 +63,7 @@ import type {
   ObjectCategory,
   ObjectDef,
   Relation,
+  ServiceOrder,
   SocialCategory,
   Speed,
   WorldObject,
@@ -395,10 +408,18 @@ export class Hud {
     const funds = formatMoney(house.funds);
     if (this.fundsEl.textContent !== funds) this.fundsEl.textContent = funds;
     this.fundsEl.classList.toggle('debt', house.funds < 0);
-    this.fundsEl.title = `${t('hud.funds')}. ${t('hud.billsNext', {
-      when: whenText(house.nextBills),
-      amount: formatMoney(billAmount(world, this.ctrl.sim.catalog)),
-    })}`;
+    const debt = debtOf(world);
+    const unpaid = unpaidBills(world).length;
+    this.fundsEl.title = `${t('hud.funds')}. ${
+      debt > 0
+        ? t('hud.billsUnpaid', { amount: formatMoney(debt), when: whenText(house.nextBills) })
+        : t('hud.billsNone', { when: whenText(house.nextBills), amount: formatMoney(billAmount(world, this.ctrl.sim.catalog)) })
+    }`;
+    this.fundsEl.classList.toggle('mail', unpaid > 0);
+    if (this.fundsEl.dataset.mail !== String(unpaid)) {
+      this.fundsEl.dataset.mail = String(unpaid);
+      this.fundsEl.dataset.mailText = unpaid > 0 ? t('hud.mail', { n: unpaid }) : '';
+    }
     const buyLabel = this.ctrl.mode === 'buy' ? t('hud.live') : t('hud.buy');
     if (this.buyButton.textContent !== buyLabel) this.buyButton.textContent = buyLabel;
     this.buyButton.classList.toggle('on', this.ctrl.mode === 'buy');
@@ -451,8 +472,13 @@ export class Hud {
     if (action.kind === 'leave') return t('act.leave');
     if (action.kind === 'tidy') {
       const mess = this.ctrl.world.mess.find((m) => m.id === action.messId);
-      return t(`act.tidy.${mess?.kind ?? 'plate'}`);
+      return this.messAction(mess);
     }
+    if (action.kind === 'door') {
+      const other = action.otherId !== undefined ? this.ctrl.sim.findFolk(action.otherId) : undefined;
+      return other ? t('act.doorFor', { name: first(other.name) }) : t('act.door');
+    }
+    if (action.serviceId) return t(`act.call.${action.serviceId}`);
     if (action.kind === 'social' || action.kind === 'listen') {
       const other = action.otherId !== undefined ? this.ctrl.sim.findFolk(action.otherId) : undefined;
       const name = other ? first(other.name) : '…';
@@ -539,8 +565,24 @@ export class Hud {
     const state = stateOf(obj);
     const status = this.objectStatus(obj);
     if (status) this.menuEl.append(el('div', `menu-note ${state.broken ? 'menu-warn' : ''}`, status));
-    // cuidados só aparecem quando há o que fazer; o resto some se quebrou
-    const shown = def.interactions.filter((it) => !it.hidden && (it.care ? careAvailable(obj, it) : true));
+    // bloco 2: cada conta da caixa de correio, detalhada
+    if (def.interactions.some((i) => i.special === 'payBills')) {
+      for (const bill of unpaidBills(this.ctrl.world)) {
+        const day = Math.floor(bill.due / 1440) + 1;
+        const late = this.ctrl.world.tick > bill.due;
+        const line = `${t('bill.line', { power: formatMoney(bill.power), water: formatMoney(bill.water), furniture: formatMoney(bill.furniture) })} · ${t(late ? 'bill.overdue' : 'bill.due', { day })}`;
+        this.menuEl.append(el('div', `menu-note ${late ? 'menu-warn' : ''}`, line));
+      }
+    }
+    // cuidados só aparecem quando há o que fazer; o resto some se quebrou.
+    // Comida pedida, feira e contas só aparecem quando existem.
+    const world = this.ctrl.world;
+    const shown = def.interactions.filter((it) => {
+      if (it.hidden) return false;
+      if (it.care) return careAvailable(obj, it);
+      if (it.takeout || it.special === 'fair' || it.special === 'payBills') return interactionReady(world, it);
+      return true;
+    });
     if (shown.length === 0) {
       this.menuEl.append(el('div', 'menu-note', t('menu.nothing')));
     }
@@ -552,15 +594,24 @@ export class Hud {
       b.append(icon, el('span', '', t(it.label)));
       const extras: string[] = [];
       if (it.cost) extras.push(formatMoney(it.cost));
+      if (it.special === 'payBills') extras.push(formatMoney(debtOf(world)));
+      if (it.special === 'fair') extras.push(formatMoney(FAIR.price));
       if (it.skill) extras.push(t(`skill.${it.skill.id}`));
       if (extras.length) b.append(el('span', 'menu-extra', extras.join(' · ')));
       if (state.broken && !it.care) {
         b.disabled = true;
         b.title = t('problem.broken');
+      } else if (!interactionReady(world, it)) {
+        b.disabled = true;
+        b.title = t('problem.noFood');
       }
       b.addEventListener('click', () => {
         if (it.special === 'invite') {
           this.openInviteMenu(x, y);
+          return;
+        }
+        if (it.special === 'services') {
+          this.openServicesMenu(x, y);
           return;
         }
         this.ctrl.commandOrExplain({
@@ -572,7 +623,7 @@ export class Hud {
         this.closeMenu();
         this.update();
       });
-      if (it.special === 'invite') b.append(el('span', 'menu-extra', '›'));
+      if (it.special === 'invite' || it.special === 'services') b.append(el('span', 'menu-extra', '›'));
       this.menuEl.append(b);
     }
     this.showMenuAt(x, y);
@@ -589,6 +640,17 @@ export class Hud {
     if (s.dirt >= DIRTY_AT) parts.push(t('state.dirty'));
     else if (s.dirt >= 25) parts.push(t('state.grimy'));
     if (def.upkeep?.bin) parts.push(s.fill >= 100 ? t('state.binFull') : t('state.binFill', { pct: Math.round(s.fill) }));
+    // bloco 2: o que tem na geladeira e na caixa de correio
+    const house = this.ctrl.world.household;
+    if (def.pantry) {
+      parts.push(house.pantry > 0 ? t('state.pantry', { n: house.pantry }) : t('state.pantryEmpty'));
+      if (house.takeout > 0) parts.push(t('state.takeout', { n: house.takeout }));
+    }
+    if (def.interactions.some((i) => i.special === 'payBills')) {
+      const bills = unpaidBills(this.ctrl.world);
+      parts.push(bills.length ? t('state.bills', { n: bills.length, amount: formatMoney(debtOf(this.ctrl.world)) }) : t('state.noMail'));
+      if (def.interactions.some((i) => i.special === 'fair' && interactionReady(this.ctrl.world, i))) parts.push(t('state.fairOpen'));
+    }
     else if (def.upkeep?.breaks && !s.broken && s.wear >= 60) parts.push(t('state.worn'));
     return parts.length ? parts.join(' · ') : null;
   }
@@ -604,17 +666,110 @@ export class Hud {
   /** Menu de uma bagunça solta: recolher, secar, catar. */
   openMessMenu(x: number, y: number, mess: Mess): void {
     const folk = this.ctrl.folk;
-    this.menuEl.replaceChildren(el('div', 'menu-title', t(`mess.${mess.kind}`)));
+    const old = mess.kind === 'paper' && !freshPaper(this.ctrl.world, mess);
+    this.menuEl.replaceChildren(el('div', 'menu-title', t(old ? 'mess.paperOld' : `mess.${mess.kind}`)));
     const b = el('button', 'menu-item');
     const icon = el('span', 'menu-icon');
-    icon.innerHTML = iconSvg('ambience', 16);
-    b.append(icon, el('span', '', t(`act.tidy.${mess.kind}`)), el('span', 'menu-extra', t('skill.tidiness')));
+    icon.innerHTML = iconSvg(mess.kind === 'paper' && !old ? 'fun' : 'ambience', 16);
+    b.append(icon, el('span', '', this.messAction(mess)));
+    if (mess.kind !== 'paper') b.append(el('span', 'menu-extra', t('skill.tidiness')));
     b.addEventListener('click', () => {
       this.ctrl.commandOrExplain({ type: 'queueTidy', folkId: folk.id, messId: mess.id });
       this.closeMenu();
       this.update();
     });
     this.menuEl.append(b);
+    this.showMenuAt(x, y);
+  }
+
+  /** Rótulo da ação de recolher uma bagunça (o jornal do dia é "pegar o jornal"). */
+  private messAction(mess: Mess | undefined): string {
+    if (!mess) return t('act.tidy.plate');
+    if (mess.kind === 'paper') return t(freshPaper(this.ctrl.world, mess) ? 'act.tidy.paper' : 'act.tidy.paperOld');
+    return t(`act.tidy.${mess.kind}`);
+  }
+
+  /** Telefone: mercado, comida pronta, faxineira e técnico. */
+  openServicesMenu(x: number, y: number): void {
+    const folk = this.ctrl.folk;
+    const world = this.ctrl.world;
+    this.menuEl.replaceChildren(el('div', 'menu-title', t('services.title')));
+    const rows: { id: ServiceOrder; label: string; price: string }[] = [
+      { id: 'groceries', label: t('services.groceries', { portions: GROCERIES.portions }), price: formatMoney(GROCERIES.price) },
+      { id: 'takeout', label: t('services.takeout', { portions: TAKEOUT.portions }), price: formatMoney(TAKEOUT.price) },
+      { id: 'maid', label: t('services.maid', { hour: MAID.hour }), price: t('services.perDay', { price: formatMoney(MAID.fee) }) },
+      {
+        id: 'repair',
+        label: t('services.repair'),
+        price: t('services.plusHour', { price: formatMoney(REPAIR.base), hourly: formatMoney(REPAIR.hourly) }),
+      },
+    ];
+    for (const row of rows) {
+      const b = el('button', 'menu-item');
+      const icon = el('span', 'menu-icon');
+      icon.innerHTML = iconSvg(row.id === 'groceries' || row.id === 'takeout' ? 'hunger' : 'ambience', 16);
+      if (row.id === 'maid' && world.household.maid) {
+        b.append(icon, el('span', '', t('services.maidOn')));
+        b.addEventListener('click', () => {
+          this.ctrl.commandOrExplain({ type: 'dismissService', service: 'maid' });
+          this.closeMenu();
+          this.update();
+        });
+        this.menuEl.append(b);
+        continue;
+      }
+      const problem = orderProblem(world, row.id);
+      const pending = world.household.orders.some((o) => o.kind === row.id);
+      const note = problem === 'closed' ? t('services.closed') : pending ? t('services.pending') : row.price;
+      b.append(icon, el('span', '', row.label), el('span', 'menu-extra', note));
+      b.disabled = problem !== null;
+      if (problem) b.title = t(`problem.${problem}`);
+      b.addEventListener('click', () => {
+        this.ctrl.commandOrExplain({ type: 'callService', folkId: folk.id, service: row.id });
+        this.closeMenu();
+        this.update();
+      });
+      this.menuEl.append(b);
+    }
+    this.showMenuAt(x, y);
+  }
+
+  /** Quem está na porta: receber, deixar entrar ou dispensar. */
+  private openDoorMenu(x: number, y: number, other: Folk): void {
+    const folk = this.ctrl.folk;
+    const sv = other.visit?.service;
+    const title = el('div', 'menu-title');
+    const face = el('span', 'menu-face big');
+    face.innerHTML = faceSvg(other.look, 26);
+    const names = el('div', 'menu-names');
+    const role = sv ? t(`service.${sv.kind}`) : t('social.visitor');
+    const coming = doorTaken(this.ctrl.world, other.id);
+    names.append(el('div', '', other.name), el('div', 'menu-sub', `${role} · ${t(coming ? 'door.coming' : 'door.waiting')}`));
+    title.append(face, names);
+    this.menuEl.replaceChildren(title);
+    const options: { label: string; welcome: boolean }[] =
+      sv?.kind === 'courier'
+        ? [{ label: t('door.receive'), welcome: true }]
+        : sv
+          ? [
+              { label: t('door.letIn'), welcome: true },
+              { label: t('door.sendAway'), welcome: false },
+            ]
+          : [
+              { label: t('door.welcome'), welcome: true },
+              { label: t('door.dismiss'), welcome: false },
+            ];
+    for (const o of options) {
+      const b = el('button', 'menu-item');
+      b.append(el('span', 'menu-dot'), el('span', '', o.label));
+      b.disabled = folk.visit !== null;
+      b.addEventListener('click', () => {
+        this.ctrl.commandOrExplain({ type: 'answerDoor', folkId: folk.id, otherId: other.id, welcome: o.welcome });
+        this.closeMenu();
+        this.update();
+      });
+      this.menuEl.append(b);
+    }
     this.showMenuAt(x, y);
   }
 
@@ -647,7 +802,10 @@ export class Hud {
   folkTooltip(other: Folk): string {
     const folk = this.ctrl.folk;
     const parts = [other.name];
-    if (other.visit) parts.push(t('social.visitor'));
+    const sv = other.visit?.service;
+    if (sv) parts.push(t(`service.${sv.kind}`));
+    else if (other.visit) parts.push(t('social.visitor'));
+    if (other.visit && !other.visit.admitted && !other.visit.leaving) parts.push(t('door.waiting'));
     if (other.id !== folk.id) {
       const rel = relationOf(this.ctrl.world, folk.id, other.id);
       parts.push(this.relSummary(rel));
@@ -666,6 +824,10 @@ export class Hud {
 
   /** Menu ao clicar em outra pessoa: conversas possíveis, por tipo. */
   openSocialMenu(x: number, y: number, other: Folk): void {
+    if (other.visit && !other.visit.admitted && !other.visit.leaving) {
+      this.openDoorMenu(x, y, other);
+      return;
+    }
     const folk = this.ctrl.folk;
     const world = this.ctrl.world;
     const rel = relationOf(world, folk.id, other.id);
@@ -1145,6 +1307,11 @@ export class Hud {
     this.panelEl.append(el('div', 'panel-sub', t('job.classifieds')));
     if (folk.business) {
       this.panelEl.append(el('div', 'panel-note', t('job.hasBusiness')));
+      return;
+    }
+    // bloco 2: as vagas saem no jornal do dia
+    if (!classifiedsOpen(world)) {
+      this.panelEl.append(el('div', 'panel-note', t('job.needPaper')));
       return;
     }
     const ads = el('div', 'ads');

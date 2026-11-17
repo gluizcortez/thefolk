@@ -96,7 +96,39 @@ import {
   finishTidy,
   wearTick,
 } from './upkeep';
-import { BILL_INTERVAL } from './world';
+import { BILL_INTERVAL, isServiceNeighbor } from './world';
+import {
+  BAILIFF_HOUR,
+  GROCERIES,
+  MAID,
+  PAPER_HOUR,
+  TAKEOUT,
+  besideTiles,
+  buyAtFair,
+  consumeFor,
+  creditSeizure,
+  deliverPaper,
+  doorTaken,
+  finishMaid,
+  freshPaper,
+  frontDoor,
+  interactionReady,
+  makeBill,
+  orderProblem,
+  payBills,
+  placeOrder,
+  providerOf,
+  readPaper,
+  repairBill,
+  ringWait,
+  ringing,
+  seizableBills,
+  seizeTarget,
+  serviceNeighbor,
+  serviceTask,
+  stockPantry,
+} from './services';
+import type { ServiceKind, ServiceOrder, ServiceVisit } from './types';
 
 /** Por que o último comando foi recusado (para a interface explicar). */
 export type CommandProblem =
@@ -123,7 +155,13 @@ export type CommandProblem =
   | 'offerGone'
   | 'broken'
   | 'nothingToDo'
-  | 'noMess';
+  | 'noMess'
+  | 'noFood'
+  | 'noBills'
+  | 'closed'
+  | 'already'
+  | 'atDoor'
+  | 'notAtDoor';
 
 /** Resultado de uma conversa, para a tela mostrar o que mudou (não vai no save). */
 export interface SocialOutcome {
@@ -172,7 +210,17 @@ const COLLAPSE_MINUTES = 150;
 const UNDO_LIMIT = 40;
 const COLLAPSE_ENERGY_PER_MINUTE = 0.3;
 
-type ActionSeed = Pick<Action, 'kind' | 'objectId' | 'interactionId' | 'target' | 'otherId' | 'socialId' | 'messId'>;
+type ActionSeed = Pick<
+  Action,
+  'kind' | 'objectId' | 'interactionId' | 'target' | 'otherId' | 'socialId' | 'messId' | 'serviceId' | 'welcome'
+>;
+
+/** minutos de conversa na porta antes de decidir */
+const DOOR_MINUTES = 3;
+/** quantas coisas o oficial de penhora leva numa visita, no máximo */
+const MAX_SEIZE = 8;
+/** quanto tempo um prestador de serviço pode ficar no lote */
+const SERVICE_STAY = 8 * 60;
 
 /** treino de Capricho enquanto recolhe bagunça */
 const TIDY_GAIN = { skill: { id: TIDINESS, xpPerMinute: 0.8 } } as InteractionDef;
@@ -279,10 +327,13 @@ export class Sim {
         const obj = this.findObject(cmd.objectId);
         const def = obj && this.defOf(obj);
         const it = def?.interactions.find((i) => i.id === cmd.interactionId);
-        // convites passam pelo comando 'invite', que diz quem convidar
-        if (!folk || !obj || !def || !it || it.special || it.hidden) return false;
+        // convites e serviços passam pelos comandos 'invite' e 'callService'
+        if (!folk || !obj || !def || !it || it.special === 'invite' || it.special === 'services' || it.hidden) return false;
         if (folk.visit && (it.residentOnly || (it.cost ?? 0) > 0 || it.care)) return this.fail('visitor');
         if (!interactionOpen(obj, it)) return this.fail(it.care ? 'nothingToDo' : 'broken');
+        if (!interactionReady(this.world, it)) {
+          return this.fail(it.special === 'payBills' ? 'noBills' : it.special === 'fair' ? 'closed' : 'noFood');
+        }
         if (it.task && !taskFits(this.catalog, folk, it.task, def.id)) {
           return this.fail(it.task === 'gig' ? 'noGig' : 'noBusiness');
         }
@@ -299,6 +350,22 @@ export class Sim {
         if (!this.world.mess.some((m) => m.id === cmd.messId)) return this.fail('noMess');
         return this.enqueuePlayer(folk, { kind: 'tidy', messId: cmd.messId });
       }
+      case 'callService':
+        return this.callService(cmd.folkId, cmd.service);
+      case 'dismissService': {
+        if (!this.world.household.maid) return this.fail('nothingToDo');
+        this.world.household.maid = false;
+        this.log('log.maidDismissed');
+        return true;
+      }
+      case 'answerDoor': {
+        const folk = this.findFolk(cmd.folkId);
+        const other = this.findFolk(cmd.otherId);
+        if (!folk || !other) return false;
+        if (folk.visit) return this.fail('visitor');
+        if (!other.visit || other.visit.admitted || other.visit.leaving) return this.fail('notAtDoor');
+        return this.enqueuePlayer(folk, { kind: 'door', otherId: other.id, welcome: cmd.welcome });
+      }
       case 'queueGoto': {
         const folk = this.findFolk(cmd.folkId);
         if (!folk || !this.nav.isFree(cmd.x, cmd.y)) return false;
@@ -310,6 +377,7 @@ export class Sim {
         const def = this.catalog.socials[cmd.socialId];
         if (!folk || !other || !def || folk === other) return false;
         if (other.away) return this.fail('away');
+        if (other.visit && !other.visit.admitted) return this.fail('atDoor');
         if (!onLot(other) || !socialAllowed(this.world, this.catalog, def, folk, other)) return this.fail('socialNotNow');
         if (def.special === 'moveIn' && this.residents().length >= MAX_RESIDENTS) return this.fail('houseFull');
         return this.enqueuePlayer(folk, { kind: 'social', otherId: other.id, socialId: def.id });
@@ -475,6 +543,12 @@ export class Sim {
     if (!obj || !def) return false;
     if (objectBusy(this.world, objectId)) return this.fail('inUse');
     this.world.household.funds += sellValue(obj, def);
+    this.removeObject(objectId);
+    return true;
+  }
+
+  /** Tira o objeto do lote (venda ou penhora) e de todas as filas. */
+  private removeObject(objectId: number): void {
     this.world.objects = this.world.objects.filter((o) => o.id !== objectId);
     for (const folk of this.world.folks) {
       const idx = folk.queue.findIndex((a) => a.objectId === objectId);
@@ -482,7 +556,6 @@ export class Sim {
       if (idx === 0) folk.path = [];
     }
     this.replanAll();
-    return true;
   }
 
   /** Objetos mudaram: refaz a navegação e manda quem anda replanejar. */
@@ -536,6 +609,7 @@ export class Sim {
     world.tick++;
     this.stepBills();
     const minute = world.tick % MINUTES_PER_DAY;
+    this.stepServices(minute);
     if (minute === COOL_HOUR * 60) {
       coolRelations(world);
       // fofoca anda pela vizinhança; namoros apagados terminam
@@ -576,14 +650,101 @@ export class Sim {
 
   // ---------- contas ----------
 
+  /** As contas chegam pelo correio; quem paga é a casa, na caixa de correio. */
   private stepBills(): void {
     const house = this.world.household;
     if (this.world.tick < house.nextBills) return;
     const amount = billAmount(this.world, this.catalog);
-    house.funds -= amount;
+    const bill = makeBill(this.world, this.catalog, amount);
+    house.bills.push(bill);
     house.lastBill = amount;
     house.nextBills += BILL_INTERVAL;
-    this.log(house.funds < 0 ? 'log.billsDebt' : 'log.bills', { amount: formatMoney(amount) });
+    this.log('log.billArrived', { amount: formatMoney(amount), day: Math.floor(bill.due / MINUTES_PER_DAY) + 1 });
+  }
+
+  // ---------- bloco 2: jornal, pedidos, faxineira e penhora ----------
+
+  private stepServices(minute: number): void {
+    const world = this.world;
+    const house = world.household;
+    if (minute === PAPER_HOUR * 60) deliverPaper(world);
+    const anyone = this.residents().length > 0;
+    if (minute === MAID.hour * 60 && house.maid && anyone) this.spawnService('maid', null, MAID.fee);
+    if (minute === BAILIFF_HOUR * 60 && anyone && seizableBills(world).length > 0) {
+      if (this.spawnService('bailiff', null, 0)) this.log('log.bailiffComing');
+    }
+    for (const order of house.orders) {
+      if (order.at > world.tick) continue;
+      const kind = providerOf(order.kind);
+      const n = serviceNeighbor(world, kind);
+      if (!n) {
+        // bairro sem prestador cadastrado: a entrega chega sem ninguém tocar
+        if (order.kind === 'groceries') stockPantry(world, this.catalog, GROCERIES.portions);
+        else if (order.kind === 'takeout') {
+          house.funds -= order.price;
+          house.takeout += TAKEOUT.portions;
+        }
+        order.at = -1;
+        continue;
+      }
+      if (this.findFolk(n.id)) {
+        order.at = world.tick + 10; // ainda está em outra entrega aqui: vem depois
+        continue;
+      }
+      let fee = order.price;
+      // comida pronta atrasada sai pela metade
+      if (order.kind === 'takeout' && world.tick > order.promised) fee = Math.round(fee / 2);
+      this.spawnService(kind, order.kind, fee);
+      order.at = -1;
+    }
+    house.orders = house.orders.filter((o) => o.at >= 0);
+  }
+
+  /** Um prestador de serviço sai de casa e vem para o lote. */
+  private spawnService(kind: ServiceKind, order: ServiceOrder | null, fee: number): boolean {
+    const n = serviceNeighbor(this.world, kind);
+    if (!n || this.findFolk(n.id)) return false;
+    this.spawnVisitor(n, this.world.tick + SERVICE_STAY, 0, {
+      kind,
+      order,
+      fee,
+      started: -1,
+      done: 0,
+      target: 0,
+      blame: 0,
+    });
+    return true;
+  }
+
+  /** Ligar para um serviço: vai até o telefone e pede. */
+  private callService(folkId: number, service: ServiceOrder): boolean {
+    const folk = this.findFolk(folkId);
+    if (!folk) return false;
+    if (folk.visit) return this.fail('visitor');
+    const problem = orderProblem(this.world, service);
+    if (problem) return this.fail(problem);
+    const phone = this.nearestSpecial(folk, 'services');
+    if (!phone) return this.fail('noPhone');
+    return this.enqueuePlayer(folk, { kind: 'use', objectId: phone.obj.id, interactionId: phone.it.id, serviceId: service });
+  }
+
+  /** O objeto mais perto com uma interação especial (telefone, caixa de correio). */
+  private nearestSpecial(folk: Folk, special: NonNullable<InteractionDef['special']>) {
+    let best: { obj: WorldObject; it: InteractionDef; d: number } | null = null;
+    for (const obj of this.world.objects) {
+      const it = this.defOf(obj)?.interactions.find((i) => i.special === special);
+      if (!it || obj.state?.broken) continue;
+      const d = Math.abs(obj.x - folk.x) + Math.abs(obj.y - folk.y);
+      if (!best || d < best.d) best = { obj, it, d };
+    }
+    return best;
+  }
+
+  /** Fim de uma interação especial do bloco 2 (telefone, contas, feira). */
+  private resolveHouseSpecial(folk: Folk, it: InteractionDef, action: Action): void {
+    if (it.special === 'services' && action.serviceId) placeOrder(this.world, this.logger, folk, action.serviceId);
+    else if (it.special === 'payBills') payBills(this.world, this.logger, folk);
+    else if (it.special === 'fair') buyAtFair(this.world, this.catalog, this.logger, folk);
   }
 
   // ---------- trabalho ----------
@@ -770,8 +931,22 @@ export class Sim {
     const using = current?.phase === 'using' ? this.interactionOf(current) : undefined;
     decayNeeds(this.world, this.catalog, folk, using?.decayScale ?? 1);
 
+    const v = folk.visit;
+    if (v?.service) {
+      // quem está trabalhando não para por fome nem sono: veio para o serviço
+      for (const id of NEED_IDS) folk.needs[id] = Math.max(folk.needs[id], 70);
+    }
     this.checkFailures(folk);
     if (folk.collapsed > 0) return;
+
+    if (v && !v.leaving && !v.admitted) {
+      this.stepDoorside(folk);
+      return;
+    }
+    if (v?.service && !v.leaving) {
+      this.stepWorker(folk);
+      return;
+    }
 
     if (folk.queue.length === 0) {
       folk.idleTicks++;
@@ -802,8 +977,9 @@ export class Sim {
   }
 
   private pickAutonomous(folk: Folk): void {
-    const choice = chooseAutonomous(this.world, this.catalog, folk, this.nav);
     folk.idleTicks = 0;
+    if (this.answerIfRinging(folk)) return;
+    const choice = chooseAutonomous(this.world, this.catalog, folk, this.nav);
     if (!choice) return;
     if (choice.socialId !== undefined) {
       folk.queue.push(this.makeAction({ kind: 'social', otherId: choice.otherId, socialId: choice.socialId }, 'auto'));
@@ -814,7 +990,10 @@ export class Sim {
       return;
     }
     folk.queue.push(
-      this.makeAction({ kind: 'use', objectId: choice.objectId, interactionId: choice.interactionId }, 'auto'),
+      this.makeAction(
+        { kind: 'use', objectId: choice.objectId, interactionId: choice.interactionId, serviceId: choice.serviceId },
+        'auto',
+      ),
     );
   }
 
@@ -852,6 +1031,10 @@ export class Sim {
     }
     if (action.kind === 'tidy') {
       this.processTidy(folk, action);
+      return;
+    }
+    if (action.kind === 'door') {
+      this.processDoor(folk, action);
       return;
     }
 
@@ -908,6 +1091,12 @@ export class Sim {
         this.finish(folk);
         return;
       }
+      if (it && !interactionReady(this.world, it)) {
+        // a comida acabou (ou as contas já foram pagas) enquanto vinha
+        if (it.portions || it.takeout) this.log('log.noFood', { name: folk.name });
+        this.finish(folk);
+        return;
+      }
       const cost = it?.cost ?? 0;
       if (cost > 0) {
         if (this.world.household.funds < cost) {
@@ -917,6 +1106,7 @@ export class Sim {
         }
         this.world.household.funds -= cost;
       }
+      if (it) consumeFor(this.world, it);
       action.phase = 'using';
       if (obj) action.slot = this.freeSlot(obj.id, folk);
       this.faceObject(folk, action);
@@ -959,6 +1149,7 @@ export class Sim {
       const full = it.until !== undefined && folk.needs[it.until] >= NEED_MAX;
       if (action.elapsed >= it.duration || full) {
         if (it.special === 'invite' && action.otherId !== undefined) this.resolveInvite(folk, action.otherId);
+        else if (it.special) this.resolveHouseSpecial(folk, it, action);
         let next: Chain = null;
         if (used && usedDef) {
           next = it.care ? afterCare(used, it) : afterUse(this.world, this.catalog, this.logger, folk, used, usedDef, it);
@@ -1032,10 +1223,14 @@ export class Sim {
       if (mess.x !== folk.x || mess.y !== folk.y) folk.facing = { x: mess.x - folk.x, y: mess.y - folk.y };
       return;
     }
-    if (mess.kind !== 'plate') folk.needs.hygiene = Math.max(0, folk.needs.hygiene - 0.08);
-    this.trainCare(folk, TIDY_GAIN);
+    if (mess.kind !== 'plate' && mess.kind !== 'paper') folk.needs.hygiene = Math.max(0, folk.needs.hygiene - 0.08);
+    if (mess.kind !== 'paper') this.trainCare(folk, TIDY_GAIN);
     action.elapsed++;
     if (action.elapsed < tidyMinutes(mess.kind, folk)) return;
+    // jornal do dia: quem mora lê as notícias e os classificados
+    if (freshPaper(this.world, mess) && !folk.visit) readPaper(this.world, this.catalog, this.logger, folk);
+    const sv = folk.visit?.service;
+    if (sv && mess.by) sv.blame = mess.by;
     const next = finishTidy(this.world, this.catalog, this.logger, folk, mess);
     this.finish(folk);
     this.chain(folk, next, action.source);
@@ -1043,6 +1238,12 @@ export class Sim {
 
   /** Um folk autônomo larga o que faz se outra necessidade ficou crítica. */
   private maybeAbandon(folk: Folk, it: InteractionDef): void {
+    // a campainha tocou e ninguém foi: larga o que faz (menos dormir)
+    if (!folk.visit && it.pose !== 'lie' && this.unansweredBell(folk, 3)) {
+      this.finish(folk);
+      folk.idleTicks = IDLE_BEFORE_AUTO;
+      return;
+    }
     for (const id of NEED_IDS) {
       if (id === 'ambience') continue;
       if (folk.needs[id] < CRITICAL_NEED && (it.effects[id] ?? 0) <= 0) {
@@ -1317,6 +1518,238 @@ export class Sim {
     return this.world.neighbors.find((n) => n.id === folk.id)?.career?.id ?? null;
   }
 
+  // ---------- campainha ----------
+
+  /** Visitante do lado de fora: anda até a porta, toca e espera alguém atender. */
+  private stepDoorside(folk: Folk): void {
+    const v = folk.visit!;
+    if (folk.queue.length > 0) {
+      this.processAction(folk);
+      return;
+    }
+    const door = frontDoor(this.world, this.catalog);
+    if (v.rang < 0) {
+      const there = folk.x === door.x && folk.y === door.y;
+      if (!there && !folk.path.length) {
+        const path = findPath(this.nav, folk, door);
+        if (path && path.length > 0 && folk.idleTicks < 3) {
+          folk.idleTicks++;
+          folk.queue.push(this.makeAction({ kind: 'goto', target: door }, 'auto'));
+          return;
+        }
+      }
+      v.rang = this.world.tick;
+      folk.idleTicks = 0;
+      folk.facing = { x: 0, y: -1 };
+      this.log(v.service ? `log.ring.${v.service.kind}` : 'log.ring', { name: folk.name });
+      return;
+    }
+    const waited = this.world.tick - v.rang;
+    const coming = doorTaken(this.world, folk.id);
+    if (waited > ringWait(folk) + (coming ? 30 : 0)) this.noAnswer(folk);
+  }
+
+  /** Ninguém atendeu: a visita vai embora chateada, a entrega fica na porta. */
+  private noAnswer(folk: Folk): void {
+    const v = folk.visit!;
+    const sv = v.service;
+    if (!sv) {
+      for (const r of this.residents()) {
+        if (r.away) continue;
+        applyDelta(this.world, this.catalog, folk, r, { friendship: -3 });
+        addMemory(this.world, this.catalog, folk.id, r.id, 'leftAtDoor');
+      }
+      this.log('log.noAnswer', { name: folk.name });
+      this.startLeaving(folk);
+      return;
+    }
+    if (sv.kind === 'courier') {
+      this.deliver(folk, null);
+      return;
+    }
+    // faxineira e técnico têm a chave: entram sozinhos
+    v.admitted = true;
+    sv.started = this.world.tick;
+    this.log('log.letSelfIn', { name: folk.name });
+  }
+
+  /** Um morador vai atender a porta, se alguém tocou (devolve true se foi). */
+  private answerIfRinging(folk: Folk): boolean {
+    if (folk.visit) return false;
+    const caller = ringing(this.world).find((v) => !doorTaken(this.world, v.id, folk));
+    if (!caller) return false;
+    if (!findPathToAny(this.nav, folk, talkTiles(this.world, this.nav, caller, folk))) return false;
+    const rel = relationOf(this.world, folk.id, caller.id);
+    const late = clockOf(this.world.tick).hour >= 22;
+    const welcome = !!caller.visit?.service || ((rel?.friendship ?? 0) > -30 && !late);
+    folk.queue.push(this.makeAction({ kind: 'door', otherId: caller.id, welcome }, 'auto'));
+    return true;
+  }
+
+  /** Tem alguém tocando há `minutes` minutos sem ninguém indo atender? */
+  private unansweredBell(folk: Folk, minutes: number): boolean {
+    return ringing(this.world).some((v) => this.world.tick - v.visit!.rang >= minutes && !doorTaken(this.world, v.id, folk));
+  }
+
+  /** Atender a porta: vai até quem tocou, cumprimenta e decide. */
+  private processDoor(folk: Folk, action: Action): void {
+    const other = action.otherId !== undefined ? this.findFolk(action.otherId) : undefined;
+    if (!other?.visit || other.visit.admitted || other.visit.leaving) {
+      this.finish(folk);
+      return;
+    }
+    if (action.phase === 'queued') {
+      if (adjacent(this.world, folk, other)) {
+        action.phase = 'using';
+        action.elapsed = 0;
+      } else {
+        const path = findPathToAny(this.nav, folk, talkTiles(this.world, this.nav, other, folk));
+        if (!path) {
+          this.log('log.cantReach', { name: folk.name, other: other.name });
+          this.finish(folk);
+          return;
+        }
+        folk.path = path;
+        action.phase = 'walking';
+      }
+    }
+    if (action.phase === 'walking') {
+      if (this.stepAlong(folk, action) !== 'arrived') return;
+      if (!adjacent(this.world, folk, other)) {
+        action.phase = 'queued';
+        return;
+      }
+      action.phase = 'using';
+      action.elapsed = 0;
+    }
+    this.faceEachOther(folk, other);
+    other.facing = { x: Math.sign(folk.x - other.x), y: Math.sign(folk.y - other.y) };
+    action.elapsed++;
+    if (action.elapsed < DOOR_MINUTES) return;
+    this.finish(folk);
+    this.resolveDoor(folk, other, action.welcome !== false);
+  }
+
+  private resolveDoor(host: Folk, guest: Folk, welcome: boolean): void {
+    const v = guest.visit!;
+    const sv = v.service;
+    const names = { name: host.name, other: guest.name };
+    ensureRelation(this.world, host.id, guest.id);
+    ensureRelation(this.world, guest.id, host.id);
+    touch(this.world, host.id, guest.id);
+    if (sv?.kind === 'courier') {
+      this.deliver(guest, host);
+      return;
+    }
+    if (!welcome) {
+      if (!sv) {
+        applyDelta(this.world, this.catalog, guest, host, { friendship: -5 });
+        addMemory(this.world, this.catalog, guest.id, host.id, 'turnedAway');
+      }
+      this.log(sv ? 'log.serviceSentAway' : 'log.sentAway', names);
+      this.startLeaving(guest);
+      return;
+    }
+    v.admitted = true;
+    if (sv) {
+      sv.started = this.world.tick;
+      this.log('log.letIn', names);
+      return;
+    }
+    applyDelta(this.world, this.catalog, guest, host, { friendship: 2 });
+    applyDelta(this.world, this.catalog, host, guest, { friendship: 1 });
+    this.log('log.welcomed', names);
+  }
+
+  /** O entregador entrega: mercado vai para a despensa, comida pronta é paga na hora. */
+  private deliver(courier: Folk, host: Folk | null): void {
+    const sv = courier.visit!.service!;
+    const house = this.world.household;
+    const names = { name: courier.name, other: host?.name ?? '' };
+    if (sv.order === 'groceries') {
+      const lost = stockPantry(this.world, this.catalog, GROCERIES.portions);
+      this.log(host ? 'log.groceriesIn' : 'log.groceriesLeft', { ...names, portions: GROCERIES.portions - lost });
+    } else if (sv.order === 'takeout') {
+      house.funds -= sv.fee;
+      house.takeout += TAKEOUT.portions;
+      const late = sv.fee < TAKEOUT.price;
+      if (host) {
+        house.funds -= TAKEOUT.tip;
+        applyDelta(this.world, this.catalog, courier, host, { friendship: 3 });
+        addMemory(this.world, this.catalog, courier.id, host.id, 'goodTip');
+      }
+      const key = host ? (late ? 'log.takeoutLate' : 'log.takeoutIn') : 'log.takeoutLeft';
+      this.log(key, { ...names, price: formatMoney(sv.fee) });
+    }
+    this.startLeaving(courier);
+  }
+
+  /** Faxineira, técnico ou oficial de penhora trabalhando dentro do lote. */
+  private stepWorker(folk: Folk): void {
+    const sv = folk.visit!.service!;
+    if (folk.queue.length > 0) {
+      this.processAction(folk);
+      return;
+    }
+    if (sv.kind === 'bailiff') {
+      this.stepBailiff(folk);
+      return;
+    }
+    const tooLong = sv.kind === 'maid' && this.world.tick - sv.started >= MAID.hours * 60;
+    const task = tooLong ? null : serviceTask(this.world, this.catalog, folk, this.nav);
+    if (task) {
+      sv.done++;
+      if (task.messId !== undefined) folk.queue.push(this.makeAction({ kind: 'tidy', messId: task.messId }, 'auto'));
+      else folk.queue.push(this.makeAction({ kind: 'use', objectId: task.objectId, interactionId: task.interactionId }, 'auto'));
+      return;
+    }
+    if (sv.kind === 'maid') {
+      finishMaid(this.world, this.catalog, this.logger, folk);
+    } else if (sv.kind === 'repair') {
+      const fee = repairBill(sv, this.world.tick);
+      this.world.household.funds -= fee;
+      this.log('log.repairDone', { name: folk.name, fee: formatMoney(fee) });
+    }
+    this.startLeaving(folk);
+  }
+
+  /** O oficial anda até o objeto de mais valor e leva, até cobrir as contas vencidas. */
+  private stepBailiff(folk: Folk): void {
+    const world = this.world;
+    const sv = folk.visit!.service!;
+    if (sv.target) {
+      const obj = this.findObject(sv.target);
+      const def = obj && this.defOf(obj);
+      sv.target = 0;
+      if (obj && def && !objectBusy(world, obj.id)) {
+        const value = sellValue(obj, def);
+        this.removeObject(obj.id);
+        creditSeizure(world, value);
+        sv.done++;
+        this.log('log.seized', { name: folk.name, object: def.name, value: formatMoney(value) });
+      }
+    }
+    if (seizableBills(world).length === 0 || sv.done >= MAX_SEIZE) {
+      this.log(sv.done > 0 ? 'log.bailiffDone' : 'log.bailiffEmpty', { name: folk.name });
+      if (sv.done > 0) {
+        const r = this.residents()[0];
+        if (r) createNews(world, this.catalog, this.logger, 'repossessed', r.id, 0);
+      }
+      this.startLeaving(folk);
+      return;
+    }
+    const next = seizeTarget(world, this.catalog, this.nav, folk);
+    const path = next && findPathToAny(this.nav, folk, besideTiles(world, this.catalog, this.nav, next));
+    if (!next || !path) {
+      this.log('log.bailiffEmpty', { name: folk.name });
+      this.startLeaving(folk);
+      return;
+    }
+    sv.target = next.id;
+    const end = path.length ? path[path.length - 1] : { x: folk.x, y: folk.y };
+    folk.queue.push(this.makeAction({ kind: 'goto', target: end }, 'auto'));
+  }
+
   // ---------- visitas ----------
 
   private invite(folkId: number, neighborId: number): boolean {
@@ -1392,6 +1825,7 @@ export class Sim {
       if (nextFloat(world) < DROPIN_CHANCE) {
         const pool = world.neighbors.filter(
           (n) =>
+            !isServiceNeighbor(n) &&
             !this.findFolk(n.id) &&
             !world.pendingVisits.some((v) => v.neighborId === n.id) &&
             this.residents().every(
@@ -1412,6 +1846,11 @@ export class Sim {
       const v = f.visit;
       if (!v || v.leaving) continue;
       const late = hour >= VISIT_CURFEW || hour < 6;
+      if (v.service) {
+        // quem trabalha tem a chave: só vai embora no fim do serviço (ou de madrugada)
+        if (late || world.tick >= v.until) this.startLeaving(f);
+        continue;
+      }
       const worn = f.needs.energy < 15 || f.needs.hunger < 12;
       const nobodyHome = this.residents().every((r) => r.away);
       if (world.tick >= v.until || late || worn || nobodyHome) this.startLeaving(f);
@@ -1422,7 +1861,7 @@ export class Sim {
     return this.world.folks.filter((f) => f.visit);
   }
 
-  private spawnVisitor(n: Neighbor, until: number, hostId: number): void {
+  private spawnVisitor(n: Neighbor, until: number, hostId: number, service: ServiceVisit | null = null): void {
     const world = this.world;
     const r = () => nextFloat(world);
     const folk: Folk = {
@@ -1446,8 +1885,8 @@ export class Sim {
       },
       queue: [],
       path: [],
-      autonomy: true,
-      idleTicks: IDLE_BEFORE_AUTO,
+      autonomy: service === null,
+      idleTicks: 0,
       collapsed: 0,
       look: { ...n.look },
       skills: { ...n.skills },
@@ -1455,7 +1894,8 @@ export class Sim {
       away: null,
       gig: null,
       business: null,
-      visit: { until, leaving: false, hostId },
+      // bloco 2: todo mundo toca a campainha, menos o oficial de penhora
+      visit: { until, leaving: false, hostId, admitted: service?.kind === 'bailiff', rang: -1, service },
     };
     world.folks.push(folk);
   }

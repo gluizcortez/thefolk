@@ -1,14 +1,15 @@
 import type { Nav } from './grid';
 import { useTiles } from './grid';
 import { NEED_MAX, clampNeed, moodOf, needWeight } from './needs';
-import { careAvailable, careDrive, interactionOpen, messScore, messTaken, messTiles, objectCareScore } from './upkeep';
+import { careAvailable, careDrive, messScore, messTaken, messTiles, objectCareScore } from './upkeep';
+import { canUse, houseOptions } from './services';
 import { skillBoost } from './skills';
 import { findPathToAny } from './pathfinding';
 import { nextFloat } from './rng';
 import { freshness, knows, relationOf } from './relations';
 import { grudge, pickGossip } from './gossip';
 import { committedElsewhere, guessAccept, onLot, socialAllowed, socialTaste, talkTiles, talkingWith } from './social';
-import type { Catalog, Folk, InteractionDef, Needs, SocialDef, World } from './types';
+import type { Catalog, Folk, InteractionDef, Needs, ServiceOrder, SocialDef, World } from './types';
 import { NEED_IDS } from './types';
 
 /** Uma opção da IA: usar um objeto ou puxar conversa com alguém. */
@@ -19,6 +20,8 @@ export interface Option {
   socialId?: string;
   /** bagunça para recolher */
   messId?: number;
+  /** serviço a pedir pelo telefone */
+  serviceId?: ServiceOrder;
   score: number;
   distance: number;
 }
@@ -120,6 +123,8 @@ export function scoreSocialOptions(world: World, catalog: Catalog, folk: Folk, n
   const options: Option[] = [];
   for (const other of world.folks) {
     if (other === folk || !onLot(other)) continue;
+    // quem ainda está na porta, esperando alguém atender, não conversa
+    if (other.visit && !other.visit.admitted) continue;
     const busyWith = talkingWith(other);
     if (busyWith !== 0 && busyWith !== folk.id) continue;
     const it = other.queue[0];
@@ -169,7 +174,7 @@ export function scoreOptions(world: World, catalog: Catalog, folk: Folk, nav: Na
         !it.special &&
         !it.care &&
         !it.hidden &&
-        interactionOpen(obj, it) &&
+        canUse(world, obj, it) &&
         (it.cost ?? 0) <= world.household.funds &&
         !(visitor && (it.residentOnly || (it.cost ?? 0) > 0)) &&
         (it.autoBelow === undefined || !it.until || folk.needs[it.until] < it.autoBelow),
@@ -196,6 +201,19 @@ export function scoreOptions(world: World, catalog: Catalog, folk: Folk, nav: Na
       const score = (messScore(mess, world.tick) * drive) / (1 + DISTANCE_COST * path.length);
       options.push({ messId: mess.id, score, distance: path.length });
     }
+  }
+  // bloco 2: comida acabando, feira de sábado, contas na caixa de correio
+  for (const h of houseOptions(world, catalog, folk)) {
+    const obj = world.objects.find((o) => o.id === h.objectId);
+    const def = obj && catalog.objects[obj.defId];
+    if (!obj || !def || objectUsers(world, obj.id, folk) >= (def.slots ?? 1)) continue;
+    if (world.folks.some((f) => f !== folk && f.queue.some((a) => a.objectId === obj.id && a.interactionId === h.interactionId))) {
+      continue; // alguém da casa já vai resolver
+    }
+    const path = findPathToAny(nav, folk, useTiles(world, nav, obj, def));
+    if (!path) continue;
+    const score = h.score / (1 + DISTANCE_COST * path.length);
+    options.push({ objectId: obj.id, interactionId: h.interactionId, serviceId: h.serviceId, score, distance: path.length });
   }
   options.push(...scoreSocialOptions(world, catalog, folk, nav));
   // ordenação estável e determinística

@@ -111,6 +111,21 @@ export function buildMess(kind: MessKind, seed: number, top: number): THREE.Grou
     fork.rotation.y = 0.5;
     g.add(plate, food, sauce, fork);
     if (top < 0.1) g.add(flat(stainTex(), 0.36, 0.36, 0.008 - top));
+  } else if (kind === 'paper') {
+    // jornal enrolado com elástico, do jeito que o entregador joga na calçada
+    const roll = cyl(0.06, 0.06, 0.34, 10, colorMat(0xe6e0cc), 0, 0);
+    roll.rotation.z = Math.PI / 2;
+    roll.position.y = 0.06;
+    const print = cyl(0.062, 0.062, 0.12, 10, colorMat(0x8f8a7c), 0, 0);
+    print.rotation.z = Math.PI / 2;
+    print.position.set(0.08, 0.06, 0);
+    const band = cyl(0.064, 0.064, 0.025, 10, colorMat(0xc9382f, { gloss: 0.6 }), 0, 0);
+    band.rotation.z = Math.PI / 2;
+    band.position.set(-0.07, 0.06, 0);
+    const paper = new THREE.Group();
+    paper.add(roll, print, band);
+    paper.rotation.y = rnd() * Math.PI;
+    g.add(paper);
   } else if (kind === 'puddle') {
     const p = flat(puddleTex(), 0.8, 0.62, 0.012);
     p.rotation.z = rnd() * Math.PI;

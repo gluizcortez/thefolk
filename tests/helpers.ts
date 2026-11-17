@@ -112,3 +112,13 @@ export function workSim(seed = 1): Sim {
   s.relations = (s.relations ?? []).filter((r) => r.a !== 'Lia Sacada' && r.b !== 'Lia Sacada');
   return new Sim(CATALOG, createWorld(s));
 }
+
+/**
+ * Bloco 2: visitas tocam a campainha e esperam. Nos testes que não são sobre
+ * a porta, roda até o vizinho aparecer e o deixa entrar direto.
+ */
+export function arriveAndAdmit(sim: Sim, id: number, maxTicks = 180): void {
+  for (let i = 0; i < maxTicks && !sim.findFolk(id); i++) sim.step();
+  const v = sim.findFolk(id)?.visit;
+  if (v) v.admitted = true;
+}

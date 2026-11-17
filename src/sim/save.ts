@@ -1,11 +1,13 @@
 import { relKey } from './relations';
-import type { Grid, Neighbor, World } from './types';
+import type { Catalog, Grid, Neighbor, World } from './types';
+import { footprint } from './grid';
+import { START_PANTRY } from './services';
 import type { NeighborSeed, RelationSeed } from './world';
 import { freshState } from './upkeep';
-import { firstBillAfter, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
+import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -13,6 +15,8 @@ export interface MigrationContext {
   neighbors: NeighborSeed[];
   /** quem já se conhece na vizinhança (só entra onde ainda não há relação) */
   ties?: RelationSeed[];
+  /** catálogo, para a migração achar lugar para objetos novos (caixa de correio) */
+  catalog?: Catalog;
 }
 
 /** Dinheiro e saída da casa para saves da fatia 1 (só existia a casa pronta). */
@@ -111,7 +115,89 @@ const migrations: Record<number, Migration> = {
     world.mess = [];
     return { ...save, world };
   },
+  // bloco 2: despensa, correio, contas em carta, pedidos por telefone,
+  // jornal e campainha. Quem já está de visita conta como já tendo entrado;
+  // os prestadores de serviço chegam como vizinhos novos; a caixa de correio
+  // aparece na calçada se houver lugar.
+  6: (save, ctx) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    const old = world.household as unknown as Record<string, unknown>;
+    world.household = { ...freshHousehold(START_PANTRY), ...(old as object), ...pickHousehold(old) } as World['household'];
+    world.folks = (world.folks ?? []).map((f) =>
+      f.visit ? { ...f, visit: { ...f.visit, admitted: true, rang: -1, service: null } } : f,
+    );
+    world.mess = [...(world.mess ?? [])];
+    addMissingNeighbors(world, ctx);
+    if (ctx.catalog) placeMailbox(world, ctx.catalog);
+    return { ...save, world: world as unknown as Obj };
+  },
 };
+
+/** Campos do bloco 2 que um save antigo não tem (os que já existem ficam). */
+function pickHousehold(old: Record<string, unknown>): Partial<World['household']> {
+  const fresh = freshHousehold(START_PANTRY);
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(fresh)) out[k] = old[k] ?? (fresh as Record<string, unknown>)[k];
+  return out as Partial<World['household']>;
+}
+
+/** Vizinhos da lista que o save ainda não conhece entram com ids novos. */
+function addMissingNeighbors(world: World, ctx: MigrationContext): void {
+  const neighbors: Neighbor[] = [...(world.neighbors ?? [])];
+  const missing = ctx.neighbors.filter(
+    (seed) => !neighbors.some((n) => n.name === seed.name) && !world.folks.some((f) => f.name === seed.name),
+  );
+  neighbors.push(...seedNeighbors(missing, world.nextId));
+  world.nextId += missing.length;
+  world.neighbors = neighbors;
+  world.relations = { ...(world.relations ?? {}) };
+  const nameToId = (name: string) => neighbors.find((n) => n.name === name)?.id;
+  const names = new Set(missing.map((m) => m.name));
+  const fresh = (ctx.ties ?? []).filter((t) => {
+    if (!names.has(t.a) && !names.has(t.b)) return false;
+    const a = nameToId(t.a);
+    const b = nameToId(t.b);
+    return a !== undefined && b !== undefined && !(relKey(a, b) in world.relations);
+  });
+  seedRelations(world, fresh);
+}
+
+/** Põe uma caixa de correio num tile livre perto da calçada (se couber). */
+function placeMailbox(world: World, catalog: Catalog): void {
+  if (!catalog.objects.mailbox || world.objects.some((o) => o.defId === 'mailbox')) return;
+  const taken = new Set<string>();
+  for (const o of world.objects) {
+    const def = catalog.objects[o.defId];
+    if (!def) continue;
+    for (const t of footprint(o, def)) taken.add(`${t.x},${t.y}`);
+  }
+  const { x: ex, y: ey } = world.exit;
+  const grid = world.grid;
+  for (let r = 2; r <= 4; r++) {
+    for (const [dx, dy] of [
+      [-r, 0],
+      [r, 0],
+      [-r, -1],
+      [r, -1],
+    ]) {
+      const x = ex + dx;
+      const y = ey + dy;
+      if (x < 0 || y < 0 || x >= grid.w || y >= grid.h || taken.has(`${x},${y}`)) continue;
+      if (catalog.floors[grid.floor[y * grid.w + x]]?.outdoor !== true) continue;
+      if (world.folks.some((f) => f.x === x && f.y === y)) continue;
+      world.objects.push({
+        id: world.nextId++,
+        defId: 'mailbox',
+        x,
+        y,
+        rot: 0,
+        paid: 0,
+        state: freshState(),
+      });
+      return;
+    }
+  }
+}
 
 /**
  * Onde a tela da fatia 3 desenhava janelas: paredes entre dentro e fora em

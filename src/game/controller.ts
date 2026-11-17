@@ -242,7 +242,7 @@ export class GameController {
       return false;
     }
     try {
-      this.replaceWorld(deserialize(raw, { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES }).world);
+      this.replaceWorld(deserialize(raw, { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES, catalog: CATALOG }).world);
       this.toast(t('toast.loaded'));
       return true;
     } catch {

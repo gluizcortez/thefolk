@@ -697,7 +697,7 @@ export class GameView {
       const stack = mess.filter((o) => o.x === m.x && o.y === m.y && o.id < m.id).length;
       const g = buildMess(m.kind, m.id, top);
       const jitter = ((m.id * 37) % 7) / 7 - 0.5;
-      g.position.set(m.x + 0.5 + jitter * 0.3, top + (m.kind === 'plate' ? stack * 0.03 : 0), m.y + 0.5 - jitter * 0.25);
+      g.position.set(m.x + 0.5 + jitter * 0.3, top + (m.kind === 'plate' ? stack * 0.03 : m.kind === 'paper' ? stack * 0.11 : 0), m.y + 0.5 - jitter * 0.25);
       g.userData.messId = m.id;
       this.messRoot.add(g);
     }

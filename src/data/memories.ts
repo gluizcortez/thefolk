@@ -32,6 +32,10 @@ const list: MemoryDef[] = [
   { id: 'cheeredUp', label: 'mem.cheeredUp', weight: 3 },
   // bloco 1: quem se incomoda com bagunça lembra de quem deixou
   { id: 'leftMess', label: 'mem.leftMess', weight: -1 },
+  // bloco 2: campainha
+  { id: 'leftAtDoor', label: 'mem.leftAtDoor', weight: -2 },
+  { id: 'turnedAway', label: 'mem.turnedAway', weight: -3 },
+  { id: 'goodTip', label: 'mem.goodTip', weight: 1 },
 ];
 
 export const MEMORIES: Record<string, MemoryDef> = Object.fromEntries(list.map((m) => [m.id, m]));
