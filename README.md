@@ -190,7 +190,8 @@ Decisões principais do núcleo:
 - O clique atravessa paredes: dá para acertar um móvel escondido atrás de uma
   parede inteira.
 - A casa não tem telhado nem segundo andar; as casas vizinhas são só cenário.
-- O Three.js deixa o pacote com cerca de 650 kB (173 kB comprimido).
+- O Three.js deixa o pacote com cerca de 660 kB (176 kB comprimido).
+- Os detalhes de cena (tapetes, itens sobre os móveis, carro, varal, poste, banco) são só decoração: não entram na simulação e não podem ser usados pelo folk.
 - O folk não tem horário: dorme quando a energia cai, de dia ou de noite.
 - Um save por navegador (um slot), sem exportar ou importar arquivo.
 - Sem som e sem música.

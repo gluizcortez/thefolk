@@ -499,11 +499,20 @@ const phone: FurnitureSpec = {
       // aparelho: base, disco e fone
       rbox(0.24, 0.08, 0.2, 0.035, red, 0, 0.705, 0),
       cyl(0.055, 0.055, 0.012, 12, colorMat(PAL.linen, { gloss: 0.5 }), 0, 0.785, 0.03),
+    );
+    const handset = group(
       rod([-0.13, 0.82, -0.05], [0.13, 0.82, -0.05], 0.022, red),
       ball(0.045, 0.04, 0.045, red, -0.13, 0.8, -0.05, 8),
       ball(0.045, 0.04, 0.045, red, 0.13, 0.8, -0.05, 8),
     );
-    return { group: g };
+    g.add(handset);
+    return {
+      group: g,
+      tick({ using }) {
+        // durante a ligação o fone está na mão do folk
+        handset.visible = !using;
+      },
+    };
   },
 };
 
@@ -591,6 +600,205 @@ const lamp: FurnitureSpec = {
   },
 };
 
+// ---------- miudezas ----------
+// Detalhes que dão vida a cada objeto. Ficam separados do modelo principal
+// para ser fácil acrescentar ou tirar sem mexer na forma do móvel.
+
+/** Peça de chão só decorativa: não bloqueia o clique no piso. */
+function decor<T extends THREE.Mesh>(mesh: T): T {
+  mesh.raycast = () => {};
+  mesh.userData.flat = true;
+  return mesh;
+}
+
+function floorRug(w: number, d: number, x: number, z: number, mat: THREE.Material): THREE.Mesh {
+  return decor(box(w, 0.014, d, mat, x, 0.006, z));
+}
+
+const DETAILS: Record<string, (g: THREE.Group, seed: number) => void> = {
+  fridge(g) {
+    g.add(
+      box(0.5, 0.02, 0.3, colorMat(0x3a3d42), 0, 1.8, -0.1),
+      rbox(0.2, 0.28, 0.08, 0.01, colorMat(0xe8b830), -0.2, 1.82, -0.1),
+      box(0.16, 0.1, 0.005, colorMat(0xc9382f), -0.2, 1.93, -0.058),
+      lathe(
+        [
+          [0.07, 0],
+          [0.11, 0.1],
+          [0.115, 0.12],
+        ],
+        10,
+        texMat('pine', { doubleSide: true }),
+        0.18,
+        1.82,
+        -0.12,
+      ),
+      ball(0.04, 0.04, 0.04, colorMat(0xe07a2c), 0.16, 1.93, -0.12, 8),
+      ball(0.04, 0.04, 0.04, colorMat(0xe8b830), 0.21, 1.94, -0.1, 8),
+    );
+  },
+  stove(g) {
+    const steel = texMat('chrome', { gloss: 1 });
+    g.add(
+      // coifa presa na parede
+      box(0.86, 0.1, 0.52, enamelMat(), 0, 1.7, -0.15),
+      box(0.86, 0.02, 0.52, steel, 0, 1.68, -0.15),
+      box(0.34, 0.8, 0.26, enamelMat(), 0, 1.8, -0.28),
+      box(0.2, 0.03, 0.01, colorMat(0x26262b), 0.2, 1.74, 0.112),
+      // pano de prato no puxador
+      box(0.16, 0.24, 0.02, colorMat(0xf4efdf), -0.12, 0.5, 0.3),
+      box(0.16, 0.03, 0.022, colorMat(0xc9382f), -0.12, 0.54, 0.3),
+      box(0.16, 0.03, 0.022, colorMat(0xc9382f), -0.12, 0.62, 0.3),
+    );
+  },
+  counter(g) {
+    const steel = texMat('chrome', { gloss: 1 });
+    g.add(
+      // torradeira com duas fatias
+      rbox(0.2, 0.14, 0.12, 0.03, steel, -0.02, 0.92, -0.3),
+      box(0.07, 0.05, 0.015, colorMat(0xc98a4a), -0.06, 1.04, -0.3),
+      box(0.07, 0.05, 0.015, colorMat(0xc98a4a), 0.03, 1.04, -0.3),
+      box(0.02, 0.03, 0.02, colorMat(0x26262b), 0.09, 0.97, -0.3),
+      // cepo de facas
+      rbox(0.09, 0.16, 0.1, 0.015, texMat('walnut'), 0.4, 0.92, -0.32),
+    );
+    for (let i = 0; i < 3; i++) g.add(rod([0.375 + i * 0.025, 1.07, -0.32], [0.375 + i * 0.025, 1.13, -0.34], 0.008, colorMat(0x26262b), 6));
+  },
+  dinette(g) {
+    const mat = colorMat(0xd9a441);
+    for (const sx of [-1, 1]) {
+      const m = box(0.3, 0.004, 0.36, mat, sx * 0.32, 0.761, 0);
+      g.add(m, rod([sx * 0.45, 0.768, -0.12], [sx * 0.45, 0.768, 0.1], 0.006, texMat('chrome', { gloss: 1 }), 6));
+    }
+    g.add(
+      cyl(0.018, 0.02, 0.06, 8, colorMat(0xf4f2ea, { gloss: 0.8 }), 0.06, 0.76, 0.2),
+      cyl(0.018, 0.02, 0.06, 8, colorMat(0x3a3d42, { gloss: 0.8 }), 0.11, 0.76, 0.22),
+      box(0.09, 0.07, 0.03, texMat('chrome', { gloss: 1 }), -0.1, 0.76, 0.22),
+      box(0.08, 0.075, 0.012, colorMat(0xf4efdf), -0.1, 0.765, 0.22),
+    );
+  },
+  bed(g) {
+    const brass = colorMat(PAL.brass, { gloss: 0.9 });
+    g.add(
+      ball(0.045, 0.045, 0.045, brass, -0.46, 1.08, -0.95, 10),
+      ball(0.045, 0.045, 0.045, brass, 0.46, 1.08, -0.95, 10),
+      ball(0.04, 0.04, 0.04, brass, -0.46, 0.55, 0.95, 10),
+      ball(0.04, 0.04, 0.04, brass, 0.46, 0.55, 0.95, 10),
+      // saia da cama e tapetinho ao lado
+      box(0.9, 0.14, 1.86, texMat('fabric', { color: 0xc9541f }), 0, 0.02, 0),
+      floorRug(0.62, 1.1, 0.84, 0.25, texMat('fabric', { color: 0xe3d2a6 })),
+      decor(box(0.5, 0.014, 0.98, texMat('fabric', { color: 0xc9541f }), 0.84, 0.012, 0.25)),
+    );
+  },
+  shower(g) {
+    const steel = texMat('chrome', { gloss: 1 });
+    g.add(
+      box(0.26, 0.015, 0.1, steel, 0.24, 1.15, -0.37),
+      cyl(0.03, 0.03, 0.14, 8, colorMat(0xd9a441, { gloss: 0.7 }), 0.16, 1.165, -0.37),
+      cyl(0.026, 0.026, 0.11, 8, colorMat(0x7d55ad, { gloss: 0.7 }), 0.24, 1.165, -0.37),
+      cyl(0.03, 0.02, 0.09, 8, colorMat(0x3f9455, { gloss: 0.7 }), 0.32, 1.165, -0.37),
+      rbox(0.07, 0.03, 0.05, 0.012, colorMat(0xf4f2ea, { gloss: 0.5 }), -0.3, 0.07, 0.3),
+    );
+  },
+  toilet(g) {
+    const steel = texMat('chrome', { gloss: 1 });
+    const roll = cyl(0.055, 0.055, 0.11, 12, colorMat(0xf7f5ee), 0.4, 0.5, 0.0);
+    roll.rotation.x = Math.PI / 2;
+    g.add(
+      roll,
+      rod([0.4, 0.555, -0.12], [0.4, 0.555, 0.12], 0.008, steel, 6),
+      rod([0.4, 0.555, -0.12], [0.4, 0.7, -0.12], 0.008, steel, 6),
+      box(0.004, 0.09, 0.1, colorMat(0xf7f5ee), 0.345, 0.42, 0),
+      // escova
+      cyl(0.05, 0.045, 0.14, 10, colorMat(0xf4f2ea, { gloss: 0.8 }), -0.36, 0, -0.3),
+      rod([-0.36, 0.14, -0.3], [-0.36, 0.42, -0.3], 0.01, colorMat(0xf4f2ea), 6),
+      floorRug(0.62, 0.36, 0, 0.62, texMat('fabric', { color: PAL.tileB })),
+    );
+  },
+  sink(g) {
+    const steel = texMat('chrome', { gloss: 1 });
+    g.add(
+      // toalha pendurada na lateral
+      rod([0.415, 0.72, -0.3], [0.415, 0.72, 0.02], 0.01, steel, 6),
+      box(0.02, 0.34, 0.22, texMat('fabric', { color: 0xe8b830 }), 0.425, 0.39, -0.14),
+      box(0.022, 0.03, 0.22, colorMat(0xf4efdf), 0.425, 0.44, -0.14),
+      // frasco de sabonete
+      cyl(0.026, 0.03, 0.09, 8, colorMat(0xf2a7b5, { gloss: 0.7 }), 0.2, 0.92, -0.33),
+      rod([0.2, 1.01, -0.33], [0.2, 1.05, -0.33], 0.008, steel, 6),
+      rod([0.2, 1.05, -0.33], [0.2, 1.05, -0.29], 0.006, steel, 6),
+    );
+  },
+  sofa(g) {
+    const btn = colorMat(shade(PAL.sofa, 0.6));
+    for (const sx of [-1, 1]) {
+      for (const dx of [-0.17, 0.17]) g.add(ball(0.018, 0.018, 0.012, btn, sx * 0.37 + dx, 0.66, -0.135, 6));
+      // debrum dos braços
+      g.add(rod([sx * 0.86, 0.665, -0.38], [sx * 0.86, 0.665, 0.4], 0.012, btn, 6));
+    }
+    const pillow = rbox(0.28, 0.28, 0.1, 0.05, texMat('fabric', { color: 0xc9382f }), 0.58, 0.44, -0.04);
+    pillow.rotation.set(-0.3, -0.35, -0.12);
+    g.add(pillow, floorRug(2.5, 1.56, 0, 1.3, texMat('rug')));
+  },
+  tv(g) {
+    const dark = colorMat(0x1b1c20, { gloss: 0.6 });
+    g.add(
+      // videocassete e fitas em cima do aparelho
+      rbox(0.4, 0.07, 0.26, 0.01, dark, -0.12, 1.2, -0.06),
+      box(0.14, 0.02, 0.005, colorMat(0x0f2a1e), -0.2, 1.225, 0.072),
+      box(0.03, 0.012, 0.006, colorMat(0x4fe08a, { emissive: 0x4fe08a, emissiveIntensity: 0.6 }), -0.02, 1.228, 0.072),
+      rbox(0.19, 0.03, 0.11, 0.006, colorMat(0x26262b), 0.24, 1.2, -0.06),
+      rbox(0.19, 0.03, 0.11, 0.006, colorMat(0xe9e4d6), 0.25, 1.23, -0.05),
+      // botões salientes
+      cyl(0.022, 0.022, 0.02, 10, colorMat(0x8d949a, { gloss: 0.8 }), 0.31, 0.83, 0.185),
+      cyl(0.016, 0.016, 0.02, 10, colorMat(0x8d949a, { gloss: 0.8 }), 0.31, 0.74, 0.185),
+    );
+    for (const m of g.children.slice(-2)) m.rotation.x = Math.PI / 2;
+  },
+  bookshelf(g) {
+    const art = texMat('painting:1');
+    const wood = colorMat(PAL.brass, { gloss: 0.6 });
+    const frame = box(0.2, 0.26, 0.025, [wood, wood, wood, wood, art, wood], -0.05, 2.07, -0.24);
+    frame.rotation.x = -0.15;
+    g.add(frame, cyl(0.06, 0.05, 0.1, 10, colorMat(PAL.clay), 0.82, 2.07, -0.27), ball(0.09, 0.08, 0.09, texMat('treeLeaves'), 0.82, 2.22, -0.27, 8));
+  },
+  phone(g) {
+    g.add(
+      box(0.11, 0.012, 0.15, colorMat(0xf4efdf), 0.2, 0.705, 0.08),
+      rod([0.16, 0.72, 0.14], [0.26, 0.72, 0.05], 0.006, colorMat(0xe8b830), 6),
+    );
+    // fio enrolado caindo da mesa
+    let prev: [number, number, number] = [-0.12, 0.72, 0.02];
+    for (let i = 1; i <= 8; i++) {
+      const next: [number, number, number] = [-0.14 - i * 0.02, 0.72 - i * 0.045 * (i > 2 ? 1 : 0.2), 0.02 + (i % 2 ? 0.025 : -0.025)];
+      g.add(rod(prev, next, 0.006, colorMat(shade(PAL.phone, 0.7)), 5));
+      prev = next;
+    }
+  },
+  speaker(g) {
+    const sleeves = [0xc9382f, 0xe8b830, 0x2f7fc4, 0xf4efdf];
+    sleeves.forEach((col, i) => {
+      const lp = box(0.32, 0.32, 0.012, colorMat(col), 0.32 + i * 0.012, 0, -0.1 + i * 0.02);
+      lp.rotation.set(-0.12, Math.PI / 2 - 0.2, 0);
+      g.add(lp);
+    });
+    g.add(
+      rbox(0.14, 0.02, 0.13, 0.004, colorMat(0xe9e4d6), 0.08, 1.19, 0),
+      rbox(0.14, 0.02, 0.13, 0.004, colorMat(0x7d55ad), 0.085, 1.21, 0.005),
+      cyl(0.02, 0.02, 0.015, 8, colorMat(0x8d949a, { gloss: 0.8 }), -0.14, 1.19, 0.1),
+    );
+  },
+  lamp(g) {
+    const brass = colorMat(PAL.brass, { gloss: 0.9 });
+    g.add(cyl(0.274, 0.274, 0.025, 16, colorMat(0xb08f4f), 0, 1.27, 0, true), rod([0.05, 1.3, 0.05], [0.05, 1.1, 0.05], 0.004, brass, 4), ball(0.012, 0.012, 0.012, brass, 0.05, 1.1, 0.05, 6));
+  },
+  plant(g, seed) {
+    // um regador ao lado de um dos vasos
+    if (seed % 2 === 0) return;
+    const tin = colorMat(0x5f8fa8, { gloss: 0.6 });
+    g.add(cyl(0.08, 0.09, 0.16, 10, tin, 0.3, 0, 0.26), rod([0.37, 0.08, 0.26], [0.5, 0.2, 0.26], 0.014, tin, 6), rod([0.24, 0.05, 0.26], [0.2, 0.16, 0.26], 0.01, tin, 6));
+  },
+};
+
 const fallback: FurnitureSpec = {
   build() {
     return { group: group(rbox(0.7, 0.5, 0.7, 0.04, colorMat(0xdccfb4))) };
@@ -621,6 +829,10 @@ export function furnitureSpec(art: string): FurnitureSpec {
 
 export function buildFurniture(art: string, seed: number): FurnitureModel {
   const model = furnitureSpec(art).build(seed);
+  DETAILS[art]?.(model.group, seed);
   setShadows(model.group);
+  model.group.traverse((o) => {
+    if (o.userData.flat) o.castShadow = false;
+  });
   return model;
 }

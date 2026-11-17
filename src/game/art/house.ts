@@ -149,14 +149,34 @@ export class House {
         tall.add(hinge);
         const sill = box(DOOR_W, 0.03, TH + 0.04, texMat('walnut'), 0, 0, 0);
         this.group.add(place(sill, north, x, y));
+        if (frontIn !== backIn) {
+          // porta da rua: capacho e luminária do lado de fora
+          const out = frontIn ? -1 : 1;
+          const mat = box(0.72, 0.02, 0.46, texMat('doormat'), 0, 0.03, out * 0.42);
+          mat.receiveShadow = true;
+          this.group.add(place(mat, north, x, y));
+          const glow = colorMat(0xfff0b8, { emissive: 0xffd98a, emissiveIntensity: 0.9 });
+          tall.add(
+            box(0.07, 0.05, 0.1, colorMat(0x26262b), 0.44, 1.92, out * (TH / 2 + 0.05)),
+            box(0.11, 0.17, 0.11, glow, 0.44, 1.74, out * (TH / 2 + 0.1)),
+            box(0.13, 0.03, 0.13, colorMat(0x26262b), 0.44, 1.91, out * (TH / 2 + 0.1)),
+          );
+        }
       } else {
         tall.add(wallPart(1, WALL_H, 0, 0, mats));
         low.add(wallPart(1, LOW_H, 0, 0, mats));
         const outer = frontIn !== backIn;
         if (outer && (x * 2 + y) % 3 === 0) {
+          const out = frontIn ? -1 : 1;
           tall.add(
             box(0.84, 1.26, TH + 0.08, [plaster, plaster, plaster, plaster, texMat(front.window, { gloss: 0.3 }), texMat(back.window, { gloss: 0.3 })], 0, 0.88, 0),
+            // peitoril por dentro e floreira por fora
+            box(0.94, 0.04, 0.12, plaster, 0, 0.86, -out * (TH / 2 + 0.05)),
+            box(0.86, 0.14, 0.16, texMat('walnut'), 0, 0.72, out * (TH / 2 + 0.09)),
           );
+          const blooms = new THREE.Mesh(new THREE.PlaneGeometry(0.86, 0.34), texMat('flowers', { alphaTest: 0.5, doubleSide: true }));
+          blooms.position.set(0, 1.0, out * (TH / 2 + 0.09));
+          tall.add(blooms);
         } else if ((x * 5 + y * 3 + (north ? 0 : 2)) % 4 === 0) {
           // quadro no lado de dentro, se não houver móvel encostado
           const sides: [boolean, number, number, number][] = [
@@ -166,9 +186,12 @@ export class House {
           for (const [inside, tx, ty, dir] of sides) {
             if (!inside || this.occupied.has(`${tx},${ty}`)) continue;
             const n = (x + y * 2) % 3;
-            const art = texMat(`painting:${n}`);
-            const wood = colorMat(0x4a3220);
-            const pic = box(0.66, 0.5, 0.05, [wood, wood, wood, wood, art, art], 0, 1.42, dir * (TH / 2 + 0.025));
+            // na cozinha vai um relógio no lugar do quadro
+            const isKitchen = this.grid.floor[ty * this.grid.w + tx] === 'kitchen';
+            const art = texMat(isKitchen ? 'clock' : `painting:${n}`);
+            const wood = colorMat(isKitchen ? 0xc9382f : 0x4a3220);
+            const size = isKitchen ? 0.36 : 0.66;
+            const pic = box(size, isKitchen ? 0.36 : 0.5, 0.05, [wood, wood, wood, wood, art, art], 0, isKitchen ? 1.7 : 1.42, dir * (TH / 2 + 0.025));
             tall.add(pic);
             break;
           }

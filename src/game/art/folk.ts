@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { ball, box, colorMat, cyl, loft, rbox, texMat } from './build';
+import { ball, box, colorMat, cyl, loft, rbox, rod, texMat } from './build';
 import type { Ring } from './build';
-import { PAL, SKIN, shade } from './palette';
+import { PAL, SHIRT, SKIN, shade } from './palette';
 import { faceTextureName, getTexture } from './textures';
 import type { Expression } from './textures';
 
@@ -256,6 +256,8 @@ export class FolkModel {
   private shinL = new THREE.Group();
   private shinR = new THREE.Group();
   private blob: THREE.Mesh;
+  private book = new THREE.Group();
+  private handset = new THREE.Group();
   private faceMat: THREE.MeshPhongMaterial;
   private faceKey = '';
   private pose = rest();
@@ -269,8 +271,12 @@ export class FolkModel {
     const shirtMat = texMat(`shirt:${look.shirt}`);
     const sleeve = texMat(`sleeve:${look.shirt}`);
     const pants = texMat(`pants:${look.pants}`);
+    const pelvis = texMat(`pelvis:${look.pants}`);
+    const collar = colorMat(shade(SHIRT[look.shirt % SHIRT.length], 1.3));
     const hairMat = texMat(`hair:${look.hair}`, { gloss: 0.25 });
     const shoe = colorMat(PAL.shoe, { gloss: 0.45 });
+    const sole = colorMat(0xd8d0bc);
+    const lace = colorMat(0xf4efdf);
     const SIDES = 12;
 
     // quadril, cinto e tronco
@@ -283,7 +289,7 @@ export class FolkModel {
           { y: 0.08, rx: 0.154, rz: 0.1 },
         ],
         SIDES,
-        pants,
+        pelvis,
       ),
       loft(
         [
@@ -313,6 +319,25 @@ export class FolkModel {
       ),
       cyl(0.044, 0.05, 0.09, 10, skin, 0, 0.5, 0),
     );
+    // gola da camisa: duas abas abertas sobre o peito
+    for (const sx of [-1, 1]) {
+      const flap = box(0.075, 0.016, 0.055, collar, sx * 0.043, 0.498, 0.052);
+      flap.rotation.set(0.5, sx * 0.35, sx * -0.45);
+      this.torso.add(flap);
+    }
+    // livro aberto, que só aparece durante a leitura
+    const cover = colorMat(0x8a2f2a);
+    const page = colorMat(0xf4efdf);
+    for (const sx of [-1, 1]) {
+      const half = new THREE.Group();
+      half.add(box(0.13, 0.012, 0.19, cover, sx * 0.065, 0, 0), box(0.12, 0.012, 0.18, page, sx * 0.064, 0.01, 0));
+      half.rotation.z = sx * 0.22;
+      this.book.add(half);
+    }
+    this.book.position.set(0, 0.2, 0.33);
+    this.book.rotation.x = 0.75;
+    this.book.visible = false;
+    this.torso.add(this.book);
 
     // cabeça: o rosto vai na textura; nariz, orelhas e cabelo são modelados
     this.faceMat = new THREE.MeshPhongMaterial({ map: null, specular: 0x1a1a1a, shininess: 14 });
@@ -340,6 +365,15 @@ export class FolkModel {
       // franja e volume dos lados
       this.head.add(ball(0.106, 0.052, 0.106, hairMat, 0, 0.236, 0, 10), ball(0.11, 0.095, 0.074, hairMat, 0, 0.138, -0.052, 10));
     }
+    // fone do telefone, encostado na orelha durante a ligação
+    const phoneRed = colorMat(PAL.phone, { gloss: 0.7 });
+    this.handset.add(
+      rod([0.112, 0.06, 0.05], [0.112, 0.19, 0.0], 0.016, phoneRed),
+      ball(0.026, 0.026, 0.026, phoneRed, 0.106, 0.06, 0.052, 8),
+      ball(0.026, 0.026, 0.026, phoneRed, 0.106, 0.19, 0.0, 8),
+    );
+    this.handset.visible = false;
+    this.head.add(this.handset);
     this.head.position.y = 0.56;
     this.torso.add(this.head);
 
@@ -368,7 +402,29 @@ export class FolkModel {
       arm.position.set(sx * 0.196, 0.42, 0);
       arm.add(loft(upperArm, 10, skin), loft(sleeveRings, 10, sleeve));
       fore.position.y = -UPPER_ARM;
-      fore.add(ball(0.04, 0.04, 0.042, skin, 0, 0, 0, 8), loft(forearm, 10, skin), ball(0.03, 0.052, 0.022, skin, 0, -FOREARM - 0.04, 0.004, 8));
+      fore.add(
+        ball(0.04, 0.04, 0.042, skin, 0, 0, 0, 8),
+        loft(forearm, 10, skin),
+        // mão: palma, dedos e polegar
+        ball(0.03, 0.04, 0.02, skin, 0, -FOREARM - 0.03, 0.004, 8),
+        ball(0.026, 0.03, 0.017, skin, 0, -FOREARM - 0.075, 0.012, 8),
+        ball(0.011, 0.026, 0.012, skin, sx * -0.026, -FOREARM - 0.035, 0.018, 6),
+      );
+      if (sx === -1) {
+        // relógio de pulso
+        fore.add(
+          loft(
+            [
+              { y: -FOREARM + 0.012, rx: 0.031, rz: 0.034 },
+              { y: -FOREARM + 0.034, rx: 0.032, rz: 0.035 },
+            ],
+            10,
+            colorMat(0x2a1d14),
+          ),
+          cyl(0.017, 0.017, 0.008, 10, colorMat(PAL.brass, { gloss: 0.9 }), -0.033, -FOREARM + 0.019, 0),
+        );
+        fore.children[fore.children.length - 1].rotation.z = Math.PI / 2;
+      }
       arm.add(fore);
       this.torso.add(arm);
     }
@@ -393,7 +449,14 @@ export class FolkModel {
       leg.position.set(sx * 0.082, 0, 0);
       leg.add(loft(thigh, 10, pants));
       shin.position.y = -THIGH;
-      shin.add(ball(0.058, 0.058, 0.062, pants, 0, 0, 0, 8), loft(calf, 10, pants), rbox(0.1, 0.085, 0.26, 0.036, shoe, 0, -SHIN - 0.07, 0.05));
+      shin.add(
+        ball(0.058, 0.058, 0.062, pants, 0, 0, 0, 8),
+        loft(calf, 10, pants),
+        // sapato: sola clara, cabedal escuro e cadarço
+        rbox(0.104, 0.03, 0.27, 0.012, sole, 0, -SHIN - 0.07, 0.05),
+        rbox(0.098, 0.07, 0.25, 0.034, shoe, 0, -SHIN - 0.05, 0.05),
+        box(0.045, 0.01, 0.07, lace, 0, -SHIN + 0.016, 0.085),
+      );
       leg.add(shin);
       this.hips.add(leg);
     }
@@ -466,6 +529,8 @@ export class FolkModel {
     this.shinL.rotation.x = p.kneeL;
     this.shinR.rotation.x = p.kneeR;
 
+    this.book.visible = f.anim === 'read';
+    this.handset.visible = f.anim === 'phone';
     const lying = f.anim === 'sleep' || f.anim === 'collapsed';
     this.blob.visible = f.anim !== 'sleep' && f.anim !== 'sit';
     this.blob.scale.setScalar(f.anim === 'collapsed' ? 1.9 : 1);

@@ -1063,8 +1063,12 @@ function face(skinIdx: number, hairIdx: number, expr: Expression, eyesClosed: bo
       const tilt = expr === 'sad' ? -1.5 : expr === 'happy' ? 0.5 : 0;
       line(c, ex - 4.2, ey - 5.5 + s * tilt, ex + 4.2, ey - 5.5 - s * tilt, shade(hair, 0.85), 1, 1.8);
     }
-    // sombra sob o nariz (o nariz mesmo é modelado)
+    // sombra sob o nariz (o nariz mesmo é modelado) e narinas
     oval(c, cx, ey + 8.5, 3.2, 1.3, shade(skin, 0.62), 0.7);
+    fill(c, shade(skin, 0.4), cx - 2, Math.round(ey + 8), 1, 1, 0.9);
+    fill(c, shade(skin, 0.4), cx + 1, Math.round(ey + 8), 1, 1, 0.9);
+    // lábio de baixo
+    oval(c, cx, ey + 16.2, 3.6, 1.4, 0xb5625a, 0.55);
     // boca
     const my = ey + 15;
     c.strokeStyle = css(0x8a352f);
@@ -1140,10 +1144,90 @@ function shirt(idx: number): Painter {
       fill(c, 0xf7f3ea, cx - 1, y, 2, 2);
       fill(c, 0x000000, cx - 1, y + 2, 2, 1, 0.3);
     }
+    // bolso no peito
+    c.strokeStyle = css(shade(base, 0.55), 0.9);
+    c.lineWidth = 1;
+    c.strokeRect(cx + 5.5, 17.5, 7, 8);
+    fill(c, shade(base, 1.3), cx + 6, 18, 6, 2, 0.8);
     vshade(c, w, h, 0.05, 0.22);
     fill(c, 0x000000, 0, h - 2, w, 2, 0.3);
   };
 }
+
+/** Quadril da calça: braguilha, bolsos da frente e de trás. */
+function pelvis(idx: number): Painter {
+  return (c, w, h, rnd) => {
+    pants(idx)(c, w, h, rnd);
+    const dark = shade(PANTS[idx % PANTS.length], 0.5);
+    line(c, w / 2 + 0.5, h * 0.25, w / 2 + 0.5, h, dark, 0.9);
+    line(c, w * 0.34, h * 0.3, w * 0.28, h * 0.62, dark, 0.9);
+    line(c, w * 0.66, h * 0.3, w * 0.72, h * 0.62, dark, 0.9);
+    c.strokeStyle = css(dark, 0.9);
+    c.strokeRect(w * 0.06 + 0.5, h * 0.35 + 0.5, 4, 5);
+    c.strokeRect(w * 0.94 - 4.5, h * 0.35 + 0.5, 4, 5);
+  };
+}
+
+/** Tapete da sala, com borda e losangos. */
+const rug: Painter = (c, w, h) => {
+  fill(c, 0x8a2f2a);
+  fill(c, 0xe3d2a6, 4, 4, w - 8, h - 8);
+  fill(c, 0x2c4a7a, 7, 7, w - 14, h - 14);
+  fill(c, 0x8a2f2a, 10, 10, w - 20, h - 20);
+  for (let x = 20; x < w - 12; x += 16) {
+    for (let y = 20; y < h - 12; y += 16) {
+      c.fillStyle = css((x / 16 + y / 16) % 2 ? 0xe3d2a6 : 0xd9a441);
+      c.beginPath();
+      c.moveTo(x, y - 6);
+      c.lineTo(x + 6, y);
+      c.lineTo(x, y + 6);
+      c.lineTo(x - 6, y);
+      c.fill();
+      fill(c, 0x2c4a7a, x - 1, y - 1, 2, 2);
+    }
+  }
+  for (let y = 1; y < h; y += 3) {
+    fill(c, 0xe3d2a6, 0, y, 3, 1);
+    fill(c, 0xe3d2a6, w - 3, y, 3, 1);
+  }
+};
+
+const doormat: Painter = (c, w, h, rnd) => {
+  fill(c, 0x8a6a3c);
+  speckle(c, w, h, rnd, 260, [0x6a4f2a, 0xa9854f, 0x5a4020], 0.8);
+  c.strokeStyle = css(0x3a2a16);
+  c.lineWidth = 2;
+  c.strokeRect(3, 3, w - 6, h - 6);
+};
+
+const clock: Painter = (c, w, h) => {
+  fill(c, 0xc9382f);
+  bevel(c, 0, 0, w, h, 0.4, 0.4);
+  disc(c, w / 2, h / 2, w * 0.4, 0x2a1d14);
+  disc(c, w / 2, h / 2, w * 0.36, 0xf4efdf);
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    fill(c, 0x2a1d14, Math.round(w / 2 + Math.cos(a) * w * 0.3 - 0.5), Math.round(h / 2 + Math.sin(a) * h * 0.3 - 0.5), 1, 1);
+  }
+  line(c, w / 2, h / 2, w / 2 + 5, h / 2 - 3, 0x2a1d14, 1, 1.5);
+  line(c, w / 2, h / 2, w / 2 - 2, h / 2 - 9, 0x2a1d14, 1, 1);
+  disc(c, w / 2, h / 2, 1.2, 0xc9382f);
+};
+
+const carGlass: Painter = (c, w, h) => {
+  const g = c.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, '#9fc4d6');
+  g.addColorStop(1, '#2f4a5c');
+  c.fillStyle = g;
+  c.fillRect(0, 0, w, h);
+  c.fillStyle = 'rgba(255,255,255,0.35)';
+  c.beginPath();
+  c.moveTo(2, h);
+  c.lineTo(10, 0);
+  c.lineTo(15, 0);
+  c.lineTo(7, h);
+  c.fill();
+};
 
 /** Manga curta: a mesma estampa da camisa, com a barra embaixo. */
 function sleeve(idx: number): Painter {
@@ -1249,6 +1333,10 @@ const SPECS: Record<string, Spec> = {
   'painting:0': { w: 64, h: 48, paint: painting(0), grain: 5 },
   'painting:1': { w: 64, h: 48, paint: painting(1), grain: 5 },
   'painting:2': { w: 64, h: 48, paint: painting(2), grain: 5 },
+  rug: { w: 128, h: 80, paint: rug, grain: 9 },
+  doormat: { w: 48, h: 32, paint: doormat, grain: 9 },
+  clock: { w: 32, h: 32, paint: clock, grain: 2 },
+  carGlass: { w: 32, h: 16, paint: carGlass, grain: 2 },
   blob: { w: 32, h: 32, paint: blob, grain: 0, smooth: true },
   zzz: { w: 32, h: 32, paint: zzz, grain: 0, smooth: true },
 };
@@ -1264,6 +1352,8 @@ function specFor(name: string): Spec | undefined {
       return { w: 64, h: 64, paint: shirt(n), grain: 7 };
     case 'sleeve':
       return { w: 32, h: 16, paint: sleeve(n), grain: 7 };
+    case 'pelvis':
+      return { w: 32, h: 32, paint: pelvis(n), grain: 7 };
     case 'pants':
       return { w: 32, h: 32, paint: pants(n), grain: 7 };
     case 'hair':

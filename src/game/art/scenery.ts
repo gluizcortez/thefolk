@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Grid } from '../../sim';
-import { box, colorMat, cyl, setShadows, texMat, tileUV } from './build';
+import { ball, box, colorMat, cyl, lathe, rbox, rod, setShadows, texMat, tileUV } from './build';
 import { PAL, seeded } from './palette';
 
 // Tudo que fica em volta do terreno e é só cenário: gramado, calçada, rua,
@@ -59,6 +59,161 @@ function flowerBed(x: number, z: number, len: number, alongX: boolean): THREE.Gr
     cross.rotation.y = alongX ? Math.PI / 2 : 0;
     g.add(cross);
   }
+  g.position.set(x, 0, z);
+  return g;
+}
+
+/** Carro estacionado na rua, com a frente para +x. */
+function car(x: number, z: number, color: number): THREE.Group {
+  const g = new THREE.Group();
+  const paint = colorMat(color, { gloss: 0.9 });
+  const steel = texMat('chrome', { gloss: 1 });
+  const glass = texMat('carGlass', { gloss: 0.9 });
+  const tire = colorMat(0x1b1b1e);
+  g.add(
+    rbox(4.1, 0.55, 1.7, 0.16, paint, 0, 0.3, 0),
+    rbox(2.1, 0.55, 1.5, 0.2, paint, -0.25, 0.8, 0),
+    box(1.5, 0.36, 1.52, [paint, paint, paint, paint, glass, glass], -0.25, 0.88, 0),
+    box(2.02, 0.36, 1.3, [glass, glass, paint, paint, paint, paint], -0.25, 0.88, 0),
+    rbox(0.1, 0.14, 1.74, 0.04, steel, 2.06, 0.34, 0),
+    rbox(0.1, 0.14, 1.74, 0.04, steel, -2.06, 0.34, 0),
+    box(0.02, 0.1, 0.5, colorMat(0xf4efdf), -2.07, 0.4, 0),
+  );
+  for (const sz of [-1, 1]) {
+    g.add(
+      ball(0.05, 0.1, 0.14, colorMat(0xfff3c0, { emissive: 0xfff3c0, emissiveIntensity: 0.3 }), 2.04, 0.62, sz * 0.58, 8),
+      ball(0.04, 0.08, 0.12, colorMat(0xc9382f, { gloss: 0.8 }), -2.04, 0.62, sz * 0.6, 8),
+      rod([-1.0, 0.72, sz * 0.86], [0.6, 0.72, sz * 0.86], 0.012, steel, 6),
+    );
+    for (const sx of [-1.25, 1.3]) {
+      const wheel = cyl(0.34, 0.34, 0.22, 14, tire, sx, 0, sz * 0.78);
+      wheel.rotation.x = Math.PI / 2;
+      wheel.position.y = 0.34;
+      const hub = cyl(0.18, 0.18, 0.02, 12, steel, sx, 0, sz * 0.9);
+      hub.rotation.x = Math.PI / 2;
+      hub.position.y = 0.34;
+      g.add(wheel, hub);
+    }
+  }
+  g.position.set(x, 0.02, z);
+  return g;
+}
+
+function streetLamp(x: number, z: number): THREE.Group {
+  const g = new THREE.Group();
+  const iron = colorMat(0x24332c, { gloss: 0.4 });
+  g.add(
+    lathe(
+      [
+        [0.16, 0],
+        [0.16, 0.06],
+        [0.08, 0.2],
+        [0.05, 0.5],
+      ],
+      10,
+      iron,
+    ),
+    rod([0, 0.4, 0], [0, 3.4, 0], 0.045, iron),
+    rod([0, 3.3, 0], [0, 3.45, 0.7], 0.03, iron),
+    box(0.2, 0.06, 0.36, iron, 0, 3.44, 0.7),
+    box(0.16, 0.08, 0.3, colorMat(0xfff0b8, { emissive: 0xffd98a, emissiveIntensity: 0.7 }), 0, 3.36, 0.7),
+  );
+  g.position.set(x, 0, z);
+  return g;
+}
+
+function trashCan(x: number, z: number): THREE.Group {
+  const g = new THREE.Group();
+  const tin = texMat('chrome', { color: 0x9aa3a8, gloss: 0.5 });
+  g.add(cyl(0.24, 0.2, 0.62, 12, tin), cyl(0.26, 0.26, 0.05, 12, tin, 0, 0.62, 0), ball(0.2, 0.08, 0.2, tin, 0, 0.68, 0, 10), rod([-0.06, 0.76, 0], [0.06, 0.76, 0], 0.012, colorMat(0x26262b), 6));
+  for (let y = 0.12; y < 0.6; y += 0.16) g.add(cyl(0.245 - (0.6 - y) * 0.06, 0.245 - (0.6 - y) * 0.06, 0.015, 12, colorMat(0x6c7377), 0, y, 0, true));
+  g.position.set(x, 0, z);
+  return g;
+}
+
+/** Banco de jardim de ripas, com a frente para +z. */
+function bench(x: number, z: number, turn: number): THREE.Group {
+  const g = new THREE.Group();
+  const wood = texMat('pine');
+  const iron = colorMat(0x24332c, { gloss: 0.4 });
+  for (let i = 0; i < 4; i++) g.add(box(1.5, 0.03, 0.09, wood, 0, 0.42, -0.15 + i * 0.105));
+  for (let i = 0; i < 3; i++) {
+    const slat = box(1.5, 0.09, 0.03, wood, 0, 0.56 + i * 0.12, -0.24 - i * 0.03);
+    g.add(slat);
+  }
+  for (const sx of [-0.68, 0.68]) {
+    g.add(rod([sx, 0, 0.18], [sx, 0.43, 0.16], 0.025, iron), rod([sx, 0, -0.22], [sx, 0.92, -0.32], 0.025, iron), rod([sx, 0.62, -0.26], [sx, 0.62, 0.18], 0.02, iron));
+  }
+  g.position.set(x, 0, z);
+  g.rotation.y = turn;
+  return g;
+}
+
+function birdbath(x: number, z: number): THREE.Group {
+  const g = new THREE.Group();
+  const stoneMat = texMat('stone');
+  g.add(
+    lathe(
+      [
+        [0.2, 0],
+        [0.2, 0.05],
+        [0.08, 0.1],
+        [0.06, 0.6],
+        [0.12, 0.66],
+        [0.34, 0.74],
+        [0.36, 0.8],
+      ],
+      14,
+      stoneMat,
+    ),
+    cyl(0.31, 0.31, 0.01, 14, colorMat(0x8fcfe6, { gloss: 0.9 }), 0, 0.775, 0),
+    ball(0.045, 0.04, 0.07, colorMat(0xc9382f), 0.26, 0.86, 0.1, 8),
+    ball(0.028, 0.028, 0.03, colorMat(0xc9382f), 0.26, 0.91, 0.16, 6),
+  );
+  g.position.set(x, 0, z);
+  return g;
+}
+
+/** Varal com roupa estendida, ao longo de z. */
+function clothesline(x: number, z0: number, z1: number): THREE.Group {
+  const g = new THREE.Group();
+  const wood = texMat('pine');
+  for (const z of [z0, z1]) g.add(box(0.08, 1.8, 0.08, wood, x, 0, z), box(0.9, 0.07, 0.07, wood, x, 1.73, z));
+  for (const dx of [-0.36, 0.36]) g.add(rod([x + dx, 1.78, z0], [x + dx, 1.78, z1], 0.006, colorMat(0xe9e4d6), 4));
+  const clothes: [number, number, number, number][] = [
+    [0.36, 0.5, 0.6, 0xf4efdf],
+    [0.36, 0.4, 0.45, 0x2f7fc4],
+    [-0.36, 0.55, 0.7, 0xc9382f],
+    [-0.36, 0.42, 0.42, 0xe8b830],
+    [0.36, 0.34, 0.5, 0x3f9455],
+  ];
+  clothes.forEach(([dx, wdt, hgt, col], i) => {
+    const zz = z0 + 0.5 + i * ((z1 - z0 - 1) / (clothes.length - 1));
+    g.add(box(0.012, hgt, wdt, texMat('fabric', { color: col }), x + dx, 1.76 - hgt, zz));
+  });
+  return g;
+}
+
+function hydrant(x: number, z: number): THREE.Group {
+  const g = new THREE.Group();
+  const red = colorMat(0xc9382f, { gloss: 0.6 });
+  g.add(
+    lathe(
+      [
+        [0.13, 0],
+        [0.13, 0.05],
+        [0.09, 0.08],
+        [0.09, 0.42],
+        [0.11, 0.45],
+        [0.08, 0.56],
+        [0.03, 0.62],
+      ],
+      10,
+      red,
+    ),
+    rod([-0.15, 0.32, 0], [0.15, 0.32, 0], 0.04, red),
+    rod([0, 0.3, 0], [0, 0.3, 0.14], 0.045, red),
+  );
   g.position.set(x, 0, z);
   return g;
 }
@@ -179,6 +334,18 @@ export function buildScenery(grid: Grid): THREE.Group {
       g.add(flowerBed(x + 0.5, z, 0.96, true));
     }
   }
+
+  // rua e calçada: carros, postes, lixeira e hidrante
+  g.add(
+    car(w / 2 + 5.5, front + 2.6, 0x2f8a86),
+    car(w / 2 - 12, front + 5.2, 0xc9382f),
+    streetLamp(w / 2 - 6, front + 0.9),
+    streetLamp(w / 2 + 11, front + 0.9),
+    trashCan(w / 2 + 3.2, front - 0.35),
+    hydrant(w / 2 - 3.5, front + 0.7),
+  );
+  // quintal: banco e bebedouro de passarinho na frente, varal na lateral
+  g.add(bench(4.6, front - 1.25, 0), birdbath(11.2, front - 1.3), clothesline(w - 0.5, 3, 7.5));
 
   setShadows(g, true, true);
   ground.castShadow = false;
