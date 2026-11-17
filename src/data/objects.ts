@@ -1,8 +1,8 @@
 import type { ObjectDef } from '../sim/types';
 
 // Catálogo de objetos. Tudo aqui é dado: para criar um objeto novo, adicione
-// uma entrada, os textos em i18n e (opcional) um desenho em game/art/objects.ts
-// com o mesmo id de `art` (sem desenho, aparece uma caixa genérica).
+// uma entrada, os textos em i18n e (opcional) um modelo em game/art/furniture.ts
+// com o mesmo id de `art` (sem modelo, aparece uma caixa genérica).
 //
 // `useSides` limita de que lados o folk usa o objeto (a frente do desenho
 // fica para o sul ou para o leste).
@@ -197,6 +197,50 @@ const list: ObjectDef[] = [
     size: { w: 1, h: 1 },
     ambience: 12,
     interactions: [],
+  },
+  {
+    id: 'stove',
+    name: 'obj.stove',
+    art: 'stove',
+    useSides: ['S'],
+    size: { w: 1, h: 1 },
+    ambience: 0,
+    interactions: [
+      {
+        id: 'cook',
+        label: 'act.cook',
+        duration: 45,
+        effects: { hunger: 2.6, fun: 0.1 },
+        until: 'hunger',
+        autonomous: false,
+      },
+    ],
+  },
+  {
+    id: 'counter',
+    name: 'obj.counter',
+    art: 'counter',
+    size: { w: 1, h: 1 },
+    ambience: 2,
+    interactions: [],
+  },
+  {
+    id: 'dinette',
+    name: 'obj.dinette',
+    art: 'dinette',
+    size: { w: 3, h: 1 },
+    ambience: 4,
+    interactions: [
+      {
+        id: 'sit',
+        label: 'act.sit',
+        duration: 40,
+        effects: { comfort: 1.4 },
+        until: 'comfort',
+        pose: 'sit',
+        onObject: true,
+      },
+    ],
   },
 ];
 

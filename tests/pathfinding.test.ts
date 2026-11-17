@@ -95,6 +95,23 @@ describe('pathfinding (A*)', () => {
     expect(tiles).toEqual([{ x: 3, y: 1 }]);
   });
 
+  it('pisos diferentes do mesmo cômodo não ganham parede entre si', () => {
+    const styles = {
+      A: { floor: 'wood', indoor: true },
+      // mesma sala, outro piso (como a cozinha aberta da casa inicial)
+      K: { floor: 'kitchen', indoor: true, room: 'A' },
+      B: { floor: 'tile', indoor: true },
+    };
+    const grid = gridFromMap(['AAKKBB'], styles, []);
+    expect(grid.floor).toEqual(['wood', 'wood', 'kitchen', 'kitchen', 'tile', 'tile']);
+    expect(grid.edges['2,0,W']).toBeUndefined();
+    expect(grid.edges['4,0,W']).toBe('wall');
+    const world = createWorld({ seed: 1, startTick: 0, grid, objects: [], folks: [] });
+    const nav = buildNav(world, CATALOG);
+    expect(findPath(nav, { x: 0, y: 0 }, { x: 3, y: 0 })).toHaveLength(3);
+    expect(findPath(nav, { x: 0, y: 0 }, { x: 4, y: 0 })).toBeNull();
+  });
+
   it('todo objeto com interação da casa inicial é alcançável', () => {
     const sim = starterSim();
     const folk = sim.world.folks[0];

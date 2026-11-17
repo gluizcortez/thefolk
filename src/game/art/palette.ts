@@ -1,58 +1,65 @@
-// Paleta do thefolk em 3D: cores quentes, vivas e acolhedoras, com paredes
-// claras e móveis coloridos. Toda cor do jogo sai daqui.
+// Paleta do thefolk: tons ricos e um pouco escuros nos pisos e paredes, com
+// móveis e roupas em cores vivas por cima, como nas cenas pré-renderizadas dos
+// jogos de PC do fim dos anos 90. Toda cor do jogo sai daqui.
 export const PAL = {
-  sky: 0x8ecbf0,
-  nightSky: 0x0f1630,
-  sun: 0xfff1d6,
+  sky: 0x7fb6e6,
+  nightSky: 0x0b1026,
+  sun: 0xfff3dc,
   moon: 0x8fa3d9,
   ink: 0x1f1b19,
   mustard: 0xf2b632,
-  white: 0xfbf8ee,
-  trim: 0xfbf8ee,
-  wallCap: 0xe9e4d6,
+  white: 0xf3efe2,
+  trim: 0xe9e1cc,
+  wallCap: 0xd3c3a0,
 
   // pisos e terreno
-  grass: 0x5ea64a,
-  wood: 0xc98f55,
-  carpet: 0x7e9bd1,
-  tileA: 0xf4f6f4,
-  tileB: 0x8fd0cc,
-  road: 0x5b5d63,
-  sidewalk: 0xcfcbc0,
+  grass: 0x3f7f2e,
+  wood: 0xa9682f,
+  carpet: 0x3d55a4,
+  tileA: 0xe6e9e1,
+  tileB: 0x58a596,
+  grout: 0x8d9790,
+  terracotta: 0xb4643c,
+  road: 0x4c4e55,
+  sidewalk: 0xb9b4a6,
 
   // paredes (cor de base de cada acabamento)
-  wallLiving: 0xf5e6a8,
-  wallBedroom: 0xf7dcc8,
-  wallBath: 0xcdeee8,
-  wallExterior: 0xbfd8ea,
-  brick: 0xb5563f,
+  wallLiving: 0xc9a66c,
+  wallBedroom: 0x8eab86,
+  wallBath: 0x78bcc0,
+  wallKitchen: 0xe3d5ac,
+  brick: 0xa5533a,
+  mortar: 0xd8cbb4,
 
   // materiais
-  enamel: 0xf3f5f0,
-  porcelain: 0xfafaf6,
-  chrome: 0xc3ccd1,
-  plastic: 0x2e2e33,
-  oak: 0xb9814a,
-  walnut: 0x7a4f2e,
-  pine: 0xd9b07a,
-  brass: 0xc9a24a,
-  linen: 0xf6edd2,
-  terracotta: 0xc9653f,
-  soil: 0x4a3423,
-  sofa: 0x3f6fb5,
-  duvet: 0xf2c744,
-  phone: 0xd2403a,
+  enamel: 0xeee9da,
+  porcelain: 0xf4f2ea,
+  chrome: 0xc6d0d6,
+  plastic: 0x26262b,
+  oak: 0xb07a42,
+  walnut: 0x6e4427,
+  pine: 0xcfa468,
+  brass: 0xc29a3e,
+  linen: 0xf1e6c6,
+  clay: 0xb85a36,
+  soil: 0x3d2a1c,
+  sofa: 0x2c55a6,
+  duvet: 0xe9b93a,
+  phone: 0xc8322e,
+  cabinet: 0x2f8a86,
+  vinyl: 0xc23a32,
+  laminate: 0xe7dfc6,
   glass: 0xbfe6f5,
-  water: 0x9fd6ea,
-  leaf: 0x3f9a3c,
-  bark: 0x6b4a30,
-  shoe: 0x2b2623,
+  water: 0x8fcfe6,
+  leaf: 0x2f8530,
+  bark: 0x5e4129,
+  shoe: 0x241f1c,
 } as const;
 
-export const SKIN = [0xf6cfa8, 0xe0ab7f, 0xb07c53, 0x7d5034];
-export const HAIR = [0x2a221d, 0x6b4426, 0xa9502b, 0xe0b85c, 0xc9c3b8];
-export const SHIRT = [0x3f8fd0, 0xd9483f, 0xf2c744, 0x4fa864, 0x8a63b8, 0xf3efe4];
-export const PANTS = [0x35476b, 0x5a4636, 0x5f6b4a, 0x7c7872];
+export const SKIN = [0xf0c49c, 0xd9a273, 0xa87148, 0x74482c];
+export const HAIR = [0x231c18, 0x5e3a20, 0xa1461f, 0xd6ab4c, 0xbdb6aa];
+export const SHIRT = [0x2f7fc4, 0xc9382f, 0xe8b830, 0x3f9455, 0x7d55ad, 0xe9e4d6];
+export const PANTS = [0x2c3c60, 0x4d3a2b, 0x55603f, 0x6c6862];
 
 export function shade(color: number, f: number): number {
   const r = Math.min(255, Math.round(((color >> 16) & 0xff) * f));

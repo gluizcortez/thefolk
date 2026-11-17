@@ -36,6 +36,9 @@ export const ptBR: Record<string, string> = {
   'obj.speaker': 'Caixa de som',
   'obj.plant': 'Planta',
   'obj.lamp': 'Abajur',
+  'obj.stove': 'Fogão',
+  'obj.counter': 'Bancada',
+  'obj.dinette': 'Mesa com cadeiras',
 
   'act.meal': 'Preparar uma refeição',
   'act.snack': 'Beliscar algo',
@@ -50,6 +53,8 @@ export const ptBR: Record<string, string> = {
   'act.call': 'Ligar para alguém',
   'act.dance': 'Dançar',
   'act.water': 'Regar',
+  'act.cook': 'Cozinhar algo quente',
+  'act.sit': 'Sentar à mesa',
   'act.goto': 'Ir até ali',
 
   'menu.goto': 'Ir até aqui',

@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { box, colorMat, cyl, fronted, setShadows, texMat, tileUV } from './build';
+import { ball, box, colorMat, cyl, fronted, lathe, rbox, rod, setShadows, texMat, tileUV } from './build';
 import { PAL, seeded, shade } from './palette';
 import { getTexture } from './textures';
 
-// Modelos 3D dos objetos. Cada um é montado com poucas peças simples e os
-// detalhes vão pintados nas texturas (portas, livros, botões), como se fazia
-// nos jogos 3D antigos. Os modelos são centrados na base do objeto e têm a
+// Modelos 3D dos objetos. As formas são arredondadas, com esmalte, vinil e
+// cromados brilhantes, e os detalhes miúdos (portas, livros, botões) vão
+// pintados nas texturas. Os modelos são centrados na base do objeto e têm a
 // frente virada para +z (sul); `facing: 'E'` gira a frente para o leste.
 // A simulação não conhece nada disto: a ligação é só o id `art` do objeto.
 
@@ -38,8 +38,9 @@ export interface FurnitureSpec {
   stand?: Anchor;
 }
 
-const chrome = () => colorMat(PAL.chrome);
-const porcelain = () => colorMat(PAL.porcelain);
+const chrome = () => texMat('chrome', { gloss: 1 });
+const porcelain = () => colorMat(PAL.porcelain, { gloss: 0.8 });
+const enamelMat = () => texMat('enamel', { gloss: 0.6 });
 
 function group(...parts: THREE.Object3D[]): THREE.Group {
   const g = new THREE.Group();
@@ -47,9 +48,9 @@ function group(...parts: THREE.Object3D[]): THREE.Group {
   return g;
 }
 
-function legs(w: number, d: number, h: number, mat: THREE.Material, t = 0.07): THREE.Mesh[] {
+function feet(w: number, d: number, h: number, mat: THREE.Material, r = 0.03): THREE.Mesh[] {
   const out: THREE.Mesh[] = [];
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) out.push(box(t, h, t, mat, (sx * (w - t)) / 2, 0, (sz * (d - t)) / 2));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) out.push(cyl(r, r * 0.8, h, 8, mat, (sx * (w - r * 2)) / 2, 0, (sz * (d - r * 2)) / 2));
   return out;
 }
 
@@ -57,46 +58,191 @@ function legs(w: number, d: number, h: number, mat: THREE.Material, t = 0.07): T
 
 const fridge: FurnitureSpec = {
   build() {
-    const side = texMat('enamel');
     const g = group(
-      box(0.76, 1.8, 0.68, fronted(side, texMat('fridgeFront'), colorMat(PAL.enamel)), 0, 0, -0.04),
-      box(0.035, 0.25, 0.05, chrome(), 0.255, 1.375, 0.32),
-      box(0.035, 0.5, 0.05, chrome(), 0.255, 0.65, 0.32),
+      rbox(0.8, 1.78, 0.68, 0.05, colorMat(PAL.enamel, { gloss: 0.6 }), 0, 0.02, -0.06),
+      box(0.74, 1.7, 0.03, fronted(enamelMat(), texMat('fridgeFront', { gloss: 0.6 })), 0, 0.06, 0.275),
+      box(0.8, 0.03, 0.64, colorMat(0x26262b), 0, 0, -0.06),
+      rod([0.27, 1.34, 0.33], [0.27, 1.66, 0.33], 0.016, chrome()),
+      rod([0.27, 0.62, 0.33], [0.27, 1.18, 0.33], 0.016, chrome()),
     );
+    for (const y of [1.36, 1.64, 0.64, 1.16]) g.add(rod([0.27, y, 0.29], [0.27, y, 0.335], 0.012, chrome()));
+    return { group: g };
+  },
+};
+
+const stove: FurnitureSpec = {
+  build() {
+    const side = enamelMat();
+    const steel = colorMat(0x3a3d42, { gloss: 0.7 });
+    const g = group(
+      box(0.82, 0.04, 0.6, colorMat(0x26262b), 0, 0, -0.1),
+      box(0.84, 0.86, 0.66, [side, side, texMat('stoveTop', { gloss: 0.5 }), side, texMat('stoveFront', { gloss: 0.6 }), side], 0, 0.04, -0.08),
+      // painel traseiro
+      box(0.84, 0.2, 0.06, colorMat(PAL.enamel, { gloss: 0.6 }), 0, 0.9, -0.38),
+      box(0.3, 0.09, 0.02, colorMat(0x1b1c20, { gloss: 0.5 }), 0, 0.96, -0.345),
+      // puxador do forno
+      rod([-0.3, 0.72, 0.29], [0.3, 0.72, 0.29], 0.016, chrome()),
+      rod([-0.26, 0.72, 0.25], [-0.26, 0.72, 0.29], 0.011, chrome()),
+      rod([0.26, 0.72, 0.25], [0.26, 0.72, 0.29], 0.011, chrome()),
+      // panela e chaleira
+      cyl(0.105, 0.095, 0.09, 14, steel, 0.19, 0.9, -0.24),
+      cyl(0.11, 0.11, 0.012, 14, colorMat(0x5b6066, { gloss: 0.8 }), 0.19, 0.99, -0.24),
+      ball(0.02, 0.015, 0.02, colorMat(0x1b1c20), 0.19, 1.012, -0.24, 8),
+      rod([0.28, 0.96, -0.24], [0.4, 0.97, -0.24], 0.012, colorMat(0x1b1c20)),
+      ball(0.085, 0.07, 0.085, colorMat(PAL.vinyl, { gloss: 0.8 }), -0.19, 0.965, 0.06, 12),
+      rod([-0.12, 0.98, 0.06], [-0.06, 1.03, 0.06], 0.012, colorMat(PAL.vinyl, { gloss: 0.8 })),
+      cyl(0.02, 0.025, 0.02, 8, colorMat(0x1b1c20), -0.19, 1.03, 0.06),
+    );
+    return { group: g };
+  },
+};
+
+const counter: FurnitureSpec = {
+  build(seed) {
+    const body = colorMat(shade(PAL.cabinet, 0.9));
+    const g = group(
+      box(0.96, 0.05, 0.56, colorMat(0x1d1b19), 0, 0, -0.14),
+      box(1.0, 0.82, 0.62, fronted(body, texMat('counterFront', { gloss: 0.3 })), 0, 0.05, -0.12),
+      rbox(1.02, 0.05, 0.68, 0.02, texMat('laminate', { gloss: 0.5 }), 0, 0.87, -0.1),
+      box(1.0, 0.1, 0.03, texMat('laminate', { gloss: 0.5 }), 0, 0.92, -0.42),
+      // tábua, pão e fruteira
+      rbox(0.3, 0.025, 0.2, 0.01, texMat('pine'), -0.25, 0.92, -0.02),
+      rbox(0.16, 0.07, 0.09, 0.035, colorMat(0xc98a4a), -0.25, 0.945, -0.02),
+      lathe(
+        [
+          [0.05, 0],
+          [0.07, 0.01],
+          [0.13, 0.06],
+          [0.135, 0.07],
+        ],
+        14,
+        colorMat(0xf1ecdc, { gloss: 0.8, doubleSide: true }),
+        0.24,
+        0.92,
+        -0.14,
+      ),
+    );
+    const rnd = seeded(seed + 11);
+    const fruit = [0xc9382f, 0xe8b830, 0xe07a2c, 0x6aa846];
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + rnd();
+      g.add(ball(0.04, 0.04, 0.04, colorMat(fruit[i], { gloss: 0.5 }), 0.24 + Math.cos(a) * 0.05, 1.0 + (i === 3 ? 0.04 : 0), -0.14 + Math.sin(a) * 0.05, 8));
+    }
+    return { group: g };
+  },
+};
+
+/** Cadeira de cozinha de tubo cromado e assento de vinil, com a frente para +z. */
+function chair(vinyl: THREE.Material): THREE.Group {
+  const m = chrome();
+  const g = group(
+    rbox(0.4, 0.07, 0.4, 0.03, vinyl, 0, 0.4, 0),
+    rbox(0.38, 0.26, 0.05, 0.025, vinyl, 0, 0.7, -0.2),
+  );
+  for (const sx of [-1, 1]) {
+    g.add(
+      rod([sx * 0.17, 0.42, 0.17], [sx * 0.2, 0, 0.21], 0.014, m),
+      rod([sx * 0.17, 0.42, -0.17], [sx * 0.2, 0, -0.23], 0.014, m),
+      rod([sx * 0.17, 0.44, -0.19], [sx * 0.17, 0.92, -0.215], 0.014, m),
+    );
+  }
+  g.add(rod([-0.19, 0.2, 0.19], [0.19, 0.2, 0.19], 0.01, m));
+  return g;
+}
+
+const dinette: FurnitureSpec = {
+  sit: [
+    { x: -1.08, y: 0.47, z: 0, heading: Math.PI / 2 },
+    { x: 1.08, y: 0.47, z: 0, heading: -Math.PI / 2 },
+  ],
+  build() {
+    const vinyl = colorMat(PAL.vinyl, { gloss: 0.7 });
+    const top = texMat('laminate', { gloss: 0.6, color: 0xbfe0d6 });
+    const west = chair(vinyl);
+    west.position.x = -1.0;
+    west.rotation.y = Math.PI / 2;
+    const east = chair(vinyl);
+    east.position.x = 1.0;
+    east.rotation.y = -Math.PI / 2;
+    const g = group(
+      west,
+      east,
+      // mesa redonda de fórmica com aro e pé cromados
+      cyl(0.56, 0.56, 0.035, 24, [chrome(), top, top], 0, 0.725, 0),
+      lathe(
+        [
+          [0.3, 0],
+          [0.3, 0.02],
+          [0.06, 0.06],
+          [0.04, 0.1],
+          [0.04, 0.66],
+          [0.12, 0.72],
+        ],
+        14,
+        chrome(),
+      ),
+      // jarro de flores, pratos e copos
+      lathe(
+        [
+          [0.035, 0],
+          [0.06, 0.05],
+          [0.04, 0.13],
+          [0.025, 0.17],
+          [0.035, 0.19],
+        ],
+        12,
+        colorMat(0x2c55a6, { gloss: 0.8 }),
+        0,
+        0.76,
+        0,
+      ),
+    );
+    const blooms = [0xf2c744, 0xd9483f, 0xf3efe2];
+    blooms.forEach((col, i) => {
+      const a = i * 2.1;
+      g.add(rod([0, 0.94, 0], [Math.cos(a) * 0.06, 1.08, Math.sin(a) * 0.06], 0.006, colorMat(0x3f7a2e)));
+      g.add(ball(0.035, 0.03, 0.035, colorMat(col), Math.cos(a) * 0.06, 1.09, Math.sin(a) * 0.06, 8));
+    });
+    for (const sx of [-1, 1]) {
+      g.add(
+        cyl(0.11, 0.07, 0.015, 14, colorMat(0xf4f2ea, { gloss: 0.8 }), sx * 0.32, 0.76, 0),
+        cyl(0.03, 0.025, 0.07, 10, colorMat(0xd8ecf2, { gloss: 0.9, opacity: 0.75 }), sx * 0.3, 0.76, -0.17),
+      );
+    }
     return { group: g };
   },
 };
 
 // ---------- quarto ----------
 
-const MATTRESS_TOP = 0.48;
+const MATTRESS_TOP = 0.5;
 
 const bed: FurnitureSpec = {
   lie: { x: 0, y: MATTRESS_TOP + 0.11, z: 0.9, heading: 0 },
   build() {
-    const wood = texMat('walnut');
-    const white = colorMat(0xfdfcf7);
-    const duvet = tileUV(box(0.88, 0.07, 1.25, texMat('duvet'), 0, MATTRESS_TOP, 0.28), 1, 1.5);
+    const wood = texMat('walnut', { gloss: 0.3 });
+    const white = colorMat(0xf4f1e6);
+    const duvet = tileUV(box(0.9, 0.08, 1.24, texMat('duvet'), 0, MATTRESS_TOP, 0.3), 1.5, 2);
     const g = group(
-      ...legs(0.88, 1.9, 0.2, wood, 0.08),
-      box(0.9, 0.14, 1.9, wood, 0, 0.18, 0),
-      box(0.92, 0.95, 0.08, wood, 0, 0, -0.95),
-      box(0.98, 0.06, 0.12, wood, 0, 0.95, -0.95),
-      box(0.92, 0.5, 0.06, wood, 0, 0, 0.95),
-      box(0.84, 0.16, 1.8, white, 0, 0.32, 0),
-      box(0.56, 0.1, 0.32, white, 0, MATTRESS_TOP, -0.68),
+      ...feet(0.9, 1.9, 0.14, wood, 0.04),
+      box(0.92, 0.16, 1.92, wood, 0, 0.12, 0),
+      rbox(0.96, 1.02, 0.09, 0.03, wood, 0, 0, -0.95),
+      rbox(1.0, 0.07, 0.13, 0.03, wood, 0, 0.98, -0.95),
+      rbox(0.96, 0.52, 0.07, 0.03, wood, 0, 0, 0.95),
+      rbox(0.86, 0.24, 1.82, 0.07, white, 0, 0.27, 0),
+      rbox(0.6, 0.13, 0.34, 0.06, white, 0, MATTRESS_TOP - 0.02, -0.68),
       duvet,
-      box(0.88, 0.075, 0.14, white, 0, MATTRESS_TOP, -0.3),
+      rbox(0.9, 0.09, 0.16, 0.04, white, 0, MATTRESS_TOP, -0.33),
     );
     let raised = 1;
     return {
       group: g,
       tick({ using }) {
         // com alguém dormindo, o edredom sobe e cobre o corpo
-        const target = using ? 4.4 : 1;
+        const target = using ? 3.6 : 1;
         raised += (target - raised) * 0.2;
         duvet.scale.y = raised;
-        duvet.position.y = MATTRESS_TOP + 0.035 * raised;
+        duvet.position.y = MATTRESS_TOP + 0.04 * raised;
       },
     };
   },
@@ -107,26 +253,29 @@ const bed: FurnitureSpec = {
 const shower: FurnitureSpec = {
   stand: { x: 0, y: 0.06, z: 0, heading: 0 },
   build(seed) {
-    const glass = colorMat(PAL.glass, { opacity: 0.25, unique: true });
-    const g = group(box(0.9, 0.06, 0.9, porcelain()));
+    const glass = colorMat(PAL.glass, { opacity: 0.25, unique: true, gloss: 0.8 });
+    const m = chrome();
+    const g = group(rbox(0.92, 0.07, 0.92, 0.03, porcelain()));
     for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) g.add(box(0.035, 2.0, 0.035, chrome(), sx * 0.43, 0.06, sz * 0.43));
-      g.add(box(0.035, 0.035, 0.86, chrome(), sx * 0.43, 2.03, 0));
-      g.add(box(0.86, 0.035, 0.035, chrome(), 0, 2.03, sx * 0.43));
-      g.add(box(0.012, 1.96, 0.84, glass, sx * 0.43, 0.06, 0));
-      g.add(box(0.84, 1.96, 0.012, glass, 0, 0.06, sx * 0.43));
+      for (const sz of [-1, 1]) g.add(rod([sx * 0.43, 0.06, sz * 0.43], [sx * 0.43, 2.06, sz * 0.43], 0.02, m));
+      g.add(rod([sx * 0.43, 2.05, -0.43], [sx * 0.43, 2.05, 0.43], 0.02, m));
+      g.add(rod([-0.43, 2.05, sx * 0.43], [0.43, 2.05, sx * 0.43], 0.02, m));
+      g.add(box(0.012, 1.96, 0.84, glass, sx * 0.43, 0.07, 0));
+      g.add(box(0.84, 1.96, 0.012, glass, 0, 0.07, sx * 0.43));
     }
-    g.add(cyl(0.016, 0.016, 1.9, 6, chrome(), -0.36, 0.06, -0.36));
-    const arm = box(0.025, 0.025, 0.24, chrome(), -0.3, 1.94, -0.3);
-    arm.rotation.y = -Math.PI / 4;
-    g.add(arm, cyl(0.04, 0.1, 0.06, 8, chrome(), -0.2, 1.86, -0.2));
-    g.add(cyl(0.05, 0.05, 0.01, 8, colorMat(0x8d979c), 0, 0.06, 0));
+    g.add(
+      rod([-0.36, 0.07, -0.36], [-0.36, 1.96, -0.36], 0.016, m),
+      rod([-0.36, 1.96, -0.36], [-0.22, 1.92, -0.22], 0.014, m),
+      cyl(0.04, 0.1, 0.06, 12, m, -0.2, 1.85, -0.2),
+      cyl(0.05, 0.05, 0.012, 10, colorMat(0x8d979c, { gloss: 0.8 }), 0, 0.07, 0),
+      ball(0.03, 0.03, 0.03, m, -0.36, 1.1, -0.33, 8),
+    );
 
-    // gotas: caixinhas finas que caem em laço enquanto alguém toma banho
+    // gotas: riscos finos que caem em laço enquanto alguém toma banho
     const rnd = seeded(seed + 5);
     const dropMat = new THREE.MeshBasicMaterial({ color: PAL.water, transparent: true, opacity: 0.8 });
     const drops: { mesh: THREE.Mesh; phase: number }[] = [];
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 18; i++) {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.13, 0.012), dropMat);
       mesh.position.set(-0.12 + (rnd() - 0.5) * 0.5, 1, -0.12 + (rnd() - 0.5) * 0.5);
       mesh.visible = false;
@@ -152,19 +301,41 @@ const shower: FurnitureSpec = {
 };
 
 const toilet: FurnitureSpec = {
-  sit: [{ x: 0, y: 0.44, z: 0.06, heading: 0 }],
+  sit: [{ x: 0, y: 0.45, z: 0.02, heading: 0 }],
   build() {
     const p = porcelain();
-    const seat = cyl(0.23, 0.23, 0.045, 10, p, 0, 0.4, 0.06);
-    seat.scale.z = 1.15;
+    const bowl = lathe(
+      [
+        [0.11, 0],
+        [0.135, 0.03],
+        [0.12, 0.2],
+        [0.19, 0.36],
+        [0.215, 0.41],
+        [0.19, 0.425],
+      ],
+      16,
+      p,
+      0,
+      0,
+      0.08,
+    );
+    bowl.scale.z = 1.18;
+    const seat = new THREE.Mesh(new THREE.TorusGeometry(0.165, 0.04, 8, 18), p);
+    seat.rotation.x = Math.PI / 2;
+    seat.scale.set(1, 1.18, 0.5);
+    seat.position.set(0, 0.435, 0.08);
+    const lid = rbox(0.38, 0.44, 0.035, 0.017, p, 0, 0.44, -0.2);
+    lid.rotation.x = -0.12;
     const g = group(
-      box(0.3, 0.42, 0.16, p, 0, 0, -0.33),
-      box(0.5, 0.42, 0.2, p, 0, 0.42, -0.33),
-      box(0.54, 0.04, 0.24, p, 0, 0.84, -0.33),
-      cyl(0.03, 0.03, 0.02, 6, chrome(), 0.14, 0.88, -0.33),
-      cyl(0.2, 0.13, 0.4, 8, p, 0, 0, 0.06),
+      bowl,
       seat,
-      cyl(0.15, 0.15, 0.01, 8, colorMat(PAL.water), 0, 0.441, 0.08),
+      lid,
+      cyl(0.14, 0.14, 0.01, 12, colorMat(PAL.water, { gloss: 0.9 }), 0, 0.36, 0.09),
+      rbox(0.3, 0.42, 0.16, 0.04, p, 0, 0, -0.3),
+      rbox(0.5, 0.4, 0.2, 0.045, p, 0, 0.42, -0.33),
+      rbox(0.54, 0.05, 0.24, 0.02, p, 0, 0.81, -0.33),
+      rod([0.2, 0.74, -0.22], [0.2, 0.74, -0.19], 0.014, chrome()),
+      rod([0.2, 0.74, -0.19], [0.12, 0.72, -0.19], 0.012, chrome()),
     );
     return { group: g };
   },
@@ -173,17 +344,37 @@ const toilet: FurnitureSpec = {
 const sink: FurnitureSpec = {
   facing: 'E',
   build() {
-    const white = colorMat(0xf1efe6);
+    const white = colorMat(0xe6e2d4);
+    const m = chrome();
     const g = group(
       box(0.76, 0.06, 0.44, colorMat(PAL.plastic), 0, 0, -0.15),
-      box(0.8, 0.82, 0.5, fronted(white, texMat('doorsWhite')), 0, 0.06, -0.15),
-      box(0.86, 0.05, 0.56, colorMat(0xe6e0d2), 0, 0.88, -0.14),
-      cyl(0.19, 0.19, 0.012, 10, colorMat(0xaebdc2), 0, 0.93, -0.12),
-      cyl(0.14, 0.14, 0.014, 10, colorMat(PAL.water), 0, 0.93, -0.12),
-      cyl(0.016, 0.016, 0.16, 6, chrome(), 0, 0.93, -0.35),
-      box(0.03, 0.025, 0.14, chrome(), 0, 1.07, -0.29),
-      box(0.8, 0.95, 0.04, fronted(white, texMat('mirror')), 0, 0.93, -0.41),
-      box(0.09, 0.03, 0.06, colorMat(0xf2a7b5), 0.28, 0.93, -0.02),
+      box(0.8, 0.8, 0.5, fronted(white, texMat('doorsWhite', { gloss: 0.3 })), 0, 0.06, -0.15),
+      rbox(0.86, 0.06, 0.58, 0.02, texMat('laminate', { gloss: 0.6, color: 0xf2f2ee }), 0, 0.86, -0.13),
+      // cuba
+      lathe(
+        [
+          [0.03, 0.0],
+          [0.13, 0.02],
+          [0.185, 0.07],
+          [0.2, 0.075],
+        ],
+        16,
+        colorMat(PAL.porcelain, { gloss: 0.8, doubleSide: true }),
+        0,
+        0.86,
+        -0.1,
+      ),
+      cyl(0.12, 0.12, 0.008, 12, colorMat(PAL.water, { gloss: 0.9 }), 0, 0.895, -0.1),
+      // torneira
+      rod([0, 0.92, -0.34], [0, 1.08, -0.34], 0.016, m),
+      rod([0, 1.08, -0.34], [0, 1.06, -0.2], 0.014, m),
+      ball(0.022, 0.022, 0.022, m, -0.09, 0.95, -0.34, 8),
+      ball(0.022, 0.022, 0.022, m, 0.09, 0.95, -0.34, 8),
+      // espelho com moldura e miudezas
+      box(0.8, 0.98, 0.05, fronted(colorMat(0xf1ecdc), texMat('mirror', { gloss: 0.9 })), 0, 0.96, -0.415),
+      rbox(0.1, 0.035, 0.065, 0.015, colorMat(0xf2a7b5, { gloss: 0.5 }), 0.3, 0.92, -0.02),
+      cyl(0.03, 0.026, 0.09, 10, colorMat(0x5fb4c9, { gloss: 0.7 }), -0.31, 0.92, -0.3),
+      rod([-0.31, 1.0, -0.3], [-0.29, 1.09, -0.3], 0.006, colorMat(0xd9483f)),
     );
     return { group: g };
   },
@@ -193,30 +384,26 @@ const sink: FurnitureSpec = {
 
 const sofa: FurnitureSpec = {
   sit: [
-    { x: -0.375, y: 0.45, z: 0.1, heading: 0 },
-    { x: 0.375, y: 0.45, z: 0.1, heading: 0 },
+    { x: -0.4, y: 0.43, z: 0.06, heading: 0 },
+    { x: 0.4, y: 0.43, z: 0.06, heading: 0 },
   ],
   build() {
     const fab = texMat('fabric', { color: PAL.sofa });
-    const light = texMat('fabric', { color: shade(PAL.sofa, 1.22) });
-    const wood = colorMat(PAL.walnut);
+    const light = texMat('fabric', { color: shade(PAL.sofa, 1.2) });
+    const wood = texMat('walnut');
     const g = group(
-      ...legs(1.84, 0.8, 0.1, wood),
-      box(1.9, 0.22, 0.84, fab, 0, 0.1, 0.02),
-      box(1.9, 0.62, 0.2, fab, 0, 0.32, -0.36),
+      ...feet(1.8, 0.78, 0.1, wood, 0.035),
+      rbox(1.92, 0.24, 0.84, 0.05, fab, 0, 0.08, 0.0),
+      rbox(1.92, 0.7, 0.24, 0.09, fab, 0, 0.18, -0.34),
     );
     for (const sx of [-1, 1]) {
-      g.add(box(0.2, 0.3, 0.84, fab, sx * 0.85, 0.32, 0.02));
-      const roll = cyl(0.11, 0.11, 0.84, 8, fab, sx * 0.85, 0, 0);
-      roll.rotation.x = Math.PI / 2;
-      roll.position.set(sx * 0.85, 0.62, 0.02);
-      g.add(roll);
-      g.add(box(0.74, 0.13, 0.6, light, sx * 0.375, 0.32, 0.12));
-      const back = box(0.72, 0.4, 0.14, light, sx * 0.375, 0.45, -0.22);
-      back.rotation.x = -0.12;
+      g.add(rbox(0.24, 0.52, 0.86, 0.11, fab, sx * 0.86, 0.14, 0.0));
+      g.add(rbox(0.74, 0.16, 0.6, 0.06, light, sx * 0.37, 0.28, 0.1));
+      const back = rbox(0.72, 0.42, 0.18, 0.07, light, sx * 0.37, 0.42, -0.22);
+      back.rotation.x = -0.14;
       g.add(back);
     }
-    const pillow = box(0.3, 0.3, 0.1, texMat('fabric', { color: PAL.duvet }), -0.52, 0.47, -0.08);
+    const pillow = rbox(0.3, 0.3, 0.11, 0.05, texMat('fabric', { color: PAL.duvet }), -0.56, 0.44, -0.06);
     pillow.rotation.set(-0.3, 0.3, 0.15);
     g.add(pillow);
     return { group: g };
@@ -226,25 +413,28 @@ const sofa: FurnitureSpec = {
 const tv: FurnitureSpec = {
   facing: 'E',
   build() {
-    const oak = texMat('oak');
-    const plastic = colorMat(PAL.plastic);
+    const oak = texMat('oak', { gloss: 0.3 });
+    const plastic = colorMat(PAL.plastic, { gloss: 0.5 });
     const off = getTexture('tvOff');
     const channels = [getTexture('tvOn0'), getTexture('tvOn1'), getTexture('tvOn2')];
-    const screen = new THREE.MeshLambertMaterial({ map: off, emissive: 0xffffff, emissiveMap: off, emissiveIntensity: 0 });
-    const antenna = (side: number) => {
-      const a = cyl(0.008, 0.008, 0.42, 4, chrome(), 0, 0, 0);
-      a.position.set(side * 0.1, 1.28, -0.12);
-      a.rotation.z = -side * 0.5;
-      return a;
-    };
+    const screen = new THREE.MeshPhongMaterial({
+      map: off,
+      emissive: 0xffffff,
+      emissiveMap: off,
+      emissiveIntensity: 0,
+      specular: 0x555555,
+      shininess: 50,
+    });
     const g = group(
-      ...legs(0.84, 0.44, 0.06, colorMat(PAL.walnut), 0.06),
-      box(0.9, 0.5, 0.5, fronted(oak, texMat('doorsOak')), 0, 0.06, -0.05),
-      box(0.72, 0.56, 0.2, fronted(plastic, screen), 0, 0.56, 0.08),
-      box(0.52, 0.44, 0.3, plastic, 0, 0.6, -0.14),
-      cyl(0.05, 0.06, 0.03, 6, plastic, 0, 1.08, -0.12),
-      antenna(-1),
-      antenna(1),
+      ...feet(0.86, 0.46, 0.06, colorMat(PAL.walnut), 0.03),
+      box(0.92, 0.5, 0.52, fronted(oak, texMat('doorsOak', { gloss: 0.3 })), 0, 0.06, -0.05),
+      rbox(0.96, 0.04, 0.56, 0.015, oak, 0, 0.56, -0.05),
+      rbox(0.76, 0.6, 0.3, 0.05, plastic, 0, 0.6, 0.02),
+      box(0.72, 0.56, 0.02, fronted(plastic, screen), 0, 0.62, 0.17),
+      rbox(0.54, 0.46, 0.26, 0.08, plastic, 0, 0.64, -0.2),
+      cyl(0.05, 0.06, 0.03, 10, plastic, 0, 1.2, -0.08),
+      rod([0, 1.22, -0.08], [-0.22, 1.6, -0.12], 0.008, chrome(), 6),
+      rod([0, 1.22, -0.08], [0.2, 1.62, -0.12], 0.008, chrome(), 6),
     );
     return {
       group: g,
@@ -262,10 +452,27 @@ const tv: FurnitureSpec = {
 
 const bookshelf: FurnitureSpec = {
   build() {
-    const oak = texMat('oak');
+    const oak = texMat('oak', { gloss: 0.25 });
     const g = group(
       box(1.9, 2.0, 0.4, fronted(oak, texMat('books')), 0, 0, -0.27),
-      box(1.96, 0.06, 0.44, oak, 0, 2.0, -0.27),
+      rbox(1.98, 0.07, 0.46, 0.02, oak, 0, 2.0, -0.27),
+      box(1.94, 0.08, 0.43, oak, 0, 0, -0.27),
+      // enfeites em cima
+      lathe(
+        [
+          [0.05, 0],
+          [0.09, 0.08],
+          [0.05, 0.2],
+          [0.06, 0.24],
+        ],
+        12,
+        colorMat(0x3f9a8f, { gloss: 0.8 }),
+        -0.6,
+        2.07,
+        -0.27,
+      ),
+      rbox(0.28, 0.06, 0.2, 0.01, colorMat(0xc9382f), 0.5, 2.07, -0.27),
+      rbox(0.24, 0.05, 0.18, 0.01, colorMat(0xe8b830), 0.52, 2.13, -0.27),
     );
     return { group: g };
   },
@@ -273,18 +480,28 @@ const bookshelf: FurnitureSpec = {
 
 const phone: FurnitureSpec = {
   build() {
-    const wood = colorMat(PAL.walnut);
-    const red = colorMat(PAL.phone);
-    const dark = colorMat(shade(PAL.phone, 0.75));
+    const wood = texMat('oak', { gloss: 0.4 });
+    const red = colorMat(PAL.phone, { gloss: 0.7 });
     const g = group(
-      cyl(0.16, 0.2, 0.04, 8, wood),
-      cyl(0.035, 0.035, 0.62, 6, wood, 0, 0.04, 0),
-      cyl(0.3, 0.3, 0.05, 10, texMat('oak'), 0, 0.66, 0),
-      box(0.24, 0.07, 0.2, red, 0, 0.71, 0),
-      cyl(0.06, 0.06, 0.012, 8, colorMat(PAL.linen), 0, 0.78, 0.03),
-      box(0.3, 0.035, 0.06, dark, 0, 0.82, -0.05),
-      box(0.07, 0.06, 0.07, dark, -0.12, 0.78, -0.05),
-      box(0.07, 0.06, 0.07, dark, 0.12, 0.78, -0.05),
+      lathe(
+        [
+          [0.2, 0],
+          [0.2, 0.02],
+          [0.05, 0.06],
+          [0.035, 0.12],
+          [0.035, 0.6],
+          [0.1, 0.66],
+        ],
+        14,
+        wood,
+      ),
+      cyl(0.31, 0.31, 0.045, 20, wood, 0, 0.66, 0),
+      // aparelho: base, disco e fone
+      rbox(0.24, 0.08, 0.2, 0.035, red, 0, 0.705, 0),
+      cyl(0.055, 0.055, 0.012, 12, colorMat(PAL.linen, { gloss: 0.5 }), 0, 0.785, 0.03),
+      rod([-0.13, 0.82, -0.05], [0.13, 0.82, -0.05], 0.022, red),
+      ball(0.045, 0.04, 0.045, red, -0.13, 0.8, -0.05, 8),
+      ball(0.045, 0.04, 0.045, red, 0.13, 0.8, -0.05, 8),
     );
     return { group: g };
   },
@@ -292,10 +509,10 @@ const phone: FurnitureSpec = {
 
 const speaker: FurnitureSpec = {
   build() {
-    const wood = texMat('walnut');
+    const wood = texMat('walnut', { gloss: 0.3 });
     const tower = box(0.5, 1.05, 0.44, fronted(wood, texMat('speakerFront')), 0, 0.04, 0);
-    const deck = box(0.44, 0.1, 0.36, fronted(colorMat(0x3a393d), texMat('deckFront')), 0, 1.09, 0);
-    const g = group(...legs(0.46, 0.4, 0.04, colorMat(PAL.plastic), 0.06), tower, deck);
+    const deck = box(0.44, 0.1, 0.36, fronted(colorMat(0x2f2e33, { gloss: 0.5 }), texMat('deckFront')), 0, 1.09, 0);
+    const g = group(...feet(0.46, 0.4, 0.04, colorMat(PAL.plastic), 0.03), tower, deck);
     return {
       group: g,
       tick({ time, using }) {
@@ -309,20 +526,33 @@ const speaker: FurnitureSpec = {
 
 const plant: FurnitureSpec = {
   build(seed) {
-    const pot = colorMat(PAL.terracotta);
+    const pot = colorMat(PAL.clay, { gloss: 0.2 });
     const leavesMat = texMat('leaves', { alphaTest: 0.5, doubleSide: true });
     const g = group(
-      cyl(0.22, 0.2, 0.03, 8, colorMat(shade(PAL.terracotta, 0.8))),
-      cyl(0.21, 0.15, 0.34, 8, pot, 0, 0.03, 0),
-      cyl(0.22, 0.22, 0.04, 8, pot, 0, 0.34, 0),
-      cyl(0.19, 0.19, 0.01, 8, colorMat(PAL.soil), 0, 0.375, 0),
-      cyl(0.025, 0.035, 0.6, 5, texMat('bark'), 0, 0.37, 0),
+      cyl(0.23, 0.21, 0.025, 14, colorMat(shade(PAL.clay, 0.75))),
+      lathe(
+        [
+          [0.15, 0],
+          [0.16, 0.02],
+          [0.21, 0.32],
+          [0.235, 0.33],
+          [0.235, 0.38],
+          [0.2, 0.38],
+        ],
+        14,
+        pot,
+        0,
+        0.025,
+        0,
+      ),
+      cyl(0.2, 0.2, 0.01, 12, colorMat(PAL.soil), 0, 0.385, 0),
+      cyl(0.02, 0.035, 0.7, 6, texMat('bark'), 0, 0.38, 0),
     );
     // folhagem: planos cruzados com a textura de folhas, técnica da época
-    for (let i = 0; i < 3; i++) {
-      const card = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 1.15), leavesMat);
-      card.position.y = 1.08;
-      card.rotation.y = (i * Math.PI) / 3 + seed * 0.7;
+    for (let i = 0; i < 4; i++) {
+      const card = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 1.25), leavesMat);
+      card.position.y = 1.02;
+      card.rotation.y = (i * Math.PI) / 4 + seed * 0.7;
       g.add(card);
     }
     return { group: g };
@@ -331,14 +561,24 @@ const plant: FurnitureSpec = {
 
 const lamp: FurnitureSpec = {
   build() {
-    const brass = colorMat(PAL.brass);
+    const brass = colorMat(PAL.brass, { gloss: 0.9 });
     const shadeMat = texMat('lampShade', { doubleSide: true, emissive: 0xffd98a, emissiveIntensity: 0.2, unique: true });
     const light = new THREE.PointLight(0xffd9a0, 0, 7, 1.6);
     light.position.y = 1.42;
     const g = group(
-      cyl(0.16, 0.19, 0.04, 10, brass),
-      cyl(0.018, 0.018, 1.3, 6, brass, 0, 0.04, 0),
-      cyl(0.14, 0.26, 0.32, 10, shadeMat, 0, 1.3, 0, true),
+      lathe(
+        [
+          [0.17, 0],
+          [0.17, 0.02],
+          [0.06, 0.05],
+          [0.022, 0.09],
+        ],
+        14,
+        brass,
+      ),
+      rod([0, 0.08, 0], [0, 1.36, 0], 0.016, brass),
+      ball(0.03, 0.03, 0.03, brass, 0, 0.7, 0, 8),
+      cyl(0.13, 0.27, 0.34, 16, shadeMat, 0, 1.28, 0, true),
       light,
     );
     return {
@@ -353,12 +593,15 @@ const lamp: FurnitureSpec = {
 
 const fallback: FurnitureSpec = {
   build() {
-    return { group: group(box(0.7, 0.5, 0.7, colorMat(0xdccfb4))) };
+    return { group: group(rbox(0.7, 0.5, 0.7, 0.04, colorMat(0xdccfb4))) };
   },
 };
 
 const SPECS: Record<string, FurnitureSpec> = {
   fridge,
+  stove,
+  counter,
+  dinette,
   bed,
   shower,
   toilet,

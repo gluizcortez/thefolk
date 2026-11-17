@@ -4,11 +4,14 @@ import type { EdgeKind, Folk, Grid, Needs, World, WorldObject } from './types';
 export interface RoomStyle {
   floor: string;
   indoor: boolean;
+  /** letras com o mesmo `room` formam um cômodo só, sem parede entre elas */
+  room?: string;
 }
 
 /**
  * Monta o grid a partir de um mapa em texto: cada letra é um cômodo e nasce
- * parede em toda borda entre letras diferentes (quando um dos lados é interno).
+ * parede em toda borda entre cômodos diferentes (quando um dos lados é
+ * interno). Duas letras podem dividir o mesmo cômodo com pisos diferentes.
  */
 export function gridFromMap(
   rows: string[],
@@ -21,6 +24,7 @@ export function gridFromMap(
   const edges: Record<string, EdgeKind> = {};
   const at = (x: number, y: number) => (x < 0 || y < 0 || x >= w || y >= h ? null : rows[y][x]);
   const indoor = (c: string | null) => (c !== null && styles[c]?.indoor) === true;
+  const roomOf = (c: string | null) => (c === null ? null : (styles[c]?.room ?? c));
 
   for (let y = 0; y < h; y++) {
     if (rows[y].length !== w) throw new Error(`linha ${y} do mapa tem largura diferente`);
@@ -31,8 +35,8 @@ export function gridFromMap(
       floor.push(style.floor);
       const north = at(x, y - 1);
       const west = at(x - 1, y);
-      if (north !== c && (indoor(c) || indoor(north))) edges[`${x},${y},N`] = 'wall';
-      if (west !== c && (indoor(c) || indoor(west))) edges[`${x},${y},W`] = 'wall';
+      if (roomOf(north) !== roomOf(c) && (indoor(c) || indoor(north))) edges[`${x},${y},N`] = 'wall';
+      if (roomOf(west) !== roomOf(c) && (indoor(c) || indoor(west))) edges[`${x},${y},W`] = 'wall';
     }
   }
   for (const key of doors) {

@@ -1,11 +1,13 @@
 import * as THREE from 'three';
-import { box, colorMat, cyl, texMat } from './build';
-import { HAIR, PAL, PANTS, SHIRT, SKIN, shade } from './palette';
+import { ball, box, colorMat, cyl, loft, rbox, texMat } from './build';
+import type { Ring } from './build';
+import { PAL, SKIN, shade } from './palette';
 import { faceTextureName, getTexture } from './textures';
 import type { Expression } from './textures';
 
-// Folk em 3D: um boneco low-poly articulado, com cabeça um pouco grande,
-// rosto pintado em textura e animação por juntas (sem esqueleto pesado).
+// Folk em 3D: um adulto de proporção realista (cerca de sete cabeças de
+// altura), modelado com cascas suaves para tronco, braços e pernas, roupa e
+// rosto pintados em textura e animação por juntas (sem esqueleto pesado).
 // A emoção aparece na expressão do rosto e na postura do corpo.
 // Trocar por um modelo definitivo depois é trocar só esta classe.
 
@@ -44,7 +46,11 @@ export interface FolkFrame {
 }
 
 export const FOLK_HEIGHT = 1.8;
-const HIPS_Y = 0.84;
+const HIPS_Y = 0.9;
+const THIGH = 0.42;
+const SHIN = 0.41;
+const UPPER_ARM = 0.28;
+const FOREARM = 0.24;
 
 interface Pose {
   hipsY: number;
@@ -80,8 +86,8 @@ function rest(): Pose {
     headZ: 0,
     armLX: 0,
     armRX: 0,
-    armLOut: 0.09,
-    armROut: 0.09,
+    armLOut: 0.07,
+    armROut: 0.07,
     elbowL: -0.12,
     elbowR: -0.12,
     legLX: 0,
@@ -122,7 +128,7 @@ function poseFor(anim: FolkAnim, t: number, mood: number): Pose {
       break;
     }
     case 'sit': {
-      p.hipsY = 0.09;
+      p.hipsY = 0.1;
       p.legLX = -1.5;
       p.legRX = -1.5;
       p.kneeL = 1.45;
@@ -250,7 +256,7 @@ export class FolkModel {
   private shinL = new THREE.Group();
   private shinR = new THREE.Group();
   private blob: THREE.Mesh;
-  private faceMat: THREE.MeshLambertMaterial;
+  private faceMat: THREE.MeshPhongMaterial;
   private faceKey = '';
   private pose = rest();
   private placed = false;
@@ -258,71 +264,136 @@ export class FolkModel {
   private clock = 0;
 
   constructor(private readonly look: FolkLook) {
-    const skin = colorMat(SKIN[look.skin % SKIN.length]);
-    const hairColor = HAIR[look.hair % HAIR.length];
-    const shirtColor = SHIRT[look.shirt % SHIRT.length];
-    const pants = colorMat(PANTS[look.pants % PANTS.length]);
-    const sleeve = colorMat(shade(shirtColor, 0.95));
-    const shoe = colorMat(PAL.shoe);
+    const skinColor = SKIN[look.skin % SKIN.length];
+    const skin = texMat(`skin:${look.skin % SKIN.length}`, { gloss: 0.12 });
+    const shirtMat = texMat(`shirt:${look.shirt}`);
+    const sleeve = texMat(`sleeve:${look.shirt}`);
+    const pants = texMat(`pants:${look.pants}`);
+    const hairMat = texMat(`hair:${look.hair}`, { gloss: 0.25 });
+    const shoe = colorMat(PAL.shoe, { gloss: 0.45 });
+    const SIDES = 12;
 
-    // quadril e tronco
-    this.hips.add(box(0.3, 0.16, 0.19, pants, 0, -0.08, 0));
-    this.torso.position.y = 0.06;
-    const chest = cyl(0.2, 0.16, 0.44, 8, texMat(`shirt:${look.shirt}`), 0, 0, 0);
-    chest.scale.z = 0.62;
-    this.torso.add(chest, cyl(0.05, 0.058, 0.1, 6, skin, 0, 0.43, 0));
+    // quadril, cinto e tronco
+    this.hips.add(
+      loft(
+        [
+          { y: -0.13, rx: 0.06, rz: 0.07 },
+          { y: -0.08, rx: 0.14, rz: 0.1 },
+          { y: 0, rx: 0.165, rz: 0.108 },
+          { y: 0.08, rx: 0.154, rz: 0.1 },
+        ],
+        SIDES,
+        pants,
+      ),
+      loft(
+        [
+          { y: 0.045, rx: 0.159, rz: 0.104 },
+          { y: 0.085, rx: 0.157, rz: 0.102 },
+        ],
+        SIDES,
+        colorMat(0x2a1d14, { gloss: 0.3 }),
+      ),
+      box(0.04, 0.034, 0.012, colorMat(PAL.brass, { gloss: 0.8 }), 0, 0.048, 0.1),
+    );
+    this.torso.position.y = 0.07;
+    this.torso.add(
+      loft(
+        [
+          { y: 0, rx: 0.152, rz: 0.098 },
+          { y: 0.1, rx: 0.153, rz: 0.1 },
+          { y: 0.24, rx: 0.17, rz: 0.108 },
+          { y: 0.36, rx: 0.183, rz: 0.11 },
+          { y: 0.43, rx: 0.186, rz: 0.1 },
+          { y: 0.475, rx: 0.15, rz: 0.086 },
+          { y: 0.5, rx: 0.09, rz: 0.066 },
+          { y: 0.518, rx: 0.056, rz: 0.054 },
+        ],
+        SIDES,
+        shirtMat,
+      ),
+      cyl(0.044, 0.05, 0.09, 10, skin, 0, 0.5, 0),
+    );
 
-    // cabeça: esfera low-poly com o rosto na textura
-    this.faceMat = new THREE.MeshLambertMaterial({ map: null });
-    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.19, 10, 8, -Math.PI / 2), this.faceMat);
-    skull.scale.set(1, 1.1, 1.02);
-    const hairMat = colorMat(hairColor);
-    // calota de cabelo inclinada para trás, deixando a testa e o rosto à mostra
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 5, 0, Math.PI * 2, 0, Math.PI * 0.42), hairMat);
-    cap.scale.set(1.04, 1.12, 1.07);
+    // cabeça: o rosto vai na textura; nariz, orelhas e cabelo são modelados
+    this.faceMat = new THREE.MeshPhongMaterial({ map: null, specular: 0x1a1a1a, shininess: 14 });
+    const skull = ball(0.1, 0.136, 0.11, this.faceMat, 0, 0.132, 0, 16);
+    const skinSolid = colorMat(shade(skinColor, 0.9), { gloss: 0.12 });
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 7, 0, Math.PI * 2, 0, Math.PI * 0.48), hairMat);
+    cap.scale.set(0.105, 0.143, 0.117);
+    cap.position.set(0, 0.132, -0.004);
     cap.rotation.x = -0.5;
-    this.head.add(skull, cap);
+    this.head.add(
+      skull,
+      cap,
+      ball(0.016, 0.025, 0.022, skinSolid, 0, 0.104, 0.106, 8),
+      ball(0.012, 0.03, 0.019, skinSolid, -0.098, 0.124, 0, 8),
+      ball(0.012, 0.03, 0.019, skinSolid, 0.098, 0.124, 0, 8),
+      // nuca
+      ball(0.094, 0.082, 0.054, hairMat, 0, 0.108, -0.07, 10),
+    );
     if (look.hair % 2 === 0) {
-      // topete
-      const tuft = new THREE.Mesh(new THREE.IcosahedronGeometry(0.09, 0), hairMat);
-      tuft.scale.set(1.5, 0.6, 1);
-      tuft.position.set(0.03, 0.17, 0.11);
-      tuft.rotation.set(-0.4, 0.3, 0.1);
+      // topete penteado para o lado
+      const tuft = ball(0.08, 0.036, 0.052, hairMat, 0.012, 0.25, 0.06, 10);
+      tuft.rotation.set(-0.35, 0.25, 0.12);
       this.head.add(tuft);
     } else {
-      this.head.add(box(0.34, 0.24, 0.12, hairMat, 0, -0.2, -0.13));
+      // franja e volume dos lados
+      this.head.add(ball(0.106, 0.052, 0.106, hairMat, 0, 0.236, 0, 10), ball(0.11, 0.095, 0.074, hairMat, 0, 0.138, -0.052, 10));
     }
-    const skinDark = colorMat(shade(SKIN[look.skin % SKIN.length], 0.92));
-    this.head.add(
-      box(0.04, 0.055, 0.045, skinDark, 0, -0.06, 0.178),
-      box(0.03, 0.07, 0.05, skinDark, -0.19, -0.04, 0),
-      box(0.03, 0.07, 0.05, skinDark, 0.19, -0.04, 0),
-    );
-    this.head.position.y = 0.7;
+    this.head.position.y = 0.56;
     this.torso.add(this.head);
 
     // braços: manga curta, antebraço e mão à mostra
+    const upperArm: Ring[] = [
+      { y: -UPPER_ARM, rx: 0.039, rz: 0.041 },
+      { y: -0.14, rx: 0.046, rz: 0.05 },
+      { y: 0, rx: 0.05, rz: 0.054 },
+      { y: 0.03, rx: 0.04, rz: 0.044 },
+    ];
+    const sleeveRings: Ring[] = [
+      { y: -0.15, rx: 0.051, rz: 0.055 },
+      { y: -0.03, rx: 0.055, rz: 0.059 },
+      { y: 0.03, rx: 0.05, rz: 0.054 },
+      { y: 0.05, rx: 0.03, rz: 0.034 },
+    ];
+    const forearm: Ring[] = [
+      { y: -FOREARM, rx: 0.027, rz: 0.03 },
+      { y: -0.12, rx: 0.037, rz: 0.04 },
+      { y: 0, rx: 0.039, rz: 0.042 },
+    ];
     for (const [arm, fore, sx] of [
       [this.armL, this.foreL, -1],
       [this.armR, this.foreR, 1],
     ] as const) {
-      arm.position.set(sx * 0.235, 0.4, 0);
-      arm.add(cyl(0.06, 0.052, 0.27, 6, sleeve, 0, -0.27, 0));
-      fore.position.y = -0.27;
-      fore.add(cyl(0.047, 0.04, 0.25, 6, skin, 0, -0.25, 0), box(0.065, 0.09, 0.05, skin, 0, -0.33, 0));
+      arm.position.set(sx * 0.196, 0.42, 0);
+      arm.add(loft(upperArm, 10, skin), loft(sleeveRings, 10, sleeve));
+      fore.position.y = -UPPER_ARM;
+      fore.add(ball(0.04, 0.04, 0.042, skin, 0, 0, 0, 8), loft(forearm, 10, skin), ball(0.03, 0.052, 0.022, skin, 0, -FOREARM - 0.04, 0.004, 8));
       arm.add(fore);
       this.torso.add(arm);
     }
 
-    // pernas
+    // pernas e sapatos
+    const thigh: Ring[] = [
+      { y: -THIGH, rx: 0.058, rz: 0.062 },
+      { y: -0.22, rx: 0.072, rz: 0.08 },
+      { y: -0.05, rx: 0.084, rz: 0.092 },
+      { y: 0.02, rx: 0.078, rz: 0.086 },
+    ];
+    const calf: Ring[] = [
+      { y: -SHIN + 0.03, rx: 0.046, rz: 0.052 },
+      { y: -0.28, rx: 0.054, rz: 0.062, z: -0.006 },
+      { y: -0.12, rx: 0.06, rz: 0.066, z: -0.006 },
+      { y: 0, rx: 0.057, rz: 0.061 },
+    ];
     for (const [leg, shin, sx] of [
       [this.legL, this.shinL, -1],
       [this.legR, this.shinR, 1],
     ] as const) {
-      leg.position.set(sx * 0.085, -0.1, 0);
-      leg.add(cyl(0.095, 0.078, 0.4, 6, pants, 0, -0.4, 0));
-      shin.position.y = -0.4;
-      shin.add(cyl(0.074, 0.06, 0.3, 6, pants, 0, -0.3, 0), box(0.1, 0.07, 0.24, shoe, 0, -0.34, 0.05));
+      leg.position.set(sx * 0.082, 0, 0);
+      leg.add(loft(thigh, 10, pants));
+      shin.position.y = -THIGH;
+      shin.add(ball(0.058, 0.058, 0.062, pants, 0, 0, 0, 8), loft(calf, 10, pants), rbox(0.1, 0.085, 0.26, 0.036, shoe, 0, -SHIN - 0.07, 0.05));
       leg.add(shin);
       this.hips.add(leg);
     }
@@ -331,7 +402,7 @@ export class FolkModel {
 
     // sombra "de bolinha" sob os pés, como nos jogos da época
     this.blob = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.95, 0.95),
+      new THREE.PlaneGeometry(0.8, 0.8),
       new THREE.MeshBasicMaterial({ map: getTexture('blob'), transparent: true, depthWrite: false }),
     );
     this.blob.rotation.x = -Math.PI / 2;
@@ -353,10 +424,10 @@ export class FolkModel {
     this.faceMat.needsUpdate = true;
   }
 
-  /** Posição da cabeça no mundo (para o balão de pensamento). */
+  /** Posição do alto da cabeça no mundo (para o balão de pensamento). */
   headTop(out: THREE.Vector3): THREE.Vector3 {
     this.head.getWorldPosition(out);
-    out.y += 0.34;
+    out.y += 0.38;
     return out;
   }
 

@@ -13,10 +13,14 @@ import { buildScenery } from './art/scenery';
 import { getTexture } from './art/textures';
 import type { GameController } from './controller';
 
-const ELEVATION = THREE.MathUtils.degToRad(34);
+/** 30° dá a projeção 2:1 das vistas isométricas clássicas */
+const ELEVATION = THREE.MathUtils.degToRad(30);
 const CAMERA_DISTANCE = 60;
-/** resolução interna máxima: acima disso a imagem é ampliada, como num monitor antigo */
-const MAX_INTERNAL_HEIGHT = 768;
+/**
+ * Altura-alvo da imagem interna, em linhas. A cena é renderizada perto disso e
+ * ampliada por um fator inteiro, com pixels nítidos, como num monitor da época.
+ */
+const TARGET_LINES = 600;
 const MAX_STEPS_PER_FRAME = 60;
 const CLICK_SLOP = 6;
 
@@ -55,8 +59,12 @@ export class GameView {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   private camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
-  private sun = new THREE.DirectionalLight(PAL.sun, 2.4);
-  private hemi = new THREE.HemisphereLight(0xffffff, 0xb9a98a, 1.5);
+  private sun = new THREE.DirectionalLight(PAL.sun, 2.0);
+  private hemi = new THREE.HemisphereLight(0xffffff, 0xc4b295, 1.5);
+  private frameBuffer: THREE.WebGLRenderTarget;
+  private post = new THREE.Scene();
+  private postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  private internalHeight = TARGET_LINES;
   private worldRoot = new THREE.Group();
   private house!: House;
   private objects = new Map<number, ObjectEntry>();
@@ -68,7 +76,7 @@ export class GameView {
 
   private target = new THREE.Vector3();
   private azimuth = Math.PI / 4;
-  private viewHeight = 13.5;
+  private viewHeight = 11;
   private builtVersion = -1;
   private wallState = '';
   private acc = 0;
@@ -91,12 +99,23 @@ export class GameView {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     container.append(this.renderer.domElement);
 
+    // a cena vai para uma imagem interna pequena; onde a placa não aceita
+    // imagem de ponto flutuante, usa-se uma de 8 bits já em sRGB
+    const ext = this.renderer.extensions;
+    const float = ext.has('EXT_color_buffer_float') || ext.has('EXT_color_buffer_half_float');
+    this.frameBuffer = new THREE.WebGLRenderTarget(4, 4, {
+      type: float ? THREE.HalfFloatType : THREE.UnsignedByteType,
+      colorSpace: float ? THREE.LinearSRGBColorSpace : THREE.SRGBColorSpace,
+      magFilter: THREE.NearestFilter,
+      minFilter: THREE.NearestFilter,
+    });
+
     this.scene.add(this.hemi, this.sun, this.sun.target, this.worldRoot);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1024, 1024);
     this.sun.shadow.bias = -0.0012;
     this.sun.shadow.normalBias = 0.03;
-    this.sun.shadow.intensity = 0.55;
+    this.sun.shadow.intensity = 0.42;
     const sc = this.sun.shadow.camera;
     sc.left = -17;
     sc.right = 17;
@@ -116,6 +135,8 @@ export class GameView {
     this.hoverPad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), flat(PAL.mustard, 0.6));
     this.hoverPad.rotation.x = -Math.PI / 2;
     this.scene.add(this.ring, this.hoverTile, this.hoverPad);
+
+    this.post.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), retroPass(this.frameBuffer.texture)));
 
     this.bindInput();
     window.addEventListener('resize', () => this.resize());
@@ -146,7 +167,13 @@ export class GameView {
 
     const world = this.ctrl.world;
     const { grid } = world;
-    this.house = new House(grid);
+    const occupied = new Set<string>();
+    for (const obj of world.objects) {
+      const def = this.ctrl.sim.defOf(obj);
+      if (!def) continue;
+      for (let dy = 0; dy < def.size.h; dy++) for (let dx = 0; dx < def.size.w; dx++) occupied.add(`${obj.x + dx},${obj.y + dy}`);
+    }
+    this.house = new House(grid, occupied);
     this.worldRoot.add(buildScenery(grid), this.house.group);
 
     for (const obj of world.objects) {
@@ -188,9 +215,15 @@ export class GameView {
   private resize(): void {
     const w = this.container.clientWidth || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
-    const scale = Math.min(1, MAX_INTERNAL_HEIGHT / h);
+    // cada pixel da cena ocupa um número inteiro de pixels da tela
+    const dpr = window.devicePixelRatio || 1;
+    const n = Math.max(1, Math.round((h * dpr) / TARGET_LINES));
+    const iw = Math.max(1, Math.ceil((w * dpr) / n));
+    const ih = Math.max(1, Math.ceil((h * dpr) / n));
+    this.internalHeight = ih;
     this.renderer.setPixelRatio(1);
-    this.renderer.setSize(Math.round(w * scale), Math.round(h * scale), false);
+    this.renderer.setSize(iw, ih, false);
+    this.frameBuffer.setSize(iw, ih);
   }
 
   // ---------- câmera ----------
@@ -207,18 +240,28 @@ export class GameView {
     cam.bottom = -this.viewHeight / 2;
     cam.right = (this.viewHeight * aspect) / 2;
     cam.left = -cam.right;
+    // o alvo anda de pixel em pixel da imagem interna: sem isso as texturas
+    // "fervem" quando a câmera desliza
+    const px = this.viewHeight / this.internalHeight;
+    const sin = Math.sin(this.azimuth);
+    const cos = Math.cos(this.azimuth);
+    const along = Math.round((this.target.x * cos - this.target.z * sin) / px) * px;
+    const stepDepth = px / Math.sin(ELEVATION);
+    const depth = Math.round((-this.target.x * sin - this.target.z * cos) / stepDepth) * stepDepth;
+    const aim = this.tmp.set(along * cos - depth * sin, 0, -along * sin - depth * cos).clone();
     cam.position
-      .set(Math.sin(this.azimuth) * Math.cos(ELEVATION), Math.sin(ELEVATION), Math.cos(this.azimuth) * Math.cos(ELEVATION))
+      .set(sin * Math.cos(ELEVATION), Math.sin(ELEVATION), cos * Math.cos(ELEVATION))
       .multiplyScalar(CAMERA_DISTANCE)
-      .add(this.target);
-    cam.lookAt(this.target);
+      .add(aim);
+    cam.lookAt(aim);
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
 
-    // a luz vem sempre de trás e de um lado da câmera, como numa maquete
-    const sunAz = this.azimuth + 0.75;
+    // a luz vem sempre de trás e da esquerda da câmera, como numa maquete:
+    // as faces da esquerda ficam claras e as da direita, na sombra
+    const sunAz = this.azimuth - 0.55;
     this.sun.position
-      .set(Math.sin(sunAz) * 0.75, 1.25, Math.cos(sunAz) * 0.75)
+      .set(Math.sin(sunAz) * 0.62, 1, Math.cos(sunAz) * 0.62)
       .multiplyScalar(30)
       .add(this.sun.target.position);
 
@@ -268,7 +311,7 @@ export class GameView {
       'wheel',
       (e) => {
         e.preventDefault();
-        this.viewHeight = THREE.MathUtils.clamp(this.viewHeight * (e.deltaY > 0 ? 1.1 : 0.9), 5, 26);
+        this.viewHeight = THREE.MathUtils.clamp(this.viewHeight * (e.deltaY > 0 ? 1.1 : 0.9), 4, 24);
       },
       { passive: false },
     );
@@ -411,7 +454,10 @@ export class GameView {
     for (const folk of world.folks) this.updateFolk(folk, alpha, dt);
     this.updateMarkers(dt);
 
+    this.renderer.setRenderTarget(this.frameBuffer);
     this.renderer.render(this.scene, this.camera);
+    this.renderer.setRenderTarget(null);
+    this.renderer.render(this.post, this.postCamera);
 
     this.hudClock += dt;
     if (this.hudClock > 0.09) {
@@ -421,9 +467,9 @@ export class GameView {
   }
 
   private applyDaylight(night: number): void {
-    this.sun.intensity = THREE.MathUtils.lerp(2.5, 0.45, night);
+    this.sun.intensity = THREE.MathUtils.lerp(2.0, 0.4, night);
     this.sun.color.setHex(PAL.sun).lerp(new THREE.Color(PAL.moon), night);
-    this.hemi.intensity = THREE.MathUtils.lerp(1.5, 0.7, night);
+    this.hemi.intensity = THREE.MathUtils.lerp(1.5, 0.65, night);
     this.hemi.color.setHex(0xffffff).lerp(new THREE.Color(0x7f93d8), night);
     this.scene.background = new THREE.Color(PAL.sky).lerp(new THREE.Color(PAL.nightSky), night);
   }
@@ -538,6 +584,46 @@ export class GameView {
       return false;
     });
   }
+}
+
+/**
+ * Passo final: converte a imagem para a tela e reduz as cores para 16 bits
+ * (5-6-5) com pontilhado ordenado, como as placas de vídeo do fim dos anos 90.
+ */
+function retroPass(scene: THREE.Texture): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: { tScene: { value: scene } },
+    depthTest: false,
+    depthWrite: false,
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = vec4(position.xy, 0.0, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D tScene;
+      varying vec2 vUv;
+      float bayer2(vec2 a) {
+        a = floor(a);
+        return fract(a.x / 2.0 + a.y * a.y * 0.75);
+      }
+      float bayer4(vec2 a) {
+        return bayer2(0.5 * a) * 0.25 + bayer2(a);
+      }
+      vec3 toScreen(vec3 c) {
+        return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+      }
+      void main() {
+        vec3 c = toScreen(clamp(texture2D(tScene, vUv).rgb, 0.0, 1.0));
+        float d = bayer4(gl_FragCoord.xy) - 0.5;
+        vec3 levels = vec3(31.0, 63.0, 31.0);
+        c = floor(c * levels + 0.5 + d) / levels;
+        gl_FragColor = vec4(c, 1.0);
+      }
+    `,
+  });
 }
 
 /** Ícone do balão: a necessidade que a ação mais recupera. */
