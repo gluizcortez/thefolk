@@ -20,6 +20,7 @@ import type {
   BuildCommand,
   Folk,
   InteractionDef,
+  Mess,
   NeedId,
   ObjectDef,
   RelDelta,
@@ -39,6 +40,7 @@ import { texMat } from './art/build';
 import { PAL } from './art/palette';
 import { buildScenery } from './art/scenery';
 import { getTexture } from './art/textures';
+import { WearFx, buildMess } from './art/upkeep';
 import type { GameController } from './controller';
 
 /** 30° dá a projeção 2:1 das vistas isométricas clássicas */
@@ -60,6 +62,19 @@ const ANIMS: Record<string, FolkAnim> = {
   'shower:shower': 'scrub',
 };
 
+/** Cuidados com a casa: a mesma animação em qualquer objeto. */
+const CARE_ANIMS: Record<string, FolkAnim> = {
+  clean: 'scrub',
+  repair: 'scrub',
+  service: 'reach',
+  dishes: 'scrub',
+  empty: 'reach',
+  dump: 'reach',
+};
+
+/** Altura do tampo das superfícies, para o prato ficar em cima (o resto vai no chão). */
+const SURFACE_TOP: Record<string, number> = { dinette: 0.77, desk: 0.77, counter: 0.92, kitchensink: 0.92 };
+
 interface ObjectEntry {
   obj: WorldObject;
   def: ObjectDef;
@@ -67,6 +82,8 @@ interface ObjectEntry {
   model: FurnitureModel;
   center: THREE.Vector3;
   turn: number;
+  /** manchas, moscas, fumaça e faísca (bloco 1) */
+  fx: WearFx;
 }
 
 interface FolkEntry {
@@ -79,6 +96,7 @@ interface FolkEntry {
 
 interface Hover {
   entry?: ObjectEntry;
+  mess?: Mess;
   tile?: { x: number; y: number };
   folk?: Folk;
 }
@@ -116,6 +134,9 @@ export class GameView {
   private objectsRoot = new THREE.Group();
   private house!: House;
   private objects = new Map<number, ObjectEntry>();
+  /** pratos, poças e lixo soltos pela casa */
+  private messRoot = new THREE.Group();
+  private messSig = '';
   private folks = new Map<number, FolkEntry>();
   private ring = new THREE.Group();
   private hoverTile: THREE.Mesh;
@@ -240,6 +261,8 @@ export class GameView {
     this.buildHouse();
     this.worldRoot.add(this.objectsRoot);
     this.rebuildObjects();
+    this.worldRoot.add(this.messRoot);
+    this.messSig = '';
 
     this.syncFolks();
 
@@ -334,11 +357,14 @@ export class GameView {
       const size = objectSize(def, obj.rot);
       const center = new THREE.Vector3(obj.x + size.w / 2, 0, obj.y + size.h / 2);
       const turn = (spec.facing === 'E' ? Math.PI / 2 : 0) + obj.rot * (Math.PI / 2);
+      const height = Math.max(0.3, new THREE.Box3().setFromObject(model.group).max.y);
       model.group.position.copy(center);
       model.group.rotation.y = turn;
       model.group.userData.objectId = obj.id;
-      this.objectsRoot.add(model.group);
-      this.objects.set(obj.id, { obj, def, spec, model, center, turn });
+      const fx = new WearFx(size.w, size.h, height, obj.id);
+      fx.group.position.copy(center);
+      this.objectsRoot.add(model.group, fx.group);
+      this.objects.set(obj.id, { obj, def, spec, model, center, turn, fx });
     }
     this.builtObjects = this.ctrl.objectsVersion;
     this.hover = {};
@@ -442,12 +468,14 @@ export class GameView {
       } else {
         this.hover = this.pick(e.clientX, e.clientY);
         if (this.ctrl.mode === 'buy') this.hover.tile = undefined;
-        el.style.cursor = this.hover.entry || this.hover.folk ? 'pointer' : 'default';
+        el.style.cursor = this.hover.entry || this.hover.folk || this.hover.mess ? 'pointer' : 'default';
         const tip = this.hover.folk
           ? this.hud.folkTooltip(this.hover.folk)
-          : this.hover.entry
-            ? t(this.hover.entry.def.name)
-            : null;
+          : this.hover.mess
+            ? t(`mess.${this.hover.mess.kind}`)
+            : this.hover.entry
+              ? this.hud.objectTooltip(this.hover.entry.obj)
+              : null;
         this.hud.setTooltip(e.clientX, e.clientY, tip);
       }
       p.x = e.clientX;
@@ -575,6 +603,15 @@ export class GameView {
       const folk = o ? this.ctrl.sim.findFolk(o.userData.folkId as number) : undefined;
       if (folk) return { folk };
     }
+    if (this.ctrl.mode === 'live') {
+      const hitMess = this.raycaster.intersectObjects(this.messRoot.children, true)[0];
+      if (hitMess) {
+        let o: THREE.Object3D | null = hitMess.object;
+        while (o && o.userData.messId === undefined) o = o.parent;
+        const mess = o ? this.ctrl.world.mess.find((m) => m.id === o!.userData.messId) : undefined;
+        if (mess) return { mess };
+      }
+    }
     const groups = [...this.objects.values()].map((e) => e.model.group);
     const hit = this.raycaster.intersectObjects(groups, true)[0];
     if (hit) {
@@ -625,7 +662,10 @@ export class GameView {
       if (hit.folk.id !== folk.id) this.hud.openSocialMenu(clientX, clientY, hit.folk);
       return;
     }
-    if (hit.entry) {
+    if (hit.mess) {
+      this.hud.setTooltip(0, 0, null);
+      this.hud.openMessMenu(clientX, clientY, hit.mess);
+    } else if (hit.entry) {
       this.hud.setTooltip(0, 0, null);
       this.hud.openMenu(clientX, clientY, hit.entry.obj);
     } else if (hit.tile) {
@@ -633,6 +673,35 @@ export class GameView {
         this.addPing(hit.tile.x, hit.tile.y);
       }
     }
+  }
+
+  /** Refaz os modelos da bagunça quando ela muda. */
+  private syncMess(): void {
+    const world = this.ctrl.world;
+    const mess = world.mess ?? [];
+    const sig = mess.map((m) => m.id).join(',') + `|${this.ctrl.objectsVersion}`;
+    if (sig === this.messSig) return;
+    this.messSig = sig;
+    this.messRoot.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.geometry.dispose();
+    });
+    this.messRoot.clear();
+    for (const m of mess) {
+      // em cima de mesa ou bancada, o prato fica no tampo
+      let top = 0;
+      for (const e of this.objects.values()) {
+        if (SURFACE_TOP[e.def.art] === undefined) continue;
+        const size = objectSize(e.def, e.obj.rot);
+        if (m.x >= e.obj.x && m.y >= e.obj.y && m.x < e.obj.x + size.w && m.y < e.obj.y + size.h) top = SURFACE_TOP[e.def.art];
+      }
+      const stack = mess.filter((o) => o.x === m.x && o.y === m.y && o.id < m.id).length;
+      const g = buildMess(m.kind, m.id, top);
+      const jitter = ((m.id * 37) % 7) / 7 - 0.5;
+      g.position.set(m.x + 0.5 + jitter * 0.3, top + (m.kind === 'plate' ? stack * 0.03 : 0), m.y + 0.5 - jitter * 0.25);
+      g.userData.messId = m.id;
+      this.messRoot.add(g);
+    }
+    if (this.hover.mess && !mess.includes(this.hover.mess)) this.hover = {};
   }
 
   private addPing(x: number, y: number): void {
@@ -681,8 +750,10 @@ export class GameView {
       const a = folk.queue[0];
       if (a?.phase === 'using' && a.objectId !== undefined && a.interactionId) using.set(a.objectId, a.interactionId);
     }
+    this.syncMess();
     for (const entry of this.objects.values()) {
       entry.model.tick?.({ time: this.animTime, using: using.get(entry.obj.id), night });
+      if (entry.obj.state) entry.fx.update(entry.obj.state, !!entry.def.upkeep?.bin && entry.obj.state.fill >= 100, this.animTime);
       const s = entry === this.hover.entry ? 1.04 : 1;
       entry.model.group.scale.lerp(this.tmp.set(s, s, s), 0.3);
     }
@@ -761,6 +832,7 @@ export class GameView {
     } else if (it && entry) {
       anim =
         ANIMS[`${entry.def.art}:${it.id}`] ??
+        (it.care ? CARE_ANIMS[it.care] : undefined) ??
         (it.pose === 'sit' ? 'sit' : it.pose === 'lie' ? 'sleep' : it.pose === 'dance' ? 'dance' : 'reach');
       if (it.onObject) {
         let anchor: Anchor | undefined;
@@ -784,6 +856,8 @@ export class GameView {
           onObject = true;
         }
       }
+    } else if (action?.kind === 'tidy' && action.phase === 'using') {
+      anim = 'scrub';
     } else if (folk.px !== folk.x || folk.py !== folk.y) {
       anim = 'walk';
     } else if (social) {

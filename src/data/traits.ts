@@ -15,6 +15,8 @@ export const TRAITS: Record<string, TraitDef> = {
     decay: { social: 0.8 },
     likes: ['gentil', 'reservado'],
     dislikes: ['agitado'],
+    tidy: 1.3,
+    messSense: 1.3,
   },
   tagarela: {
     id: 'tagarela',
@@ -35,6 +37,7 @@ export const TRAITS: Record<string, TraitDef> = {
     decay: { fun: 1.25, energy: 0.9 },
     likes: ['brincalhao', 'agitado'],
     dislikes: ['caseiro'],
+    tidy: 0.75,
   },
   guloso: {
     id: 'guloso',
@@ -52,6 +55,7 @@ export const TRAITS: Record<string, TraitDef> = {
     likes: ['tagarela', 'agitado'],
     dislikes: ['ambicioso'],
     social: { friendly: 1.2, mean: 1.5 },
+    tidy: 0.8,
   },
   romantico: {
     id: 'romantico',
@@ -99,6 +103,7 @@ export const TRAITS: Record<string, TraitDef> = {
     social: { mean: 0.2, friendly: 1.15 },
     gossip: 0.5,
     jealousy: 0.7,
+    tidy: 1.1,
   },
   // fatia 5: ciúme e fofoca
   ciumento: {
@@ -119,5 +124,26 @@ export const TRAITS: Record<string, TraitDef> = {
     dislikes: ['reservado'],
     social: { friendly: 1.1 },
     gossip: 2.5,
+  },
+  // bloco 1: casa viva
+  caprichoso: {
+    id: 'caprichoso',
+    name: 'trait.caprichoso',
+    hint: 'traitHint.caprichoso',
+    needWeight: { ambience: 1.3 },
+    likes: ['caseiro', 'caprichoso'],
+    dislikes: ['desleixado'],
+    tidy: 1.7,
+    messSense: 1.8,
+  },
+  desleixado: {
+    id: 'desleixado',
+    name: 'trait.desleixado',
+    hint: 'traitHint.desleixado',
+    needWeight: { comfort: 1.2 },
+    likes: ['brincalhao', 'desleixado'],
+    dislikes: ['caprichoso'],
+    tidy: 0.4,
+    messSense: 0.4,
   },
 };

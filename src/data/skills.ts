@@ -8,4 +8,7 @@ export const SKILLS: Record<string, SkillDef> = {
   creativity: { id: 'creativity', name: 'skill.creativity' },
   charisma: { id: 'charisma', name: 'skill.charisma' },
   fitness: { id: 'fitness', name: 'skill.fitness' },
+  // bloco 1: Jeito (consertar, mexer em aparelho) e Capricho (limpar rápido, sujar menos)
+  handiness: { id: 'handiness', name: 'skill.handiness' },
+  tidiness: { id: 'tidiness', name: 'skill.tidiness' },
 };

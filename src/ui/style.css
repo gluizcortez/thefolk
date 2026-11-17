@@ -506,6 +506,11 @@ button {
   color: #6a5a4c;
 }
 
+.menu-note.menu-warn {
+  color: #a8321f;
+  font-weight: 700;
+}
+
 .menu-item {
   display: flex;
   align-items: center;

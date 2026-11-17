@@ -1,6 +1,7 @@
 import type { Nav } from './grid';
 import { useTiles } from './grid';
-import { NEED_MAX, clampNeed, needWeight } from './needs';
+import { NEED_MAX, clampNeed, moodOf, needWeight } from './needs';
+import { careAvailable, careDrive, interactionOpen, messScore, messTaken, messTiles, objectCareScore } from './upkeep';
 import { skillBoost } from './skills';
 import { findPathToAny } from './pathfinding';
 import { nextFloat } from './rng';
@@ -16,6 +17,8 @@ export interface Option {
   interactionId?: string;
   otherId?: number;
   socialId?: string;
+  /** bagunça para recolher */
+  messId?: number;
   score: number;
   distance: number;
 }
@@ -150,19 +153,28 @@ function objectDefIdOf(world: World, id: number | undefined): string {
 /** Todas as opções autônomas alcançáveis, da melhor para a pior. */
 export function scoreOptions(world: World, catalog: Catalog, folk: Folk, nav: Nav): Option[] {
   const options: Option[] = [];
+  // vontade de cuidar da casa (traço e humor); visita não faxina
+  const drive = careDrive(catalog, folk, moodOf(catalog, folk.needs));
   for (const obj of world.objects) {
     const def = catalog.objects[obj.defId];
     if (!def) continue;
     const visitor = folk.visit !== null;
+    const care =
+      drive > 0
+        ? def.interactions.filter((it) => it.care && !it.hidden && careAvailable(obj, it) && objectCareScore(obj, it) > 0)
+        : [];
     const auto = def.interactions.filter(
       (it) =>
         it.autonomous !== false &&
         !it.special &&
+        !it.care &&
+        !it.hidden &&
+        interactionOpen(obj, it) &&
         (it.cost ?? 0) <= world.household.funds &&
         !(visitor && (it.residentOnly || (it.cost ?? 0) > 0)) &&
         (it.autoBelow === undefined || !it.until || folk.needs[it.until] < it.autoBelow),
     );
-    if (auto.length === 0) continue;
+    if (auto.length === 0 && care.length === 0) continue;
     if (objectUsers(world, obj.id, folk) >= (def.slots ?? 1)) continue;
     const path = findPathToAny(nav, folk, useTiles(world, nav, obj, def));
     if (!path) continue;
@@ -170,6 +182,19 @@ export function scoreOptions(world: World, catalog: Catalog, folk: Folk, nav: Na
       const utility = interactionUtility(catalog, folk, it);
       const score = utility / (1 + DISTANCE_COST * path.length);
       options.push({ objectId: obj.id, interactionId: it.id, score, distance: path.length });
+    }
+    for (const it of care) {
+      const score = (objectCareScore(obj, it) * drive) / (1 + DISTANCE_COST * path.length);
+      options.push({ objectId: obj.id, interactionId: it.id, score, distance: path.length });
+    }
+  }
+  if (drive > 0) {
+    for (const mess of world.mess) {
+      if (messTaken(world, mess.id, folk)) continue;
+      const path = findPathToAny(nav, folk, messTiles(world, nav, mess));
+      if (!path) continue;
+      const score = (messScore(mess, world.tick) * drive) / (1 + DISTANCE_COST * path.length);
+      options.push({ messId: mess.id, score, distance: path.length });
     }
   }
   options.push(...scoreSocialOptions(world, catalog, folk, nav));
@@ -179,6 +204,7 @@ export function scoreOptions(world: World, catalog: Catalog, folk: Folk, nav: Na
       b.score - a.score ||
       (a.objectId ?? 0) - (b.objectId ?? 0) ||
       (a.otherId ?? 0) - (b.otherId ?? 0) ||
+      (a.messId ?? 0) - (b.messId ?? 0) ||
       (a.interactionId ?? a.socialId ?? '').localeCompare(b.interactionId ?? b.socialId ?? ''),
   );
   return options;

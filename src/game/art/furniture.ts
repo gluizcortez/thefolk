@@ -836,6 +836,144 @@ const flowers: FurnitureSpec = {
   },
 };
 
+// ---------- bloco 1: casa viva ----------
+
+const kitchensink: FurnitureSpec = {
+  build() {
+    const body = colorMat(shade(PAL.cabinet, 0.9));
+    const steel = chrome();
+    const basin = lathe(
+      [
+        [0.0, 0],
+        [0.2, 0],
+        [0.22, 0.14],
+        [0.24, 0.15],
+      ],
+      4,
+      colorMat(0xb9c0c6, { gloss: 1, doubleSide: true }),
+      0,
+      0.76,
+      -0.12,
+    );
+    basin.rotation.y = Math.PI / 4;
+    basin.scale.set(1.35, 1, 0.9);
+    const g = group(
+      box(0.96, 0.05, 0.56, colorMat(0x1d1b19), 0, 0, -0.14),
+      box(1.0, 0.82, 0.62, fronted(body, texMat('counterFront', { gloss: 0.3 })), 0, 0.05, -0.12),
+      // tampo com a cuba de inox no meio
+      box(1.02, 0.05, 0.12, texMat('laminate', { gloss: 0.5 }), 0, 0.87, 0.18),
+      box(1.02, 0.05, 0.14, texMat('laminate', { gloss: 0.5 }), 0, 0.87, -0.37),
+      box(0.18, 0.05, 0.44, texMat('laminate', { gloss: 0.5 }), -0.42, 0.87, -0.12),
+      box(0.18, 0.05, 0.44, texMat('laminate', { gloss: 0.5 }), 0.42, 0.87, -0.12),
+      basin,
+      box(1.0, 0.1, 0.03, texMat('laminate', { gloss: 0.5 }), 0, 0.92, -0.42),
+      // torneira de bica alta
+      cyl(0.025, 0.03, 0.05, 8, steel, 0, 0.92, -0.36),
+      rod([0, 0.96, -0.36], [0, 1.16, -0.36], 0.015, steel),
+      rod([0, 1.16, -0.36], [0, 1.16, -0.2], 0.015, steel),
+      rod([0, 1.16, -0.2], [0, 1.1, -0.18], 0.013, steel),
+      ball(0.03, 0.02, 0.03, colorMat(0xc9382f, { gloss: 0.7 }), -0.1, 0.96, -0.36, 8),
+      ball(0.03, 0.02, 0.03, colorMat(0x2f7fc4, { gloss: 0.7 }), 0.1, 0.96, -0.36, 8),
+      // escorredor com dois pratos e a esponja
+      box(0.14, 0.012, 0.3, steel, 0.4, 0.92, -0.14),
+      cyl(0.11, 0.11, 0.012, 14, colorMat(0xf4f2ea, { gloss: 0.8 }), 0.4, 1.02, -0.18),
+      cyl(0.11, 0.11, 0.012, 14, colorMat(0xf4f2ea, { gloss: 0.8 }), 0.4, 1.02, -0.08),
+      box(0.08, 0.03, 0.05, colorMat(0xe8b830), -0.38, 0.92, -0.3),
+      box(0.08, 0.012, 0.05, colorMat(0x3f9455), -0.38, 0.95, -0.3),
+    );
+    const dish = g.children[g.children.length - 4];
+    dish.rotation.x = Math.PI / 2 - 0.2;
+    g.children[g.children.length - 3].rotation.x = Math.PI / 2 - 0.2;
+    return { group: g };
+  },
+};
+
+const trashcan: FurnitureSpec = {
+  build() {
+    const tin = colorMat(0x7d9a8a, { gloss: 0.7 });
+    const lid = colorMat(0x5c7466, { gloss: 0.8 });
+    const g = group(
+      lathe(
+        [
+          [0.15, 0],
+          [0.17, 0.02],
+          [0.19, 0.5],
+          [0.195, 0.52],
+        ],
+        14,
+        tin,
+      ),
+      lathe(
+        [
+          [0.0, 0.62],
+          [0.12, 0.61],
+          [0.2, 0.55],
+          [0.205, 0.52],
+        ],
+        14,
+        lid,
+      ),
+      // pedal
+      box(0.12, 0.025, 0.08, colorMat(0x3a3d42, { gloss: 0.7 }), 0, 0.01, 0.2),
+      rod([-0.12, 0.3, 0.19], [0.12, 0.3, 0.19], 0.008, chrome(), 6),
+    );
+    return { group: g };
+  },
+};
+
+const curbbin: FurnitureSpec = {
+  build() {
+    const drum = colorMat(0x3f6e4c, { gloss: 0.5 });
+    const rim = colorMat(0x2c4e36, { gloss: 0.6 });
+    const g = group(
+      cyl(0.3, 0.27, 0.86, 16, drum),
+      cyl(0.31, 0.31, 0.04, 16, rim, 0, 0.3),
+      cyl(0.31, 0.31, 0.04, 16, rim, 0, 0.6),
+      cyl(0.33, 0.33, 0.05, 16, rim, 0, 0.86),
+      ball(0.06, 0.035, 0.06, rim, 0, 0.92, 0, 8),
+      // um saco amarrado aparecendo pela tampa
+      ball(0.1, 0.07, 0.1, colorMat(0x26262b, { gloss: 0.4 }), 0.12, 0.92, 0.05, 8),
+    );
+    return { group: g };
+  },
+};
+
+const workbench: FurnitureSpec = {
+  build(seed) {
+    const pine = texMat('pine', { gloss: 0.2 });
+    const steel = colorMat(0x5b6066, { gloss: 0.8 });
+    const g = group(
+      rbox(1.6, 0.08, 0.62, 0.02, pine, 0, 0.82, -0.14),
+      box(1.5, 0.04, 0.5, pine, 0, 0.22, -0.14),
+      // quadro de ferramentas na parede de trás
+      box(1.5, 0.7, 0.03, texMat('pine', { color: 0xc8a26a }), 0, 1.0, -0.44),
+      // morsa na ponta
+      box(0.16, 0.1, 0.14, colorMat(0x2f6f9a, { gloss: 0.7 }), 0.62, 0.9, 0.06),
+      rod([0.62, 0.95, 0.13], [0.62, 0.95, 0.24], 0.012, chrome(), 6),
+      // rádio aberto em conserto, com as válvulas à mostra
+      rbox(0.36, 0.22, 0.2, 0.03, texMat('walnut', { gloss: 0.5 }), -0.2, 0.9, -0.2),
+      box(0.3, 0.012, 0.16, colorMat(0x3c6b45), 0.2, 0.9, -0.1),
+      cyl(0.02, 0.02, 0.06, 8, colorMat(0xe8c27a, { gloss: 0.9 }), 0.14, 0.91, -0.1),
+      cyl(0.02, 0.02, 0.06, 8, colorMat(0xe8c27a, { gloss: 0.9 }), 0.22, 0.91, -0.12),
+      // chave de fenda e martelo
+      rod([-0.55, 0.875, 0.02], [-0.38, 0.875, 0.08], 0.008, steel, 6),
+      rod([-0.55, 0.875, 0.02], [-0.6, 0.875, 0.0], 0.018, colorMat(0xc9382f), 6),
+    );
+    for (const sx of [-1, 1]) {
+      g.add(box(0.06, 0.82, 0.06, pine, sx * 0.72, 0, 0.12), box(0.06, 0.82, 0.06, pine, sx * 0.72, 0, -0.4));
+    }
+    // ferramentas penduradas
+    const rnd = seeded(seed + 5);
+    const tools = [0xc9382f, 0x8d949a, 0xe8b830, 0x2f6f9a, 0x8d949a];
+    tools.forEach((col, i) => {
+      const x = -0.6 + i * 0.3;
+      const len = 0.18 + rnd() * 0.12;
+      g.add(rod([x, 1.3, -0.42], [x + (rnd() - 0.5) * 0.05, 1.3 - len, -0.42], 0.014, colorMat(col, { gloss: 0.6 }), 6));
+    });
+    return { group: g };
+  },
+};
+
 // ---------- miudezas ----------
 // Detalhes que dão vida a cada objeto. Ficam separados do modelo principal
 // para ser fácil acrescentar ou tirar sem mexer na forma do móvel.
@@ -1063,6 +1201,10 @@ const SPECS: Record<string, FurnitureSpec> = {
   recorder,
   bike,
   flowers,
+  kitchensink,
+  trashcan,
+  curbbin,
+  workbench,
 };
 
 export function furnitureSpec(art: string): FurnitureSpec {

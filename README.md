@@ -161,6 +161,25 @@ npm run preview  # serve o dist/ localmente
   com aquela pessoa e pode partir para a briga; com boas lembranças procura
   mais. "Pedir desculpas" aparece para quem guarda mágoa e, aceito, deixa uma
   lembrança boa. Vizinho magoado não aparece sem avisar e topa menos convite.
+- **Casa viva (bloco 1)**: chuveiro, privada, pia e fogão sujam com o uso;
+  TV, som, fogão, chuveiro, privada, gravador e bicicleta gastam e quebram
+  (fumacinha e faísca). Quem come deixa prato na mesa, banho e acidente deixam
+  poça, e a lixeira da cozinha enche: cheia, fede e o lixo vai para o chão.
+  Clique no objeto para **Limpar**, **Consertar** ou **Fazer revisão** (só
+  aparece quando há o que fazer) e na bagunça para recolher. O prato vai para
+  a pia; o saco de lixo vai para o latão da calçada. Objeto quebrado não deixa
+  usar o resto. A IA limpa e conserta sozinha, com mais vontade se o traço
+  pede (caseiro, caprichoso) e menos se não (agitado, desleixado), e nada de
+  faxina de mau humor.
+- **Jeito e Capricho**: habilidades novas. Jeito sobe consertando, fazendo
+  revisão, lendo o manual de consertos na estante ou mexendo na bancada de
+  ferramentas; com Jeito abaixo de 3 o conserto sai **na gambiarra**
+  (remendado com fita: quebra de novo mais cedo) e às vezes dá choque leve.
+  Capricho sobe limpando e recolhendo: limpa mais rápido e suja menos.
+- **Manias de casa**: bagunça e sujeira derrubam o Ambiente de quem está por
+  perto, muito mais para quem é caprichoso ou caseiro. Quem se incomoda e
+  recolhe o prato de outro morador reclama e guarda a lembrança "deixou
+  bagunça para eu limpar".
 - **Salvar / Carregar / Novo jogo** no canto superior direito. O jogo também
   salva sozinho a cada 30 segundos e continua de onde parou ao reabrir.
 
@@ -297,6 +316,16 @@ Decisões principais do núcleo:
 - **Notícias** (`world.news`) guardam quem sabe (`knownBy`). Aprender uma
   notícia é o único lugar que mexe em fama (`world.reputation`) e dispara
   ciúme, então ver, ouvir no papo e ouvir pela rede seguem a mesma regra.
+- **Casa viva (bloco 1)** mora em `sim/upkeep.ts`: `WorldObject.state`
+  (sujeira, desgaste, quebrado, remendado, progresso do conserto, lixo da
+  lixeira) e `world.mess` (pratos, poças, lixo). Interações de cuidado têm
+  `care` (`clean`, `repair`, `service`, `empty`, `dishes`, `dump`) e só abrem
+  quando há o que fazer; `hidden` marca as que só vêm encadeadas (lavar a
+  louça, jogar o saco no latão). A `Sim` chama `wearTick` a cada minuto de
+  uso, `afterUse` no fim (quebra, prato, poça, lixo) e encadeia o passo
+  seguinte na frente da fila. Bagunça é recolhida pela ação `tidy`. A IA soma
+  as opções de cuidado com nota própria vezes `careDrive` (traços `tidy` e
+  humor); o ambiente soma o estado dos objetos e a bagunça vezes `messSense`.
 - **Objetos de vários lugares** (`slots`): sofá, mesa e caixa de som aceitam
   dois. Quem chega num objeto cheio espera até meia hora e desiste.
 - **Objetos giram** em quartos de volta (`rot`): a área ocupada e os lados de uso
@@ -371,6 +400,11 @@ Decisões principais do núcleo:
   vontade de espalhar, se dá ciúme e quanto dura).
 - **Chefe ou colega**: um vizinho com `career` em `neighbors.ts` (`boss: true`
   para o chefe). Laços entre vizinhos ficam em `NEIGHBOR_TIES`.
+- **Objeto que suja ou quebra**: `upkeep` no objeto (`dirt` e `wear` por
+  minuto de uso, `breaks`, `bin` para lixeira) e as interações de cuidado
+  prontas no topo de `objects.ts` (`clean()`, `repair()`, `service()`,
+  `dishes()`). `leaves` numa interação deixa prato ou poça; `trash` manda lixo
+  para a lixeira.
 - **Mudou o formato do `World`?** Aumente `SAVE_VERSION` em `src/sim/save.ts` e
   registre a migração no mesmo arquivo.
 
@@ -384,6 +418,21 @@ Decisões principais do núcleo:
 
 O próximo passo está em [docs/plano-evolucao.md](docs/plano-evolucao.md): 17 blocos
 que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
+
+- **Bloco 1 (feito)**: casa viva: sujeira, desgaste, conserto, Jeito e Capricho (save v6).
+- Próximo: bloco 2, despensa, correio e prestadores de serviço.
+
+## Limitações conhecidas do bloco 1
+
+- Sujeira só nasce do uso: a casa parada não acumula poeira. Pisos e paredes
+  não sujam (o ambiente por cômodo vem no bloco 3).
+- O folk não carrega o prato nem o saco na mão: ele só anda até a pia ou o
+  latão. O latão da calçada nunca enche (o caminhão de lixo fica para quando
+  houver serviços, no bloco 2).
+- Saves antigos não ganham lixeira, pia da cozinha nem latão: sem lixeira o
+  lixo some, sem latão o saco é levado até a rua. Dá para comprar os três.
+- Choque é só um susto (conforto, energia e higiene); o perigo de verdade
+  vem com o fogo, no bloco 14. Visitas sujam, mas não limpam.
 
 ## Limitações conhecidas da fatia 5
 

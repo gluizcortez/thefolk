@@ -18,3 +18,4 @@ export * from './people';
 export * from './gossip';
 export * from './work';
 export * from './hustle';
+export * from './upkeep';

@@ -56,9 +56,39 @@ export interface InteractionDef {
    * negócio que aceite este objeto (veja data/gigs.ts e data/businesses.ts).
    */
   task?: 'gig' | 'business';
+  /**
+   * bloco 1: cuidado com o próprio objeto. 'clean' tira a sujeira, 'repair'
+   * conserta o que quebrou, 'service' faz revisão (tira desgaste), 'empty'
+   * esvazia a lixeira, 'dishes' lava a louça e 'dump' joga o saco fora.
+   * Só aparecem quando há o que fazer (veja sim/upkeep.ts).
+   */
+  care?: CareKind;
+  /** não aparece no menu nem para a IA: só vem encadeada de outra ação */
+  hidden?: boolean;
+  /** o que fica para trás quando termina (prato, poça), com a chance */
+  leaves?: { kind: MessKind; chance: number };
+  /** quanto lixo vai para a lixeira da cozinha ao terminar (0..100) */
+  trash?: number;
   /** dicas só para a renderização */
   pose?: Pose;
   onObject?: boolean;
+}
+
+export type CareKind = 'clean' | 'repair' | 'service' | 'empty' | 'dishes' | 'dump';
+
+/** Bagunça solta: prato sujo, poça, lixo no chão. */
+export type MessKind = 'plate' | 'puddle' | 'trash';
+
+/** Como um objeto se suja e se gasta com o uso (por minuto de uso). */
+export interface UpkeepDef {
+  /** sujeira por minuto de uso */
+  dirt?: number;
+  /** desgaste por minuto de uso */
+  wear?: number;
+  /** quebra com o desgaste */
+  breaks?: boolean;
+  /** lixeira: guarda até 100 de lixo e fede quando enche */
+  bin?: boolean;
 }
 
 export interface SkillGain {
@@ -102,6 +132,8 @@ export interface ObjectDef {
   buyable?: boolean;
   /** quantos folks usam ao mesmo tempo (padrão: 1) */
   slots?: number;
+  /** bloco 1: como suja, gasta e quebra */
+  upkeep?: UpkeepDef;
 }
 
 export interface SkillDef {
@@ -272,6 +304,10 @@ export interface TraitDef {
   jealousy?: number;
   /** quanto gosta de passar fofoca adiante (1 = normal) */
   gossip?: number;
+  /** bloco 1: vontade de limpar e consertar (1 = normal) */
+  tidy?: number;
+  /** quanto a bagunça incomoda (1 = normal) */
+  messSense?: number;
 }
 
 // ---------- Relações ----------
@@ -483,6 +519,33 @@ export interface WorldObject {
   rot: Rotation;
   /** quanto foi pago (o valor de revenda sai daqui) */
   paid: number;
+  /** bloco 1: sujeira, desgaste e conserto */
+  state: ObjectState;
+}
+
+export interface ObjectState {
+  /** 0 a 100 */
+  dirt: number;
+  /** 0 a 100: quanto mais gasto, mais fácil quebrar */
+  wear: number;
+  broken: boolean;
+  /** consertado na gambiarra: quebra de novo mais cedo */
+  patched: boolean;
+  /** quanto do conserto já foi feito (0 a 100) */
+  repair: number;
+  /** lixeira: quanto lixo tem (0 a 100) */
+  fill: number;
+}
+
+/** Bagunça no chão (ou em cima de uma mesa). */
+export interface Mess {
+  id: number;
+  kind: MessKind;
+  x: number;
+  y: number;
+  tick: number;
+  /** quem deixou (0 = ninguém em especial) */
+  by: number;
 }
 
 export type ActionPhase = 'queued' | 'walking' | 'using';
@@ -492,7 +555,7 @@ export type ActionPhase = 'queued' | 'walking' | 'using';
  * 'social' = puxar conversa com `otherId`; 'listen' = dar atenção a quem puxou;
  * 'leave' = visita indo embora.
  */
-export type ActionKind = 'use' | 'goto' | 'work' | 'social' | 'listen' | 'leave';
+export type ActionKind = 'use' | 'goto' | 'work' | 'social' | 'listen' | 'leave' | 'tidy';
 
 export interface Action {
   id: number;
@@ -504,6 +567,8 @@ export interface Action {
   /** o outro folk (social, listen) ou o vizinho convidado (use com 'invite') */
   otherId?: number;
   socialId?: string;
+  /** bagunça que vai recolher (tidy) */
+  messId?: number;
   /** resultado da conversa, sorteado quando ela começa */
   accepted?: boolean;
   /** minutos esperando um objeto ou alguém ficar livre */
@@ -672,6 +737,8 @@ export interface World {
   reputation: Record<string, number>;
   /** mural de frilas do dia */
   gigBoard: GigOffer[];
+  /** bloco 1: pratos sujos, poças e lixo pela casa */
+  mess: Mess[];
 }
 
 // ---------- Comandos (única porta de entrada do jogador) ----------
@@ -679,6 +746,7 @@ export interface World {
 export type Command =
   | { type: 'queueUse'; folkId: number; objectId: number; interactionId: string }
   | { type: 'queueGoto'; folkId: number; x: number; y: number }
+  | { type: 'queueTidy'; folkId: number; messId: number }
   | { type: 'cancel'; folkId: number; actionId: number }
   | { type: 'setAutonomy'; folkId: number; on: boolean }
   | { type: 'setSpeed'; speed: Speed }

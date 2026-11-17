@@ -1,4 +1,42 @@
-import type { ObjectDef } from '../sim/types';
+import type { InteractionDef, ObjectDef } from '../sim/types';
+
+// ---------- bloco 1: cuidados com a casa ----------
+// Interações de cuidado só aparecem quando há o que fazer (sujeira, objeto
+// quebrado, desgaste, lixeira com lixo). Veja sim/upkeep.ts.
+const clean = (): InteractionDef => ({
+  id: 'clean',
+  label: 'act.clean',
+  duration: 60,
+  effects: { hygiene: -0.06, fun: -0.03 },
+  care: 'clean',
+  skill: { id: 'tidiness', xpPerMinute: 0.8 },
+});
+const repair = (): InteractionDef => ({
+  id: 'repair',
+  label: 'act.repair',
+  duration: 180,
+  effects: { hygiene: -0.05, fun: -0.02 },
+  care: 'repair',
+  skill: { id: 'handiness', xpPerMinute: 1 },
+});
+const service = (): InteractionDef => ({
+  id: 'service',
+  label: 'act.service',
+  duration: 60,
+  effects: { fun: 0.05 },
+  care: 'service',
+  autonomous: false,
+  skill: { id: 'handiness', xpPerMinute: 0.8 },
+});
+const dishes = (): InteractionDef => ({
+  id: 'dishes',
+  label: 'act.dishes',
+  duration: 4,
+  effects: { hygiene: -0.1 },
+  care: 'dishes',
+  hidden: true,
+  skill: { id: 'tidiness', xpPerMinute: 0.6 },
+});
 
 // Catálogo de objetos. Tudo aqui é dado: para criar um objeto novo, adicione
 // uma entrada, os textos em i18n e (opcional) um modelo em game/art/furniture.ts
@@ -27,9 +65,13 @@ const list: ObjectDef[] = [
         until: 'hunger',
         cost: 6,
         skill: { id: 'cooking', xpPerMinute: 0.3, boosts: 'hunger' },
+        leaves: { kind: 'plate', chance: 0.85 },
+        trash: 7,
       },
-      { id: 'snack', label: 'act.snack', duration: 12, effects: { hunger: 2.2 }, until: 'hunger', cost: 2 },
+      { id: 'snack', label: 'act.snack', duration: 12, effects: { hunger: 2.2 }, until: 'hunger', cost: 2, trash: 3 },
+      clean(),
     ],
+    upkeep: { dirt: 0.08 },
   },
   {
     id: 'bed',
@@ -83,8 +125,13 @@ const list: ObjectDef[] = [
         until: 'hygiene',
         residentOnly: true,
         onObject: true,
+        leaves: { kind: 'puddle', chance: 0.35 },
       },
+      clean(),
+      repair(),
+      service(),
     ],
+    upkeep: { dirt: 0.5, wear: 0.05, breaks: true },
   },
   {
     id: 'toilet',
@@ -104,8 +151,13 @@ const list: ObjectDef[] = [
         until: 'bladder',
         pose: 'sit',
         onObject: true,
+        leaves: { kind: 'puddle', chance: 0.05 },
       },
+      clean(),
+      repair(),
+      service(),
     ],
+    upkeep: { dirt: 0.6, wear: 0.12, breaks: true },
   },
   {
     id: 'sink',
@@ -118,7 +170,10 @@ const list: ObjectDef[] = [
     ambience: 0,
     interactions: [
       { id: 'wash', label: 'act.wash', duration: 5, effects: { hygiene: 3 }, until: 'hygiene' },
+      dishes(),
+      clean(),
     ],
+    upkeep: { dirt: 0.4 },
   },
   {
     id: 'sofa',
@@ -153,7 +208,10 @@ const list: ObjectDef[] = [
     ambience: 4,
     interactions: [
       { id: 'watch', label: 'act.watch', duration: 90, effects: { fun: 1.3 }, until: 'fun' },
+      repair(),
+      service(),
     ],
+    upkeep: { wear: 0.12, breaks: true },
   },
   {
     id: 'bookshelf',
@@ -180,6 +238,14 @@ const list: ObjectDef[] = [
         effects: { fun: 0.15 },
         autonomous: false,
         skill: { id: 'cooking', xpPerMinute: 0.8 },
+      },
+      {
+        id: 'manual',
+        label: 'act.manual',
+        duration: 60,
+        effects: { fun: 0.1 },
+        autonomous: false,
+        skill: { id: 'handiness', xpPerMinute: 0.8 },
       },
     ],
   },
@@ -232,7 +298,10 @@ const list: ObjectDef[] = [
         pose: 'dance',
         skill: { id: 'fitness', xpPerMinute: 0.2 },
       },
+      repair(),
+      service(),
     ],
+    upkeep: { wear: 0.15, breaks: true },
   },
   {
     id: 'plant',
@@ -275,6 +344,8 @@ const list: ObjectDef[] = [
         autonomous: false,
         cost: 10,
         skill: { id: 'cooking', xpPerMinute: 1.2, boosts: 'hunger' },
+        leaves: { kind: 'plate', chance: 0.9 },
+        trash: 9,
       },
       {
         id: 'freelance',
@@ -294,7 +365,11 @@ const list: ObjectDef[] = [
         residentOnly: true,
         task: 'business',
       },
+      clean(),
+      repair(),
+      service(),
     ],
+    upkeep: { dirt: 0.5, wear: 0.12, breaks: true },
   },
   {
     id: 'counter',
@@ -463,7 +538,10 @@ const list: ObjectDef[] = [
         residentOnly: true,
         task: 'gig',
       },
+      repair(),
+      service(),
     ],
+    upkeep: { wear: 0.1, breaks: true },
   },
   {
     id: 'bike',
@@ -484,7 +562,10 @@ const list: ObjectDef[] = [
         onObject: true,
         skill: { id: 'fitness', xpPerMinute: 1.4 },
       },
+      repair(),
+      service(),
     ],
+    upkeep: { wear: 0.08, breaks: true },
   },
   {
     id: 'flowers',
@@ -495,6 +576,71 @@ const list: ObjectDef[] = [
     size: { w: 1, h: 1 },
     ambience: 10,
     interactions: [],
+  },
+  // ---------- bloco 1: casa viva ----------
+  {
+    id: 'kitchensink',
+    name: 'obj.kitchensink',
+    price: 230,
+    category: 'plumbing',
+    art: 'kitchensink',
+    useSides: ['S'],
+    size: { w: 1, h: 1 },
+    ambience: 1,
+    interactions: [dishes(), clean()],
+    upkeep: { dirt: 0.3 },
+  },
+  {
+    id: 'trashcan',
+    name: 'obj.trashcan',
+    price: 45,
+    category: 'appliances',
+    art: 'trashcan',
+    size: { w: 1, h: 1 },
+    ambience: 0,
+    interactions: [
+      {
+        id: 'empty',
+        label: 'act.emptyTrash',
+        duration: 4,
+        effects: { hygiene: -0.2 },
+        care: 'empty',
+        skill: { id: 'tidiness', xpPerMinute: 0.5 },
+      },
+    ],
+    upkeep: { bin: true },
+  },
+  {
+    id: 'curbbin',
+    name: 'obj.curbbin',
+    price: 80,
+    category: 'appliances',
+    art: 'curbbin',
+    size: { w: 1, h: 1 },
+    ambience: -1,
+    interactions: [
+      { id: 'dump', label: 'act.dump', duration: 2, effects: {}, care: 'dump', hidden: true },
+    ],
+  },
+  {
+    id: 'workbench',
+    name: 'obj.workbench',
+    price: 390,
+    category: 'hobbies',
+    art: 'workbench',
+    useSides: ['S'],
+    size: { w: 2, h: 1 },
+    ambience: 1,
+    interactions: [
+      {
+        id: 'tinker',
+        label: 'act.tinker',
+        duration: 60,
+        effects: { fun: 0.6, hygiene: -0.03 },
+        until: 'fun',
+        skill: { id: 'handiness', xpPerMinute: 1.3 },
+      },
+    ],
   },
 ];
 

@@ -1,5 +1,6 @@
 import type { Nav } from './grid';
 import { buildNav, edgeKey, footprint, inBounds, objectSize, useTiles } from './grid';
+import { freshState } from './upkeep';
 import type { Catalog, ObjectDef, Rotation, Vec, World, WorldObject } from './types';
 
 /** símbolo da moeda (tostões) */
@@ -24,8 +25,11 @@ export function objectValue(obj: WorldObject, def: ObjectDef): number {
   return obj.paid > 0 ? obj.paid : def.price;
 }
 
+/** Quebrado vale menos na revenda. */
+export const BROKEN_RESALE = 0.5;
+
 export function sellValue(obj: WorldObject, def: ObjectDef): number {
-  return Math.round(objectValue(obj, def) * RESALE);
+  return Math.round(objectValue(obj, def) * RESALE * (obj.state?.broken ? BROKEN_RESALE : 1));
 }
 
 /** Valor da conta: uma parte fixa mais uma fração do valor dos móveis. */
@@ -125,7 +129,7 @@ export function checkPlacement(
     }
   }
 
-  const placed: WorldObject = { id: -1, defId, x, y, rot, paid: 0 };
+  const placed: WorldObject = { id: -1, defId, x, y, rot, paid: 0, state: freshState() };
   const after = buildNav({ ...others, objects: [...others.objects, placed] }, catalog);
   const tileSet = new Set(tiles.map((t) => t.y * world.grid.w + t.x));
   for (const folk of world.folks) {

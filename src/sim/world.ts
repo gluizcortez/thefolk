@@ -2,6 +2,7 @@ import { fullNeeds } from './needs';
 import { introduce } from './gossip';
 import { personOf } from './people';
 import { ensureRelation } from './relations';
+import { freshState } from './upkeep';
 import type { EdgeKind, Folk, Grid, Neighbor, Needs, Rotation, Vec, World } from './types';
 
 export interface RoomStyle {
@@ -172,7 +173,15 @@ export function seedRelations(world: World, seeds: RelationSeed[]): void {
 
 export function createWorld(seed: WorldSeed): World {
   let nextId = 1;
-  const objects = seed.objects.map((o) => ({ defId: o.defId, x: o.x, y: o.y, rot: o.rot ?? 0, paid: 0, id: nextId++ }));
+  const objects = seed.objects.map((o) => ({
+    defId: o.defId,
+    x: o.x,
+    y: o.y,
+    rot: o.rot ?? 0,
+    paid: 0,
+    id: nextId++,
+    state: freshState(),
+  }));
   const folks: Folk[] = seed.folks.map((f) => ({
     id: nextId++,
     name: f.name,
@@ -216,6 +225,7 @@ export function createWorld(seed: WorldSeed): World {
     news: [],
     reputation: {},
     gigBoard: [],
+    mess: [],
   };
   seedRelations(world, seed.relations ?? []);
   seedWorkplaceTies(world);

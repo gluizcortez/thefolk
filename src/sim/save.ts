@@ -1,10 +1,11 @@
 import { relKey } from './relations';
 import type { Grid, Neighbor, World } from './types';
 import type { NeighborSeed, RelationSeed } from './world';
+import { freshState } from './upkeep';
 import { firstBillAfter, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -101,6 +102,14 @@ const migrations: Record<number, Migration> = {
     seedRelations(world, fresh);
     seedWorkplaceTies(world);
     return { ...save, world: world as unknown as Obj };
+  },
+  // bloco 1, casa viva: objetos ganham sujeira, desgaste e conserto; a casa
+  // ganha bagunça solta. Tudo começa limpo e inteiro.
+  5: (save) => {
+    const world = { ...(save.world as Obj) };
+    world.objects = ((world.objects as Obj[]) ?? []).map((o) => ({ ...o, state: (o.state as object) ?? freshState() }));
+    world.mess = [];
+    return { ...save, world };
   },
 };
 

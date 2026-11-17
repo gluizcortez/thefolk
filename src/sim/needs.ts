@@ -1,5 +1,6 @@
 import { windowAmbience } from './build';
 import { skillBoost } from './skills';
+import { MESS_AMBIENCE, messSenseOf, stateAmbience } from './upkeep';
 import type { Catalog, Folk, InteractionDef, NeedId, Needs, World } from './types';
 import { NEED_IDS } from './types';
 
@@ -36,12 +37,21 @@ export function needWeight(catalog: Catalog, folk: Folk, need: NeedId): number {
 /** Valor para onde a necessidade "ambiente" tende, dado o que há por perto. */
 export function ambienceTarget(world: World, catalog: Catalog, folk: Folk): number {
   let sum = AMBIENCE_BASE + windowAmbience(world, catalog, folk);
+  // sujeira, quebrados e bagunça pesam conforme quanto o folk se incomoda
+  let mess = 0;
   for (const obj of world.objects) {
     const def = catalog.objects[obj.defId];
-    if (!def || def.ambience === 0) continue;
+    if (!def) continue;
     const d = Math.abs(obj.x - folk.x) + Math.abs(obj.y - folk.y);
-    if (d <= AMBIENCE_RADIUS) sum += def.ambience;
+    if (d > AMBIENCE_RADIUS) continue;
+    sum += def.ambience;
+    mess += stateAmbience(obj, def);
   }
+  for (const m of world.mess ?? []) {
+    const d = Math.abs(m.x - folk.x) + Math.abs(m.y - folk.y);
+    if (d <= AMBIENCE_RADIUS) mess += MESS_AMBIENCE[m.kind];
+  }
+  if (mess < 0) sum += mess * messSenseOf(catalog, folk);
   return clampNeed(sum);
 }
 

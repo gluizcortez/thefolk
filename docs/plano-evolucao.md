@@ -64,7 +64,7 @@ centro (15 → 16).
 
 ---
 
-## Bloco 1 — Casa viva: sujeira, desgaste e conserto (save v6)
+## Bloco 1 — Casa viva: sujeira, desgaste e conserto (save v6) — feito em 17/11/2026
 
 **Lacuna**: hoje objeto não tem estado. No gênero, a casa se degrada sozinha e
 manter a ordem é metade do jogo.

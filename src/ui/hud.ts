@@ -37,12 +37,16 @@ import {
   reputationLabel,
   reputationOf,
   transferLevel,
+  DIRTY_AT,
+  careAvailable,
+  stateOf,
 } from '../sim';
 import type {
   Action,
   CareerDef,
   CareerLevel,
   Folk,
+  Mess,
   NeedId,
   ObjectCategory,
   ObjectDef,
@@ -445,6 +449,10 @@ export class Hud {
     if (action.kind === 'goto') return t('act.goto');
     if (action.kind === 'work') return t('act.work');
     if (action.kind === 'leave') return t('act.leave');
+    if (action.kind === 'tidy') {
+      const mess = this.ctrl.world.mess.find((m) => m.id === action.messId);
+      return t(`act.tidy.${mess?.kind ?? 'plate'}`);
+    }
     if (action.kind === 'social' || action.kind === 'listen') {
       const other = action.otherId !== undefined ? this.ctrl.sim.findFolk(action.otherId) : undefined;
       const name = other ? first(other.name) : '…';
@@ -528,10 +536,15 @@ export class Hud {
     if (!def) return;
     const folk = this.ctrl.folk;
     this.menuEl.replaceChildren(el('div', 'menu-title', t(def.name)));
-    if (def.interactions.length === 0) {
+    const state = stateOf(obj);
+    const status = this.objectStatus(obj);
+    if (status) this.menuEl.append(el('div', `menu-note ${state.broken ? 'menu-warn' : ''}`, status));
+    // cuidados só aparecem quando há o que fazer; o resto some se quebrou
+    const shown = def.interactions.filter((it) => !it.hidden && (it.care ? careAvailable(obj, it) : true));
+    if (shown.length === 0) {
       this.menuEl.append(el('div', 'menu-note', t('menu.nothing')));
     }
-    for (const it of def.interactions) {
+    for (const it of shown) {
       const b = el('button', 'menu-item');
       const main = Object.entries(it.effects).sort((a, c) => (c[1] ?? 0) - (a[1] ?? 0))[0];
       const icon = el('span', 'menu-icon');
@@ -541,6 +554,10 @@ export class Hud {
       if (it.cost) extras.push(formatMoney(it.cost));
       if (it.skill) extras.push(t(`skill.${it.skill.id}`));
       if (extras.length) b.append(el('span', 'menu-extra', extras.join(' · ')));
+      if (state.broken && !it.care) {
+        b.disabled = true;
+        b.title = t('problem.broken');
+      }
       b.addEventListener('click', () => {
         if (it.special === 'invite') {
           this.openInviteMenu(x, y);
@@ -558,6 +575,46 @@ export class Hud {
       if (it.special === 'invite') b.append(el('span', 'menu-extra', '›'));
       this.menuEl.append(b);
     }
+    this.showMenuAt(x, y);
+  }
+
+  /** Estado do objeto em palavras (sujo, quebrado, remendado, lixo cheio), ou null se está tudo bem. */
+  objectStatus(obj: WorldObject): string | null {
+    const def = this.ctrl.sim.defOf(obj);
+    const s = obj.state;
+    if (!def || !s) return null;
+    const parts: string[] = [];
+    if (s.broken) parts.push(s.repair > 0 ? t('state.brokenRepair', { pct: Math.round(s.repair) }) : t('state.broken'));
+    else if (s.patched) parts.push(t('state.patched'));
+    if (s.dirt >= DIRTY_AT) parts.push(t('state.dirty'));
+    else if (s.dirt >= 25) parts.push(t('state.grimy'));
+    if (def.upkeep?.bin) parts.push(s.fill >= 100 ? t('state.binFull') : t('state.binFill', { pct: Math.round(s.fill) }));
+    else if (def.upkeep?.breaks && !s.broken && s.wear >= 60) parts.push(t('state.worn'));
+    return parts.length ? parts.join(' · ') : null;
+  }
+
+  /** Dica ao passar o mouse num objeto: o nome e o estado. */
+  objectTooltip(obj: WorldObject): string {
+    const def = this.ctrl.sim.defOf(obj);
+    const name = def ? t(def.name) : '';
+    const status = this.objectStatus(obj);
+    return status ? `${name} · ${status}` : name;
+  }
+
+  /** Menu de uma bagunça solta: recolher, secar, catar. */
+  openMessMenu(x: number, y: number, mess: Mess): void {
+    const folk = this.ctrl.folk;
+    this.menuEl.replaceChildren(el('div', 'menu-title', t(`mess.${mess.kind}`)));
+    const b = el('button', 'menu-item');
+    const icon = el('span', 'menu-icon');
+    icon.innerHTML = iconSvg('ambience', 16);
+    b.append(icon, el('span', '', t(`act.tidy.${mess.kind}`)), el('span', 'menu-extra', t('skill.tidiness')));
+    b.addEventListener('click', () => {
+      this.ctrl.commandOrExplain({ type: 'queueTidy', folkId: folk.id, messId: mess.id });
+      this.closeMenu();
+      this.update();
+    });
+    this.menuEl.append(b);
     this.showMenuAt(x, y);
   }
 

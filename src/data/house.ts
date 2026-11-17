@@ -52,7 +52,7 @@ export function starterHouse(seed = 20001): WorldSeed {
       { defId: 'toilet', x: 8, y: 2 },
       { defId: 'shower', x: 10, y: 2 },
       { defId: 'sink', x: 8, y: 4 },
-      { defId: 'counter', x: 11, y: 2 },
+      { defId: 'kitchensink', x: 11, y: 2 },
       { defId: 'stove', x: 12, y: 2 },
       { defId: 'fridge', x: 13, y: 2 },
       { defId: 'phone', x: 3, y: 6 },
@@ -63,6 +63,9 @@ export function starterHouse(seed = 20001): WorldSeed {
       { defId: 'plant', x: 3, y: 10 },
       { defId: 'dinette', x: 9, y: 8 },
       { defId: 'speaker', x: 13, y: 9 },
+      // bloco 1: lixeira na cozinha e latão na calçada
+      { defId: 'trashcan', x: 13, y: 5 },
+      { defId: 'curbbin', x: 9, y: 13 },
     ],
     funds: STARTING_FUNDS,
     exit: HOUSE_EXIT,

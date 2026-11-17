@@ -82,6 +82,20 @@ import type {
   WorldObject,
 } from './types';
 import { NEED_IDS } from './types';
+import type { Chain } from './upkeep';
+import {
+  TIDINESS,
+  addMess,
+  afterCare,
+  afterUse,
+  careTick,
+  freshState,
+  interactionOpen,
+  messTiles,
+  tidyMinutes,
+  finishTidy,
+  wearTick,
+} from './upkeep';
 import { BILL_INTERVAL } from './world';
 
 /** Por que o último comando foi recusado (para a interface explicar). */
@@ -106,7 +120,10 @@ export type CommandProblem =
   | 'noJob'
   | 'noEvent'
   | 'skillTooLow'
-  | 'offerGone';
+  | 'offerGone'
+  | 'broken'
+  | 'nothingToDo'
+  | 'noMess';
 
 /** Resultado de uma conversa, para a tela mostrar o que mudou (não vai no save). */
 export interface SocialOutcome {
@@ -155,7 +172,10 @@ const COLLAPSE_MINUTES = 150;
 const UNDO_LIMIT = 40;
 const COLLAPSE_ENERGY_PER_MINUTE = 0.3;
 
-type ActionSeed = Pick<Action, 'kind' | 'objectId' | 'interactionId' | 'target' | 'otherId' | 'socialId'>;
+type ActionSeed = Pick<Action, 'kind' | 'objectId' | 'interactionId' | 'target' | 'otherId' | 'socialId' | 'messId'>;
+
+/** treino de Capricho enquanto recolhe bagunça */
+const TIDY_GAIN = { skill: { id: TIDINESS, xpPerMinute: 0.8 } } as InteractionDef;
 
 /**
  * Fachada do núcleo: guarda o mundo, avança um tick por vez (`step`) e recebe
@@ -260,8 +280,9 @@ export class Sim {
         const def = obj && this.defOf(obj);
         const it = def?.interactions.find((i) => i.id === cmd.interactionId);
         // convites passam pelo comando 'invite', que diz quem convidar
-        if (!folk || !def || !it || it.special) return false;
-        if (folk.visit && (it.residentOnly || (it.cost ?? 0) > 0)) return this.fail('visitor');
+        if (!folk || !obj || !def || !it || it.special || it.hidden) return false;
+        if (folk.visit && (it.residentOnly || (it.cost ?? 0) > 0 || it.care)) return this.fail('visitor');
+        if (!interactionOpen(obj, it)) return this.fail(it.care ? 'nothingToDo' : 'broken');
         if (it.task && !taskFits(this.catalog, folk, it.task, def.id)) {
           return this.fail(it.task === 'gig' ? 'noGig' : 'noBusiness');
         }
@@ -270,6 +291,13 @@ export class Sim {
           objectId: cmd.objectId,
           interactionId: cmd.interactionId,
         });
+      }
+      case 'queueTidy': {
+        const folk = this.findFolk(cmd.folkId);
+        if (!folk) return false;
+        if (folk.visit) return this.fail('visitor');
+        if (!this.world.mess.some((m) => m.id === cmd.messId)) return this.fail('noMess');
+        return this.enqueuePlayer(folk, { kind: 'tidy', messId: cmd.messId });
       }
       case 'queueGoto': {
         const folk = this.findFolk(cmd.folkId);
@@ -435,7 +463,7 @@ export class Sim {
     if (this.world.household.funds < def.price) return this.fail('funds');
     const check = checkPlacement(this.world, this.catalog, defId, x, y, rot);
     if (!check.ok) return this.fail(check.problem ?? 'invalid');
-    this.world.objects.push({ id: this.world.nextId++, defId, x, y, rot, paid: def.price });
+    this.world.objects.push({ id: this.world.nextId++, defId, x, y, rot, paid: def.price, state: freshState() });
     this.world.household.funds -= def.price;
     this.replanAll();
     return true;
@@ -760,6 +788,8 @@ export class Sim {
       folk.needs.bladder = NEED_MAX;
       folk.needs.hygiene = Math.min(folk.needs.hygiene, 12);
       folk.needs.comfort = Math.min(folk.needs.comfort, 30);
+      // e sobra uma poça para alguém secar
+      addMess(this.world, 'puddle', folk.x, folk.y, folk.id);
       this.log('log.accident', { name: folk.name });
     }
     const sleeping = folk.queue[0]?.phase === 'using' && (this.interactionOf(folk.queue[0])?.effects.energy ?? 0) > 0;
@@ -777,6 +807,10 @@ export class Sim {
     if (!choice) return;
     if (choice.socialId !== undefined) {
       folk.queue.push(this.makeAction({ kind: 'social', otherId: choice.otherId, socialId: choice.socialId }, 'auto'));
+      return;
+    }
+    if (choice.messId !== undefined) {
+      folk.queue.push(this.makeAction({ kind: 'tidy', messId: choice.messId }, 'auto'));
       return;
     }
     folk.queue.push(
@@ -814,6 +848,10 @@ export class Sim {
     }
     if (action.kind === 'listen') {
       this.processListen(folk, action);
+      return;
+    }
+    if (action.kind === 'tidy') {
+      this.processTidy(folk, action);
       return;
     }
 
@@ -864,6 +902,12 @@ export class Sim {
         return;
       }
       const it = this.interactionOf(action);
+      if (obj && odef && it && !interactionOpen(obj, it)) {
+        // quebrou (ou já limparam) enquanto vinha
+        if (!it.care) this.log('log.foundBroken', { name: folk.name, object: odef.name });
+        this.finish(folk);
+        return;
+      }
       const cost = it?.cost ?? 0;
       if (cost > 0) {
         if (this.world.household.funds < cost) {
@@ -885,6 +929,17 @@ export class Sim {
         return;
       }
       applyEffects(folk, it);
+      const used = this.findObject(action.objectId!);
+      const usedDef = used && this.defOf(used);
+      if (used && usedDef) {
+        if (!it.care) wearTick(this.catalog, folk, used, usedDef);
+        else if (careTick(this.world, this.catalog, this.logger, folk, used, usedDef, it)) {
+          this.trainCare(folk, it);
+          this.finish(folk);
+          this.chain(folk, afterCare(used, it), action.source);
+          return;
+        }
+      }
       if (it.task === 'gig') {
         const obj = this.findObject(action.objectId!);
         if (!obj || !taskFits(this.catalog, folk, 'gig', obj.defId) || workGig(this.world, this.catalog, this.logger, folk)) {
@@ -899,24 +954,91 @@ export class Sim {
         }
         workBusiness(this.catalog, this.logger, folk);
       }
-      if (it.skill) {
-        const up = trainSkill(folk, it, moodOf(this.catalog, folk.needs));
-        if (up !== null) {
-          const skill = this.catalog.skills[it.skill.id];
-          this.log('log.skillUp', { name: folk.name, skill: skill?.name ?? it.skill.id, level: up });
-        }
-      }
+      this.trainCare(folk, it);
       action.elapsed++;
       const full = it.until !== undefined && folk.needs[it.until] >= NEED_MAX;
       if (action.elapsed >= it.duration || full) {
         if (it.special === 'invite' && action.otherId !== undefined) this.resolveInvite(folk, action.otherId);
+        let next: Chain = null;
+        if (used && usedDef) {
+          next = it.care ? afterCare(used, it) : afterUse(this.world, this.catalog, this.logger, folk, used, usedDef, it);
+        }
         this.finish(folk);
+        this.chain(folk, next, action.source);
         return;
       }
       if (action.source === 'auto' && action.elapsed % AUTO_RECHECK === 0) {
         this.maybeAbandon(folk, it);
       }
     }
+  }
+
+  /** Um minuto de treino da habilidade da interação (avisa quando sobe de nível). */
+  private trainCare(folk: Folk, it: InteractionDef): void {
+    if (!it.skill) return;
+    const up = trainSkill(folk, it, moodOf(this.catalog, folk.needs));
+    if (up !== null && !folk.visit) {
+      const skill = this.catalog.skills[it.skill.id];
+      this.log('log.skillUp', { name: folk.name, skill: skill?.name ?? it.skill.id, level: up });
+    }
+  }
+
+  /**
+   * Encadeia o passo seguinte de uma tarefa da casa: levar o prato até a pia,
+   * levar o saco de lixo até o latão da calçada (ou até a rua, se não houver).
+   */
+  private chain(folk: Folk, next: Chain, source: Action['source']): void {
+    if (!next) return;
+    let best: { obj: WorldObject; it: InteractionDef; d: number } | null = null;
+    for (const obj of this.world.objects) {
+      const it = this.defOf(obj)?.interactions.find((i) => i.care === next);
+      if (!it) continue;
+      const d = Math.abs(obj.x - folk.x) + Math.abs(obj.y - folk.y);
+      if (!best || d < best.d) best = { obj, it, d };
+    }
+    if (best) {
+      folk.queue.unshift(this.makeAction({ kind: 'use', objectId: best.obj.id, interactionId: best.it.id }, source));
+    } else if (next === 'dump') {
+      folk.queue.unshift(this.makeAction({ kind: 'goto', target: { ...this.world.exit } }, source));
+    } else {
+      return;
+    }
+    folk.path = [];
+    if (folk.queue.length > MAX_QUEUE) folk.queue.length = MAX_QUEUE;
+  }
+
+  /** Recolher bagunça: anda até ela, recolhe e leva para onde deve ir. */
+  private processTidy(folk: Folk, action: Action): void {
+    const mess = this.world.mess.find((m) => m.id === action.messId);
+    if (!mess) {
+      this.finish(folk);
+      return;
+    }
+    if (action.phase === 'queued') {
+      const path = findPathToAny(this.nav, folk, messTiles(this.world, this.nav, mess));
+      if (!path) {
+        this.log('log.noPath', { name: folk.name });
+        this.finish(folk);
+        return;
+      }
+      folk.path = path;
+      action.phase = 'walking';
+    }
+    if (action.phase === 'walking') {
+      const moved = this.stepAlong(folk, action);
+      if (moved !== 'arrived') return;
+      action.phase = 'using';
+      action.elapsed = 0;
+      if (mess.x !== folk.x || mess.y !== folk.y) folk.facing = { x: mess.x - folk.x, y: mess.y - folk.y };
+      return;
+    }
+    if (mess.kind !== 'plate') folk.needs.hygiene = Math.max(0, folk.needs.hygiene - 0.08);
+    this.trainCare(folk, TIDY_GAIN);
+    action.elapsed++;
+    if (action.elapsed < tidyMinutes(mess.kind, folk)) return;
+    const next = finishTidy(this.world, this.catalog, this.logger, folk, mess);
+    this.finish(folk);
+    this.chain(folk, next, action.source);
   }
 
   /** Um folk autônomo larga o que faz se outra necessidade ficou crítica. */
