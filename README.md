@@ -12,14 +12,20 @@ paredes cheios de textura, móveis arredondados com esmalte e cromados, e gente
 de proporção adulta realista. Tudo é modelado em 3D e pintado por código, sem
 assets externos e sem copiar nenhum jogo.
 
-**Estado atual: fatia 4** (fatias 1 a 3 mais o modo construção: paredes,
-portas, janelas, pisos e revestimentos). A moeda do jogo é o **tostão** (⟡).
+**Estado atual: fatia 5** (as cinco fatias do plano: casa, necessidades e IA;
+emprego, dinheiro e modo compra; vizinhos e relações; modo construção; e agora
+carreiras e relações aprofundadas: chefe e colegas de verdade, eventos no
+expediente, aumento, frilas, negócio próprio, fofoca, reputação, ciúme e
+término). A moeda do jogo é o **tostão** (⟡).
 
 > Saves antigos são convertidos sozinhos ao abrir. Da fatia 1: a casa ganha
 > ⟡ 1.500, o folk começa sem emprego e com as habilidades no zero. Da fatia 2:
 > a casa continua com quem morava nela, a vizinhança passa a existir e
 > ninguém conhece ninguém ainda. Da fatia 3: as janelas que eram só desenho
 > viram janelas de verdade, nos mesmos lugares, e a casa fica com a mesma cara.
+> Da fatia 4: chegam os três chefes e mais uma colega na vizinhança, os colegas
+> de trabalho já se conhecem entre si, e quem tinha emprego segue no mesmo
+> cargo, sem aumento. Ninguém começa com fama nem fofoca.
 
 ## Rodando
 
@@ -97,13 +103,64 @@ npm run preview  # serve o dist/ localmente
   três barras separadas (amizade, romance e respeito, de -100 a 100), o que o
   outro sente de volta e as lembranças marcantes (primeiro beijo, briga feia,
   desabafo...). Sem contato, amizade e romance esfriam devagar.
-- **Vizinhança**: seis vizinhos aparecem para dar um oi de dia, de vez em
+- **Vizinhança**: dez vizinhos aparecem para dar um oi de dia, de vez em
   quando, e vão embora sozinhos. Para chamar alguém que já conhece, use o
   telefone ("Convidar alguém para vir") ou o botão Convidar no painel de
   relações. Visitas agem por conta própria: não usam cama nem chuveiro e não
   gastam o dinheiro da casa. Dá para pedir que vão embora, e quem tem amizade
   60 ou mais pode ser chamado para morar junto (até quatro moradores; traz o
   emprego junto).
+- **Chefe e colegas**: cada carreira tem um chefe e colegas que moram na
+  vizinhança (podem até aparecer para visitar). No primeiro dia o folk conhece
+  todo mundo. O painel Trabalho mostra a equipe e como cada um vê o seu folk.
+  Cada turno rende um pouco de amizade com os colegas, e chefe e colegas
+  ganham ou perdem respeito conforme o turno foi. O desempenho passa a contar
+  também o respeito do chefe e o clima com os colegas.
+- **Promoção e demissão**: além do desempenho e das habilidades, o chefe
+  precisa respeitar o folk (o painel diz quanto falta). Chefe que não suporta
+  o folk demite mesmo com desempenho razoável.
+- **Eventos no expediente**: quase todo turno acontece algo (prazo apertado,
+  colega que rouba o crédito, almoço, fiscalização, crítico de jornal,
+  apresentação para a diretoria...). O jogo pausa e mostra um cartão com as
+  escolhas; as que dependem de sorte mostram a chance. Cada escolha mexe em
+  desempenho, necessidades, relações, habilidades ou dinheiro, e algumas viram
+  fofoca. Sem resposta em uma hora de jogo, o folk decide sozinho pelos traços.
+  São 16 eventos, alguns só de uma carreira.
+- **Pedir aumento**: no painel Trabalho. O pedido é feito ao chefe no fim do
+  próximo turno; a chance (mostrada) depende de desempenho, respeito do chefe,
+  lábia e fama. Cada aumento dá +10% (até +50%, zera na promoção). Negado, o
+  chefe fica com o pé atrás. Um pedido a cada três dias.
+- **Troca de área**: quem já subiu na carreira entra na nova num cargo acima
+  do primeiro, se as habilidades permitirem (até um abaixo do cargo atual).
+- **Frilas**: aba Frilas do painel Trabalho. Toda manhã, às 6h, o mural traz
+  três ofertas (planilha, cartaz, marmitas, bolo de casamento, discurso...),
+  cada uma com habilidade mínima, prazo e o objeto onde se faz. Pegue uma e
+  clique no objeto ("Fazer o frila"). Quem sabe mais termina antes e ganha um
+  extra; estourar o prazo suja o nome.
+- **Negócio próprio**: aba Negócio. Três opções (padaria no fogão, letreiros
+  no cavalete ou escrivaninha, escritório de contas na escrivaninha). Abrir
+  custa e larga o emprego. "Cuidar do negócio" sobe o capricho; o caixa fecha
+  todo dia às 21h com fregueses conforme capricho, habilidade e fama, menos a
+  despesa do dia. Fechar devolve 25% do investimento.
+- **Fofoca e reputação**: brigas, traições, namoros, términos, promoções,
+  demissões e feitos no trabalho viram notícia. Quem viu sabe; depois a
+  notícia anda sozinha, uma vez por dia, de amigo em amigo pela vizinhança, e
+  também no papo dentro de casa (há a conversa "Fofocar"). Cada pessoa que fica
+  sabendo mexe na fama de quem é o assunto e na opinião de quem ouviu. A fama
+  aparece no painel Relações, com o que o folk anda ouvindo, e muda a chance
+  de os outros toparem conversa, os fregueses do negócio e o aumento.
+  Fofoqueiros espalham mais; ninguém espalha podre de si mesmo nem de quem é
+  muito amigo.
+- **Ciúme, exclusividade e término**: gesto romântico com alguém que não é o
+  namorado é traição. Quem namora e vê de perto (ou fica sabendo pela fofoca)
+  sente ciúme: o romance despenca, nascem lembranças amargas sobre os dois e,
+  se não sobrar muito, termina. Quem namora firme resiste a flerte e não sai
+  flertando por conta própria. Dá para terminar pela conversa, e namoro que
+  esfria demais acaba sozinho.
+- **Lembranças guiam a IA**: com mágoa acumulada o folk evita papo amigável
+  com aquela pessoa e pode partir para a briga; com boas lembranças procura
+  mais. "Pedir desculpas" aparece para quem guarda mágoa e, aceito, deixa uma
+  lembrança boa. Vizinho magoado não aparece sem avisar e topa menos convite.
 - **Salvar / Carregar / Novo jogo** no canto superior direito. O jogo também
   salva sozinho a cada 30 segundos e continua de onde parou ao reabrir.
 
@@ -225,6 +282,21 @@ Decisões principais do núcleo:
   é de graça e de uso comum, e vão embora no horário, à noite, cansadas ou com
   fome. Entre visitas, o vizinho mora em `world.neighbors` (mesmo id), então
   as relações continuam valendo.
+- **Fatia 5 em módulos puros**: `sim/work.ts` (chefe e colegas, eventos do
+  expediente, aumento, troca de área), `sim/hustle.ts` (mural de frilas e
+  negócio), `sim/gossip.ts` (notícias, reputação, ciúme, término) e
+  `sim/people.ts` (alguém do mundo, esteja no lote ou só na vizinhança). A
+  `Sim` só chama esses módulos nos ganchos certos (saída e volta do turno,
+  fim de conversa, 4h, 6h e 21h) e passa o log como função.
+- **Chefe e colegas são vizinhos** (`Neighbor.career`, `boss`): as relações
+  com eles são as mesmas `world.relations` de sempre, então respeito do chefe,
+  fofoca e lembranças valem igual dentro e fora do trabalho.
+- **Evento pendente** fica em `folk.away.event` com um prazo; o jogador
+  responde por `workChoice` ou o folk escolhe sozinho no prazo (peso por
+  traço e pela chance de dar certo). Tudo sorteado pelo RNG do mundo.
+- **Notícias** (`world.news`) guardam quem sabe (`knownBy`). Aprender uma
+  notícia é o único lugar que mexe em fama (`world.reputation`) e dispara
+  ciúme, então ver, ouvir no papo e ouvir pela rede seguem a mesma regra.
 - **Objetos de vários lugares** (`slots`): sofá, mesa e caixa de som aceitam
   dois. Quem chega num objeto cheio espera até meia hora e desiste.
 - **Objetos giram** em quartos de volta (`rot`): a área ocupada e os lados de uso
@@ -289,6 +361,16 @@ Decisões principais do núcleo:
 - **Arte definitiva**: troque o que `src/game/art/` devolve. `getTexture` pode
   passar a carregar imagens e `buildFurniture` / `FolkModel` podem carregar
   modelos prontos (glTF, por exemplo). A simulação não conhece nada de desenho.
+- **Evento do expediente**: `src/data/workEvents.ts` (ator, carreiras, cargo
+  mínimo, peso, escolhas com teste de sorte e resultados) e os textos em i18n
+  nas chaves `wev.<id>...`.
+- **Frila ou negócio**: `src/data/gigs.ts` (habilidade, nível mínimo, trabalho,
+  pagamento, prazo e objetos). O objeto precisa de uma interação com
+  `task: 'gig'` ou `task: 'business'` em `objects.ts`.
+- **Notícia**: `src/data/news.ts` (efeito na fama, opinião de quem ouve,
+  vontade de espalhar, se dá ciúme e quanto dura).
+- **Chefe ou colega**: um vizinho com `career` em `neighbors.ts` (`boss: true`
+  para o chefe). Laços entre vizinhos ficam em `NEIGHBOR_TIES`.
 - **Mudou o formato do `World`?** Aumente `SAVE_VERSION` em `src/sim/save.ts` e
   registre a migração no mesmo arquivo.
 
@@ -298,9 +380,36 @@ Decisões principais do núcleo:
 2. **Fatia 2 (feita)**: emprego, dinheiro, habilidades e modo compra.
 3. **Fatia 3 (feita)**: outros folks, interações sociais e sistema de relações.
 4. **Fatia 4 (feita)**: modo construção.
-5. Carreiras e relações aprofundadas.
+5. **Fatia 5 (feita)**: carreiras e relações aprofundadas.
 
-## Limitações conhecidas da fatia 4
+## Limitações conhecidas da fatia 5
+
+- O turno continua acontecendo fora da tela: o folk some e os eventos chegam
+  como cartões, não como cenas no trabalho. Chefe e colegas não trabalham de
+  verdade (não têm turno nem necessidades fora do lote); só as relações deles
+  são reais.
+- Colegas e chefe não sobem de cargo, não são demitidos nem mudam de emprego.
+  Se o chefe se mudar para a casa, a vaga de chefe fica vazia (ninguém barra
+  promoção nessa carreira).
+- Um evento de cada vez por folk, com no máximo dois por turno. Não há eventos
+  em cadeia (consequência que volta dias depois) nem eventos em casa.
+- O negócio próprio não tem estoque, funcionário, preço ajustável nem
+  fregueses visitando a casa: é um caixa diário calculado. Frila e negócio
+  não são escolhidos pela IA; só o jogador manda.
+- A fofoca é sobre fatos que a simulação conhece (as notícias de
+  `news.ts`); não há boato inventado nem fofoca falsa. Fora do lote ela anda
+  uma vez por dia, de uma vez, e não aparece na tela quem contou para quem.
+- Não há casamento, noivado, filhos nem divórcio; namoro continua sendo o
+  vínculo mais forte. Também não há conversa em grupo.
+- A reputação é um número só (não separa fama no trabalho e fama no
+  bairro) e volta devagar para o meio todo dia.
+- Os três chefes e a colega nova usam os mesmos rostos e corpos dos outros
+  vizinhos, com cores diferentes.
+- Os pesos dos eventos, chances e efeitos foram calibrados por testes e
+  simulação, não por muitas horas de jogo; alguns podem estar fortes ou
+  fracos demais.
+
+### Ainda valem da fatia 4
 
 - Um andar só, sem telhado, escada, porão, cercas, piscina ou terreno com
   desnível. O lote tem o tamanho fixo de sempre (17 × 14).
@@ -329,15 +438,6 @@ Decisões principais do núcleo:
 
 ### Ainda valem da fatia 3
 
-- Fofoca, ciúme e reputação se espalhando pela rede ainda não existem. As
-  lembranças já ficam guardadas (com peso) para a fatia 5 usar, mas hoje só
-  mexem na chance de topar a próxima conversa.
-- Namoro é só um estado: não há ciúme, término, casamento nem filhos. Também
-  não há regra de exclusividade (dá para namorar duas pessoas).
-- O respeito profissional sobe com "Falar de trabalho" e "Pedir um conselho",
-  mas ainda não afeta promoção; chefe e colegas de verdade ficam para a
-  fatia 5. Os vizinhos têm emprego só de enfeite: o turno deles não é
-  simulado.
 - Conversas são sempre entre duas pessoas; não há conversa em grupo, festa nem
   atividade a dois em objetos (jogar, cozinhar junto, dançar junto conta só
   como dividir o objeto).
@@ -350,7 +450,7 @@ Decisões principais do núcleo:
   fome ou cansadas. Não há visita de grupo nem "toque a campainha": quem chega
   já entra.
 - Não dá para mudar alguém para fora de casa, nem criar folks novos: os
-  moradores novos só vêm da vizinhança fixa (seis pessoas).
+  moradores novos só vêm da vizinhança fixa (dez pessoas).
 - A casa pronta tem duas camas de solteiro; com três ou quatro moradores, quem
   ficar sem cama espera vagar ou acaba desmaiando de sono (compre outra).
 - Os vizinhos usam os mesmos cinco tipos de rosto e cabelo, com cores
@@ -358,15 +458,12 @@ Decisões principais do núcleo:
 
 ### Ainda valem da fatia 2
 
-- O dia de trabalho ainda é uma caixa-preta: o folk some e volta. Eventos com
-  escolhas no meio do turno, chefe e colegas de verdade, pedido de aumento,
-  freelas e negócio próprio ficam para a fatia 5.
-- São três carreiras com cinco cargos cada, sem troca de área com
-  aproveitamento: quem troca começa do primeiro cargo da nova.
+- São três carreiras com cinco cargos cada.
 - Não há condução desenhada: o folk anda até a calçada e some.
 - O folk sai assim que chega na calçada (até uma hora antes do turno) e passa
   esse tempo "no trabalho"; não espera na rua.
-- O trabalho não treina habilidades; só objetos treinam.
+- O turno em si não treina habilidades; só objetos, frilas, negócio e alguns
+  eventos do expediente treinam.
 - Não há falência nem cobrador: com saldo negativo só não se compra nada.
   As contas são um valor único, sem detalhe de luz, água etc.
 - O catálogo tem 21 objetos, um modelo de cada (sem variações de cor ou de
@@ -407,7 +504,7 @@ Decisões principais do núcleo:
 - O clique atravessa paredes: dá para acertar um móvel escondido atrás de uma
   parede inteira.
 - A casa não tem telhado nem segundo andar; as casas vizinhas são só cenário.
-- O Three.js deixa o pacote com cerca de 700 kB (188 kB comprimido).
+- O Three.js deixa o pacote com cerca de 820 kB (225 kB comprimido).
 - Os detalhes de cena (tapetes, itens sobre os móveis, carro, varal, poste, banco) são só decoração: não entram na simulação e não podem ser usados pelo folk.
 - O folk não tem horário: dorme quando a energia cai, de dia ou de noite, e a
   IA não planeja o sono em função do turno do dia seguinte.

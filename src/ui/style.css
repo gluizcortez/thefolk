@@ -1362,3 +1362,132 @@ button {
     display: none;
   }
 }
+
+/* ---------- fatia 5 ---------- */
+.wev {
+  bottom: 110px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  width: min(420px, calc(100vw - 32px));
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+  pointer-events: auto;
+  border-color: var(--teal);
+}
+
+.wev-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.wev-face {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  overflow: hidden;
+  flex: none;
+}
+
+.wev-title {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--teal);
+}
+
+.wev-text {
+  font-size: 14.5px;
+  line-height: 1.35;
+}
+
+.wev-choices {
+  display: grid;
+  gap: 6px;
+}
+
+.wev-choice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+}
+
+.wev-chance {
+  font-size: 11px;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.job-tabs {
+  margin-bottom: 2px;
+}
+
+.team {
+  display: grid;
+  gap: 5px;
+}
+
+.team-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.team-row .rel-names {
+  flex: 1;
+}
+
+.team-num {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--moss);
+  min-width: 2.2em;
+  text-align: right;
+}
+
+.team-num.neg {
+  color: var(--terracotta);
+}
+
+.ad-line.miss {
+  color: var(--terracotta);
+}
+
+.ad-line.strong {
+  color: var(--teal);
+  font-weight: 700;
+}
+
+.fame {
+  display: grid;
+  gap: 2px;
+}
+
+.news-list {
+  display: grid;
+  gap: 3px;
+}
+
+.news .rel-mem-day {
+  min-width: 2.4em;
+  width: auto;
+}
+
+.news {
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+  padding-left: 6px;
+  border-left: 3px solid var(--moss);
+}
+
+.news.neg {
+  border-left-color: var(--terracotta);
+}

@@ -23,6 +23,20 @@ import {
   nextShift,
   sellValue,
   skillLevel,
+  RAISE_COOLDOWN,
+  bossBlocks,
+  bossOf,
+  bossRespectFor,
+  canAskRaise,
+  choiceChance,
+  coworkersOf,
+  expectedCustomers,
+  gigAllowed,
+  payFor,
+  raiseChance,
+  reputationLabel,
+  reputationOf,
+  transferLevel,
 } from '../sim';
 import type {
   Action,
@@ -66,6 +80,8 @@ const CATEGORIES: (ObjectCategory | 'all')[] = [
 ];
 
 type Panel = 'skills' | 'job' | 'relations' | null;
+type JobTab = 'job' | 'gigs' | 'business';
+const JOB_TABS: JobTab[] = ['job', 'gigs', 'business'];
 
 type BuildTab = 'walls' | 'openings' | 'floors' | 'coverings';
 const BUILD_TABS: BuildTab[] = ['walls', 'openings', 'floors', 'coverings'];
@@ -162,6 +178,9 @@ export class Hud {
   private panelEl = el('div', 'card panel');
   private panel: Panel = null;
   private panelSig = '';
+  private jobTab: JobTab = 'job';
+  private wevEl = el('div', 'card wev');
+  private wevSig = '';
   private panelButtons = new Map<Exclude<Panel, null>, HTMLButtonElement>();
   private faceEl = el('div', 'folk-face');
   private householdEl = el('div', 'household');
@@ -200,7 +219,8 @@ export class Hud {
     this.buildPanel();
     this.buildCatalog();
     this.buildBuildPanel();
-    this.root.append(this.floatsEl, this.toastsEl, this.menuEl, this.bubbleEl, this.tooltipEl);
+    this.root.append(this.wevEl, this.floatsEl, this.toastsEl, this.menuEl, this.bubbleEl, this.tooltipEl);
+    this.wevEl.hidden = true;
     this.tooltipEl.hidden = true;
     this.menuEl.hidden = true;
     this.bubbleEl.hidden = true;
@@ -415,6 +435,7 @@ export class Hud {
     }
 
     this.renderQueue();
+    this.renderWorkEvent();
     this.renderPanel();
     this.renderCatalog();
     this.renderBuild();
@@ -717,8 +738,8 @@ export class Hud {
             .map(([k, v]) => `${k}:${Math.floor(v)}`)
             .join(',')}`
         : this.panel === 'relations'
-          ? `r|${folk.id}|${Math.floor(world.tick / 10)}|${world.folks.map((f) => f.id).join(',')}|${world.pendingVisits.length}`
-          : `j|${folk.id}|${JSON.stringify(folk.job)}|${folk.away?.until ?? ''}|${Math.floor(world.tick / 60)}`;
+          ? `r|${folk.id}|${Math.floor(world.tick / 10)}|${world.folks.map((f) => f.id).join(',')}|${world.pendingVisits.length}|${world.news.length}`
+          : `j|${this.jobTab}|${folk.id}|${JSON.stringify([folk.job, folk.gig && Math.floor(folk.gig.progress / 5), folk.business && Math.floor(folk.business.quality), world.gigBoard, world.household.funds >= 0])}|${folk.away?.until ?? ''}|${Math.floor(world.tick / 60)}`;
     if (sig === this.panelSig) return;
     this.panelSig = sig;
     this.panelEl.hidden = false;
@@ -758,6 +779,7 @@ export class Hud {
       return r.friendship + r.romance + r.respect * 0.5;
     };
     people.sort((a, b) => score(b.id) - score(a.id) || a.id - b.id);
+    this.renderFame(folk);
     if (people.length === 0) {
       this.panelEl.append(el('div', 'panel-note', t('rel.none', { name: first(folk.name) })));
       return;
@@ -776,7 +798,7 @@ export class Hud {
       const names = el('div', 'rel-names');
       names.append(
         el('div', 'rel-name', p.name),
-        el('div', 'rel-sub', `${t(p.where)} · ${p.traits.map((id) => t(`trait.${id}`)).join(', ')}`),
+        el('div', 'rel-sub', `${this.workTag(folk, p.id)}${t(p.where)} · ${p.traits.map((id) => t(`trait.${id}`)).join(', ')}`),
       );
       head.append(face, names);
       if (p.where === 'rel.outside') {
@@ -819,6 +841,89 @@ export class Hud {
     this.panelEl.append(list, el('div', 'panel-note', t('rel.howTo')));
   }
 
+  /** "chefe · " ou "colega · " para quem trabalha com o folk. */
+  private workTag(folk: Folk, id: number): string {
+    const world = this.ctrl.world;
+    if (!folk.job) return '';
+    if (bossOf(world, folk.job.careerId)?.id === id) return `${t('rel.boss')} · `;
+    if (coworkersOf(world, folk).some((c) => c.id === id)) return `${t('rel.coworker')} · `;
+    return '';
+  }
+
+  /** Fama do folk e as fofocas que ele conhece. */
+  private renderFame(folk: Folk): void {
+    const world = this.ctrl.world;
+    const catalog = this.ctrl.sim.catalog;
+    const rep = reputationOf(world, folk.id);
+    const fame = el('div', 'fame');
+    fame.append(this.relBar('respect', rep));
+    (fame.firstElementChild!.firstElementChild as HTMLElement).textContent = t('rel.reputation');
+    fame.append(el('div', 'rel-tags', t(reputationLabel(rep))));
+    this.panelEl.append(fame);
+    const known = world.news.filter((n) => n.knownBy.includes(folk.id)).slice(-6).reverse();
+    this.panelEl.append(el('div', 'panel-sub', t('rel.news', { name: first(folk.name) })));
+    if (!known.length) {
+      this.panelEl.append(el('div', 'panel-note', t('rel.noNews')));
+    } else {
+      const box = el('div', 'news-list');
+      for (const n of known) {
+        const def = catalog.news[n.kind];
+        const name = (id: number) =>
+          world.folks.find((f) => f.id === id)?.name ?? world.neighbors.find((x) => x.id === id)?.name ?? '?';
+        const line = el('div', `news ${def && def.reputation < 0 ? 'neg' : 'pos'}`);
+        line.append(
+          el('span', 'rel-mem-day', `${n.knownBy.length}👂`),
+          el('span', '', t(def?.label ?? n.kind, { about: first(name(n.about)), other: n.other ? first(name(n.other)) : '' })),
+        );
+        box.append(line);
+      }
+      this.panelEl.append(box);
+    }
+    this.panelEl.append(el('div', 'panel-sub', t('hud.relations')));
+  }
+
+  // ---------- eventos do expediente ----------
+
+  private renderWorkEvent(): void {
+    const world = this.ctrl.world;
+    const catalog = this.ctrl.sim.catalog;
+    const folk = this.ctrl.sim.residents().find((f) => f.away?.event);
+    const ev = folk?.away?.event;
+    const def = ev && catalog.workEvents[ev.defId];
+    if (!folk || !ev || !def) {
+      this.wevEl.hidden = true;
+      this.wevSig = '';
+      return;
+    }
+    const sig = `${folk.id}|${ev.defId}|${ev.actorId}|${ev.deadline}`;
+    if (sig === this.wevSig) return;
+    this.wevSig = sig;
+    const actor = world.neighbors.find((n) => n.id === ev.actorId) ?? world.folks.find((f) => f.id === ev.actorId);
+    const params = { name: first(folk.name), actor: actor ? first(actor.name) : '' };
+    this.wevEl.replaceChildren();
+    const head = el('div', 'wev-head');
+    const face = el('span', 'wev-face');
+    face.innerHTML = faceSvg((actor ?? folk).look, 40);
+    head.append(face, el('div', 'wev-title', t('wevCard.title', { name: folk.name })));
+    this.wevEl.append(head, el('div', 'wev-text', t(def.text, params)));
+    const choices = el('div', 'wev-choices');
+    def.choices.forEach((choice, i) => {
+      const b = el('button', 'btn wev-choice');
+      b.append(el('span', '', t(choice.label, params)));
+      if (choice.check) {
+        const pct = Math.round(choiceChance(world, catalog, folk, choice, ev.actorId) * 100);
+        b.append(el('span', 'wev-chance', t('wevCard.chance', { pct })));
+      }
+      b.addEventListener('click', () => {
+        this.ctrl.chooseWorkEvent(folk.id, i);
+        this.update();
+      });
+      choices.append(b);
+    });
+    this.wevEl.append(choices, el('div', 'panel-note', t('wevCard.hint', { name: first(folk.name) })));
+    this.wevEl.hidden = false;
+  }
+
   /** Barra de -100 a 100 com o zero no meio. */
   private relBar(axis: 'friendship' | 'romance' | 'respect', v: number): HTMLElement {
     const wrap = el('div', `perf rel-bar ${axis}`);
@@ -854,7 +959,52 @@ export class Hud {
   }
 
   private renderJob(): void {
+    const tabs = el('div', 'catalog-tabs job-tabs');
+    for (const id of JOB_TABS) {
+      const b = el('button', 'tab', t(`job.tab.${id}`));
+      b.classList.toggle('on', this.jobTab === id);
+      b.addEventListener('click', () => {
+        this.jobTab = id;
+        this.panelSig = '';
+        this.renderPanel();
+      });
+      tabs.append(b);
+    }
+    this.panelEl.append(tabs);
+    if (this.jobTab === 'gigs') this.renderGigs();
+    else if (this.jobTab === 'business') this.renderBusiness();
+    else this.renderEmployment();
+  }
+
+  private refreshPanel(): void {
+    this.panelSig = '';
+    this.update();
+  }
+
+  /** Botão que pede confirmação no segundo clique. */
+  private confirmButton(label: string, confirm: string, action: () => void): HTMLButtonElement {
+    const b = el('button', 'btn btn-quiet btn-small', label);
+    let armed = 0;
+    b.addEventListener('click', () => {
+      if (!armed) {
+        b.textContent = confirm;
+        b.classList.add('armed');
+        armed = window.setTimeout(() => {
+          armed = 0;
+          b.textContent = label;
+          b.classList.remove('armed');
+        }, 3500);
+        return;
+      }
+      window.clearTimeout(armed);
+      action();
+    });
+    return b;
+  }
+
+  private renderEmployment(): void {
     const folk = this.ctrl.folk;
+    const world = this.ctrl.world;
     const catalog = this.ctrl.sim.catalog;
     const job = folk.job;
     const career = job && careerOf(catalog, job);
@@ -863,7 +1013,7 @@ export class Hud {
       const box = el('div', 'job-box');
       box.append(
         el('div', 'job-title', t(level.title)),
-        el('div', 'job-career', `${t(career.name)} · ${t('job.payShift', { pay: formatMoney(level.pay) })}`),
+        el('div', 'job-career', `${t(career.name)} · ${t('job.payShift', { pay: formatMoney(payFor(catalog, job)) })}`),
         el('div', 'job-line', scheduleText(level)),
       );
       // desempenho de -100 a 100, com a marca da promoção
@@ -883,7 +1033,7 @@ export class Hud {
       const status = folk.away
         ? t('job.atWork', { time: formatClock(folk.away.until) })
         : (() => {
-            const shift = nextShift(catalog, folk, this.ctrl.world.tick);
+            const shift = nextShift(catalog, folk, world.tick);
             return shift ? t('job.nextShift', { when: whenText(shift.start) }) : '';
           })();
       if (status) box.append(el('div', 'job-line strong', status));
@@ -895,65 +1045,225 @@ export class Hud {
         const req = el('div', 'job-reqs');
         for (const [id, need] of Object.entries(next.requires)) {
           const have = skillLevel(folk, id);
-          const chip = el('span', `req ${id in missing ? 'miss' : 'ok'}`, `${t(`skill.${id}`)} ${have}/${need}`);
-          req.append(chip);
+          req.append(el('span', `req ${id in missing ? 'miss' : 'ok'}`, `${t(`skill.${id}`)} ${have}/${need}`));
         }
         if (Object.keys(next.requires).length) box.append(req);
-        if (Object.keys(missing).length === 0) box.append(el('div', 'panel-note', t('job.ready')));
+        const boss = bossOf(world, job.careerId);
+        if (boss && bossBlocks(world, folk, job.level + 1) > 0) {
+          const have = Math.round(relationOf(world, boss.id, folk.id)?.respect ?? 0);
+          box.append(el('div', 'panel-note', t('job.bossNeeds', { boss: first(boss.name), need: bossRespectFor(job.level + 1), have })));
+        } else if (Object.keys(missing).length === 0) box.append(el('div', 'panel-note', t('job.ready')));
       } else {
         box.append(el('div', 'job-line', t('job.top')));
       }
+
+      // aumento
+      if (job.raise > 0) box.append(el('div', 'job-line', t('job.raiseHave', { pct: Math.round(job.raise * 100) })));
+      if (job.raisePending) box.append(el('div', 'job-line strong', t('job.raisePending')));
+      else if (canAskRaise(folk, world.tick)) {
+        const ask = el('button', 'btn btn-small', t('job.raise'));
+        ask.title = t('job.raiseTip');
+        ask.addEventListener('click', () => {
+          this.ctrl.commandOrExplain({ type: 'askRaise', folkId: folk.id });
+          this.refreshPanel();
+        });
+        box.append(ask, el('div', 'panel-note', t('job.raiseChance', { pct: Math.round(raiseChance(world, folk) * 100) })));
+      } else if (job.raise < 0.5) {
+        const days = RAISE_COOLDOWN - (Math.floor(world.tick / 1440) - job.lastRaiseDay);
+        if (days > 0) box.append(el('div', 'panel-note', t('job.raiseWait', { days })));
+      }
       box.append(el('div', 'panel-note', t('job.howTo')));
-      const quit = el('button', 'btn btn-quiet btn-small', t('job.quit'));
-      let armed = 0;
-      quit.addEventListener('click', () => {
-        if (!armed) {
-          quit.textContent = t('job.quitConfirm');
-          quit.classList.add('armed');
-          armed = window.setTimeout(() => {
-            armed = 0;
-            quit.textContent = t('job.quit');
-            quit.classList.remove('armed');
-          }, 3500);
-          return;
-        }
-        window.clearTimeout(armed);
-        this.ctrl.commandOrExplain({ type: 'quitJob', folkId: folk.id });
-        this.panelSig = '';
-        this.update();
-      });
-      box.append(quit);
+      box.append(
+        this.confirmButton(t('job.quit'), t('job.quitConfirm'), () => {
+          this.ctrl.commandOrExplain({ type: 'quitJob', folkId: folk.id });
+          this.refreshPanel();
+        }),
+      );
       this.panelEl.append(box);
+      this.renderTeam(folk, career.workplace ?? career.name);
     } else {
-      this.panelEl.append(el('div', 'panel-note', t('job.none', { name: folk.name.split(' ')[0] })));
+      this.panelEl.append(el('div', 'panel-note', t('job.none', { name: first(folk.name) })));
     }
 
     this.panelEl.append(el('div', 'panel-sub', t('job.classifieds')));
+    if (folk.business) {
+      this.panelEl.append(el('div', 'panel-note', t('job.hasBusiness')));
+      return;
+    }
     const ads = el('div', 'ads');
     for (const c of Object.values(catalog.careers)) {
       if (c.id === job?.careerId) continue;
-      ads.append(this.adFor(c, !!job));
+      ads.append(this.adFor(c, folk));
     }
     this.panelEl.append(ads);
   }
 
-  private adFor(career: CareerDef, employed: boolean): HTMLElement {
-    const first = career.levels[0];
+  /** Chefe e colegas, com como cada um vê o folk. */
+  private renderTeam(folk: Folk, place: string): void {
+    const world = this.ctrl.world;
+    const job = folk.job!;
+    const boss = bossOf(world, job.careerId);
+    const people = [...(boss ? [{ p: boss, role: 'job.boss' }] : []), ...coworkersOf(world, folk).map((p) => ({ p, role: 'job.coworker' }))];
+    if (!people.length) return;
+    this.panelEl.append(el('div', 'panel-sub', t('job.team', { place: t(place) })));
+    const list = el('div', 'team');
+    for (const { p, role } of people) {
+      const look = world.neighbors.find((n) => n.id === p.id)?.look ?? world.folks.find((f) => f.id === p.id)?.look;
+      const theirs = relationOf(world, p.id, folk.id);
+      const row = el('div', 'team-row');
+      const face = el('span', 'rel-face');
+      if (look) face.innerHTML = faceSvg(look, 26);
+      const names = el('div', 'rel-names');
+      names.append(
+        el('div', 'rel-name', `${p.name} · ${t(role)}`),
+        el('div', 'rel-sub', theirs ? t('rel.theyFeel', { name: first(p.name), label: this.relSummary(theirs) }) : t('rel.stranger')),
+      );
+      row.append(face, names);
+      if (theirs) row.append(el('span', `team-num ${theirs.respect < 0 ? 'neg' : ''}`, `${Math.round(theirs.respect)}`));
+      list.append(row);
+    }
+    this.panelEl.append(list, el('div', 'panel-note', t('job.teamNote')));
+  }
+
+  private adFor(career: CareerDef, folk: Folk): HTMLElement {
+    const level = transferLevel(folk, folk.job, career);
+    const entry = career.levels[level];
     const ad = el('div', 'ad');
     const text = el('div', 'ad-text');
     text.append(
-      el('div', 'ad-title', `${t(first.title)} · ${t(career.name)}`),
-      el('div', 'ad-line', `${t('job.payShift', { pay: formatMoney(first.pay) })} · ${scheduleText(first)}`),
+      el('div', 'ad-title', `${t(entry.title)} · ${t(career.name)}`),
+      el('div', 'ad-line', `${t('job.payShift', { pay: formatMoney(entry.pay) })} · ${scheduleText(entry)}`),
       el('div', 'ad-line', t('job.skillsUsed', { skills: career.skills.map((s) => t(`skill.${s}`)).join(', ') })),
     );
-    const take = el('button', 'btn btn-small', t(employed ? 'job.switch' : 'job.take'));
+    if (level > 0) text.append(el('div', 'ad-line strong', t('job.transfer', { title: t(entry.title) })));
+    const take = el('button', 'btn btn-small', t(folk.job ? 'job.switch' : 'job.take'));
     take.addEventListener('click', () => {
-      this.ctrl.commandOrExplain({ type: 'takeJob', folkId: this.ctrl.folk.id, careerId: career.id });
-      this.panelSig = '';
-      this.update();
+      this.ctrl.commandOrExplain({ type: 'takeJob', folkId: folk.id, careerId: career.id });
+      this.refreshPanel();
     });
     ad.append(text, take);
     return ad;
+  }
+
+  /** Nomes dos objetos (e se a casa tem algum). */
+  private objectsText(defIds: string[]): { text: string; has: boolean } {
+    const catalog = this.ctrl.sim.catalog;
+    const text = defIds.map((id) => t(catalog.objects[id]?.name ?? id).toLowerCase()).join(' / ');
+    const has = this.ctrl.world.objects.some((o) => defIds.includes(o.defId));
+    return { text, has };
+  }
+
+  private renderGigs(): void {
+    const folk = this.ctrl.folk;
+    const world = this.ctrl.world;
+    const catalog = this.ctrl.sim.catalog;
+    const gig = folk.gig;
+    const gdef = gig && catalog.gigs[gig.defId];
+    if (gig && gdef) {
+      const box = el('div', 'job-box');
+      const where = this.objectsText(gdef.objects);
+      box.append(
+        el('div', 'panel-sub', t('gigs.current')),
+        el('div', 'job-title', t(gdef.name)),
+        el('div', 'job-line', `${t('gigs.pay', { pay: formatMoney(gig.pay) })} · ${t('gigs.deadline', { when: whenText(gig.deadline) })}`),
+      );
+      const bar = el('div', 'skill-bar');
+      const fill = el('div', 'skill-fill');
+      fill.style.width = `${Math.min(100, Math.round((gig.progress / gdef.work) * 100))}%`;
+      bar.append(fill);
+      box.append(bar);
+      box.append(el('div', 'panel-note', where.has ? t('gigs.howTo', { objects: where.text }) : t('gigs.noObject', { objects: where.text })));
+      box.append(
+        this.confirmButton(t('gigs.drop'), t('job.quitConfirm'), () => {
+          this.ctrl.commandOrExplain({ type: 'dropGig', folkId: folk.id });
+          this.refreshPanel();
+        }),
+      );
+      this.panelEl.append(box);
+    }
+    this.panelEl.append(el('div', 'panel-sub', t('gigs.board')));
+    if (!world.gigBoard.length) {
+      this.panelEl.append(el('div', 'panel-note', t('gigs.empty')));
+      return;
+    }
+    const ads = el('div', 'ads');
+    for (const offer of world.gigBoard) {
+      const def = catalog.gigs[offer.defId];
+      if (!def) continue;
+      const ad = el('div', 'ad');
+      const text = el('div', 'ad-text');
+      const ok = gigAllowed(folk, def);
+      text.append(
+        el('div', 'ad-title', t(def.name)),
+        el('div', 'ad-line', `${t('gigs.pay', { pay: formatMoney(offer.pay) })} · ${def.days}d`),
+        el('div', `ad-line ${ok ? '' : 'miss'}`, t('gigs.needs', { skill: t(`skill.${def.skill}`), level: def.minLevel })),
+        el('div', 'ad-line', t('gigs.where', { objects: this.objectsText(def.objects).text })),
+      );
+      const take = el('button', 'btn btn-small', t('gigs.take'));
+      take.disabled = !ok || !!gig;
+      take.addEventListener('click', () => {
+        this.ctrl.commandOrExplain({ type: 'takeGig', folkId: folk.id, offerId: offer.id });
+        this.refreshPanel();
+      });
+      ad.append(text, take);
+      ads.append(ad);
+    }
+    this.panelEl.append(ads);
+  }
+
+  private renderBusiness(): void {
+    const folk = this.ctrl.folk;
+    const world = this.ctrl.world;
+    const catalog = this.ctrl.sim.catalog;
+    const b = folk.business;
+    const def = b && catalog.businesses[b.defId];
+    if (b && def) {
+      const box = el('div', 'job-box');
+      const where = this.objectsText(def.objects);
+      box.append(el('div', 'job-title', t(def.name)));
+      const q = el('div', 'perf');
+      const track = el('div', 'skill-bar');
+      const fill = el('div', 'skill-fill');
+      fill.style.width = `${Math.round(b.quality)}%`;
+      track.append(fill);
+      q.append(el('span', 'perf-label', t('biz.quality')), track);
+      box.append(q);
+      box.append(el('div', 'job-line', t('biz.expect', { customers: Math.round(expectedCustomers(world, catalog, folk)) })));
+      if (b.days > 0) {
+        box.append(
+          el('div', 'job-line', t('biz.last', { customers: b.lastCustomers, profit: formatMoney(b.lastProfit) })),
+          el('div', 'panel-note', t('biz.total', { total: formatMoney(b.total), days: b.days })),
+        );
+      }
+      box.append(el('div', 'panel-note', where.has ? t('biz.howTo', { objects: where.text }) : t('gigs.noObject', { objects: where.text })));
+      box.append(
+        this.confirmButton(t('biz.close'), t('biz.closeConfirm'), () => {
+          this.ctrl.commandOrExplain({ type: 'closeBusiness', folkId: folk.id });
+          this.refreshPanel();
+        }),
+      );
+      this.panelEl.append(box);
+      return;
+    }
+    this.panelEl.append(el('div', 'panel-note', t('biz.intro')));
+    const ads = el('div', 'ads');
+    for (const d of Object.values(catalog.businesses)) {
+      const ad = el('div', 'ad');
+      const text = el('div', 'ad-text');
+      text.append(
+        el('div', 'ad-title', t(d.name)),
+        el('div', 'ad-line', t('biz.info', { skill: t(`skill.${d.skill}`), upkeep: formatMoney(d.upkeep), objects: this.objectsText(d.objects).text })),
+      );
+      const open = el('button', 'btn btn-small', t('biz.open', { cost: formatMoney(d.cost) }));
+      open.disabled = world.household.funds < d.cost;
+      open.addEventListener('click', () => {
+        this.ctrl.commandOrExplain({ type: 'openBusiness', folkId: folk.id, businessId: d.id });
+        this.refreshPanel();
+      });
+      ad.append(text, open);
+      ads.append(ad);
+    }
+    this.panelEl.append(ads);
   }
 
   // ---------- modo compra ----------

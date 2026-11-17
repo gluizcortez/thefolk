@@ -45,6 +45,9 @@ export class GameController {
   floorId = 'wood';
   coveringId = 'stripes';
   private speedBeforeBuy: Speed = 1;
+  /** velocidade de antes da pausa automática por evento do expediente (0 = não pausou) */
+  private pausedForEvent: Speed = 0;
+  private hadEvent = false;
   private toastListeners: ((text: string) => void)[] = [];
   private seenLog = 0;
 
@@ -160,9 +163,26 @@ export class GameController {
     return ok;
   }
 
+  /** Responde um evento do expediente e, se o jogo parou por causa dele, volta a andar. */
+  chooseWorkEvent(folkId: number, choice: number): boolean {
+    const ok = this.commandOrExplain({ type: 'workChoice', folkId, choice });
+    if (ok && this.pausedForEvent && this.mode === 'live' && !this.world.folks.some((f) => f.away?.event)) {
+      this.command({ type: 'setSpeed', speed: this.pausedForEvent });
+      this.pausedForEvent = 0;
+    }
+    return ok;
+  }
+
   /** Avança um tick e transforma eventos novos do log em avisos. */
   step(): void {
     this.sim.step();
+    // evento novo no trabalho: pausa para o jogador escolher
+    const pending = this.world.folks.some((f) => !f.visit && f.away?.event);
+    if (pending && !this.hadEvent && this.world.speed !== 0) {
+      this.pausedForEvent = this.world.speed;
+      this.command({ type: 'setSpeed', speed: 0 });
+    }
+    this.hadEvent = pending;
     const log = this.world.log;
     for (const entry of log) {
       if (entry.tick > this.seenLog) this.toast(t(entry.key, translateParams(entry.params)));
