@@ -1,8 +1,27 @@
 import { chooseAutonomous } from './ai';
+import {
+  AWAY_DECAY,
+  CALL_AHEAD,
+  FIRE_AT,
+  LATE_LIMIT,
+  MISSED_PENALTY,
+  PERFORMANCE_AFTER_PROMOTION,
+  PROMOTE_AT,
+  careerOf,
+  levelOfJob,
+  missingSkills,
+  newJob,
+  shiftOn,
+  shiftScore,
+} from './career';
+import { MINUTES_PER_DAY } from './clock';
+import type { PlaceProblem } from './economy';
+import { billAmount, checkPlacement, formatMoney, objectBusy, sellValue } from './economy';
 import type { Nav } from './grid';
 import { buildNav, nearestFootprintTile, useTiles } from './grid';
-import { NEED_MAX, applyEffects, decayNeeds } from './needs';
+import { NEED_MAX, applyEffects, clampNeed, decayNeeds, moodOf } from './needs';
 import { findPath, findPathToAny } from './pathfinding';
+import { trainSkill } from './skills';
 import type {
   Action,
   Catalog,
@@ -14,6 +33,10 @@ import type {
   WorldObject,
 } from './types';
 import { NEED_IDS } from './types';
+import { BILL_INTERVAL } from './world';
+
+/** Por que o último comando foi recusado (para a interface explicar). */
+export type CommandProblem = PlaceProblem | 'busy' | 'away' | 'collapsed' | 'queueFull' | 'invalid';
 
 export const MAX_QUEUE = 8;
 const MAX_LOG = 30;
@@ -34,6 +57,8 @@ export class Sim {
   world: World;
   readonly catalog: Catalog;
   private nav: Nav;
+  /** motivo da última recusa de `dispatch` */
+  lastProblem: CommandProblem | null = null;
 
   constructor(catalog: Catalog, world: World) {
     this.catalog = catalog;
@@ -78,6 +103,18 @@ export class Sim {
   // ---------- comandos ----------
 
   dispatch(cmd: Command): boolean {
+    this.lastProblem = null;
+    const ok = this.run(cmd);
+    if (!ok && !this.lastProblem) this.lastProblem = 'invalid';
+    return ok;
+  }
+
+  private fail(problem: CommandProblem): false {
+    this.lastProblem = problem;
+    return false;
+  }
+
+  private run(cmd: Command): boolean {
     switch (cmd.type) {
       case 'setSpeed':
         this.world.speed = cmd.speed;
@@ -115,20 +152,105 @@ export class Sim {
         if (!folk || !this.nav.isFree(cmd.x, cmd.y)) return false;
         return this.enqueuePlayer(folk, { kind: 'goto', target: { x: cmd.x, y: cmd.y } });
       }
+      case 'buy':
+        return this.buy(cmd.defId, cmd.x, cmd.y, cmd.rot);
+      case 'sell':
+        return this.sell(cmd.objectId);
+      case 'move': {
+        const obj = this.findObject(cmd.objectId);
+        if (!obj) return false;
+        if (objectBusy(this.world, obj.id)) return this.fail('inUse');
+        const check = checkPlacement(this.world, this.catalog, obj.defId, cmd.x, cmd.y, cmd.rot, obj.id);
+        if (!check.ok) return this.fail(check.problem ?? 'invalid');
+        obj.x = cmd.x;
+        obj.y = cmd.y;
+        obj.rot = cmd.rot;
+        this.replanAll();
+        return true;
+      }
+      case 'takeJob': {
+        const folk = this.findFolk(cmd.folkId);
+        const career = this.catalog.careers[cmd.careerId];
+        if (!folk || !career) return false;
+        if (folk.away) return this.fail('away');
+        if (folk.job?.careerId === cmd.careerId) return false;
+        this.dropWork(folk);
+        folk.job = newJob(cmd.careerId);
+        this.log('log.hired', { name: folk.name, job: career.levels[0].title });
+        return true;
+      }
+      case 'quitJob': {
+        const folk = this.findFolk(cmd.folkId);
+        if (!folk || !folk.job) return false;
+        if (folk.away) return this.fail('away');
+        this.dropWork(folk);
+        folk.job = null;
+        this.log('log.quit', { name: folk.name });
+        return true;
+      }
     }
+  }
+
+  // ---------- compra e venda ----------
+
+  private buy(defId: string, x: number, y: number, rot: WorldObject['rot']): boolean {
+    const def = this.catalog.objects[defId];
+    if (!def || def.buyable === false) return false;
+    if (this.world.household.funds < def.price) return this.fail('funds');
+    const check = checkPlacement(this.world, this.catalog, defId, x, y, rot);
+    if (!check.ok) return this.fail(check.problem ?? 'invalid');
+    this.world.objects.push({ id: this.world.nextId++, defId, x, y, rot, paid: def.price });
+    this.world.household.funds -= def.price;
+    this.replanAll();
+    return true;
+  }
+
+  private sell(objectId: number): boolean {
+    const obj = this.findObject(objectId);
+    const def = obj && this.defOf(obj);
+    if (!obj || !def) return false;
+    if (objectBusy(this.world, objectId)) return this.fail('inUse');
+    this.world.household.funds += sellValue(obj, def);
+    this.world.objects = this.world.objects.filter((o) => o.id !== objectId);
+    for (const folk of this.world.folks) {
+      const idx = folk.queue.findIndex((a) => a.objectId === objectId);
+      folk.queue = folk.queue.filter((a) => a.objectId !== objectId);
+      if (idx === 0) folk.path = [];
+    }
+    this.replanAll();
+    return true;
+  }
+
+  /** Objetos mudaram: refaz a navegação e manda quem anda replanejar. */
+  private replanAll(): void {
+    this.invalidateNav();
+    for (const folk of this.world.folks) {
+      const a = folk.queue[0];
+      if (a?.phase === 'walking') {
+        a.phase = 'queued';
+        folk.path = [];
+      }
+    }
+  }
+
+  /** Tira da fila a ida ao trabalho. */
+  private dropWork(folk: Folk): void {
+    if (folk.queue[0]?.kind === 'work') folk.path = [];
+    folk.queue = folk.queue.filter((a) => a.kind !== 'work');
   }
 
   private enqueuePlayer(
     folk: Folk,
     partial: Pick<Action, 'kind' | 'objectId' | 'interactionId' | 'target'>,
   ): boolean {
-    if (folk.collapsed > 0) return false;
+    if (folk.away) return this.fail('away');
+    if (folk.collapsed > 0) return this.fail('collapsed');
     // ordem do jogador passa por cima do que o folk fazia por conta própria
     if (folk.queue.some((a) => a.source === 'auto')) {
       folk.queue = folk.queue.filter((a) => a.source !== 'auto');
       folk.path = [];
     }
-    if (folk.queue.length >= MAX_QUEUE) return false;
+    if (folk.queue.length >= MAX_QUEUE) return this.fail('queueFull');
     folk.queue.push(this.makeAction(partial, 'player'));
     return true;
   }
@@ -146,7 +268,11 @@ export class Sim {
   step(): void {
     const world = this.world;
     world.tick++;
-    for (const folk of world.folks) this.stepFolk(folk);
+    this.stepBills();
+    for (const folk of world.folks) {
+      this.stepJob(folk);
+      this.stepFolk(folk);
+    }
     if (world.log.length > MAX_LOG) world.log.splice(0, world.log.length - MAX_LOG);
   }
 
@@ -154,9 +280,143 @@ export class Sim {
     this.world.log.push({ tick: this.world.tick, key, params });
   }
 
+  // ---------- contas ----------
+
+  private stepBills(): void {
+    const house = this.world.household;
+    if (this.world.tick < house.nextBills) return;
+    const amount = billAmount(this.world, this.catalog);
+    house.funds -= amount;
+    house.lastBill = amount;
+    house.nextBills += BILL_INTERVAL;
+    this.log(house.funds < 0 ? 'log.billsDebt' : 'log.bills', { amount: formatMoney(amount) });
+  }
+
+  // ---------- trabalho ----------
+
+  /** Chama o folk para o turno, ou marca a falta quando a condução já foi. */
+  private stepJob(folk: Folk): void {
+    const job = folk.job;
+    const level = job && levelOfJob(this.catalog, job);
+    if (!job || !level || folk.away) return;
+    const tick = this.world.tick;
+    const day = Math.floor(tick / MINUTES_PER_DAY);
+    // um turno pode começar antes da meia-noite do dia anterior ser resolvido
+    for (const d of [day - 1, day, day + 1]) {
+      const shift = shiftOn(level, d);
+      if (!shift || job.doneDay >= d) continue;
+      if (tick === shift.start - CALL_AHEAD && job.calledDay !== d) {
+        job.calledDay = d;
+        if (folk.collapsed === 0) {
+          folk.queue = folk.queue.filter((a) => a.source !== 'auto');
+          const cur = folk.queue[0];
+          if (cur) cur.phase = 'queued';
+          folk.path = [];
+          folk.queue.unshift(this.makeAction({ kind: 'work' }, 'player'));
+          if (folk.queue.length > MAX_QUEUE) folk.queue.length = MAX_QUEUE;
+        }
+        this.log('log.workCall', { name: folk.name });
+      }
+      if (job.calledDay === d && tick > shift.start + LATE_LIMIT) {
+        job.doneDay = d;
+        this.dropWork(folk);
+        job.performance = Math.max(-100, job.performance - MISSED_PENALTY);
+        this.log('log.missedWork', { name: folk.name });
+        this.checkFired(folk);
+      }
+    }
+  }
+
+  /** Chegou à calçada: sai para o trabalho. */
+  private depart(folk: Folk): void {
+    const job = folk.job;
+    const level = job && levelOfJob(this.catalog, job);
+    if (!job || !level) {
+      this.finish(folk);
+      return;
+    }
+    const tick = this.world.tick;
+    const shift = shiftOn(level, job.calledDay);
+    if (!shift || job.doneDay >= job.calledDay) {
+      this.finish(folk);
+      return;
+    }
+    job.doneDay = job.calledDay;
+    folk.away = {
+      until: shift.end,
+      late: Math.max(0, tick - shift.start),
+      mood: moodOf(this.catalog, folk.needs),
+    };
+    folk.queue = [];
+    folk.path = [];
+    folk.idleTicks = 0;
+    this.log(folk.away.late > 0 ? 'log.leftLate' : 'log.leftForWork', { name: folk.name });
+  }
+
+  /** Um minuto fora de casa, no turno. */
+  private stepAway(folk: Folk): void {
+    const away = folk.away!;
+    const job = folk.job;
+    const career = job && careerOf(this.catalog, job);
+    for (const id of NEED_IDS) {
+      if (id === 'ambience') continue;
+      const rate = this.catalog.needs[id].decayPerMinute * (AWAY_DECAY[id] ?? 1);
+      const extra = career?.shiftEffects[id] ?? 0;
+      folk.needs[id] = clampNeed(folk.needs[id] - rate + extra);
+    }
+    // ninguém desmaia no serviço: chega em casa no bagaço, mas chega
+    folk.needs.energy = Math.max(3, folk.needs.energy);
+    if (this.world.tick >= away.until) this.comeHome(folk);
+  }
+
+  private comeHome(folk: Folk): void {
+    const away = folk.away!;
+    folk.away = null;
+    folk.x = folk.px = this.world.exit.x;
+    folk.y = folk.py = this.world.exit.y;
+    folk.facing = { x: 0, y: -1 };
+    folk.idleTicks = 0;
+    const job = folk.job;
+    const level = job && levelOfJob(this.catalog, job);
+    if (!job || !level) return;
+
+    const pay = level.pay;
+    this.world.household.funds += pay;
+    job.shifts++;
+    const avgMood = (away.mood + moodOf(this.catalog, folk.needs)) / 2;
+    const score = shiftScore(this.catalog, folk, job, avgMood, away.late);
+    job.performance = Math.max(-100, Math.min(100, job.performance + score));
+    this.log('log.backFromWork', { name: folk.name, pay: formatMoney(pay) });
+
+    const career = careerOf(this.catalog, job);
+    const next = career?.levels[job.level + 1];
+    if (next && job.performance >= PROMOTE_AT) {
+      if (Object.keys(missingSkills(folk, next)).length === 0) {
+        job.level++;
+        job.performance = PERFORMANCE_AFTER_PROMOTION;
+        this.log('log.promoted', { name: folk.name, job: next.title, pay: formatMoney(next.pay) });
+      } else {
+        this.log('log.needSkills', { name: folk.name });
+      }
+    }
+    this.checkFired(folk);
+  }
+
+  private checkFired(folk: Folk): void {
+    if (!folk.job || folk.job.performance > FIRE_AT) return;
+    folk.job = null;
+    this.dropWork(folk);
+    this.log('log.fired', { name: folk.name });
+  }
+
   private stepFolk(folk: Folk): void {
     folk.px = folk.x;
     folk.py = folk.y;
+
+    if (folk.away) {
+      this.stepAway(folk);
+      return;
+    }
 
     if (folk.collapsed > 0) {
       decayNeeds(this.world, this.catalog, folk, 0.5);
@@ -251,6 +511,20 @@ export class Sim {
         this.finish(folk);
         return;
       }
+      if (action.kind === 'work') {
+        this.depart(folk);
+        return;
+      }
+      const it = this.interactionOf(action);
+      const cost = it?.cost ?? 0;
+      if (cost > 0) {
+        if (this.world.household.funds < cost) {
+          this.log('log.noMoney', { name: folk.name });
+          this.finish(folk);
+          return;
+        }
+        this.world.household.funds -= cost;
+      }
       action.phase = 'using';
       this.faceObject(folk, action);
     }
@@ -262,6 +536,13 @@ export class Sim {
         return;
       }
       applyEffects(folk, it);
+      if (it.skill) {
+        const up = trainSkill(folk, it, moodOf(this.catalog, folk.needs));
+        if (up !== null) {
+          const skill = this.catalog.skills[it.skill.id];
+          this.log('log.skillUp', { name: folk.name, skill: skill?.name ?? it.skill.id, level: up });
+        }
+      }
       action.elapsed++;
       const full = it.until !== undefined && folk.needs[it.until] >= NEED_MAX;
       if (action.elapsed >= it.duration || full) {
@@ -287,6 +568,7 @@ export class Sim {
   }
 
   private planPath(folk: Folk, action: Action) {
+    if (action.kind === 'work') return findPath(this.nav, folk, this.world.exit);
     if (action.kind === 'goto') {
       return action.target ? findPath(this.nav, folk, action.target) : null;
     }

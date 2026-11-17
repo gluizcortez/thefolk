@@ -31,6 +31,11 @@ const ROOMS: Record<string, RoomStyle> = {
 
 const DOORS = ['4,6,N', '9,6,N', '7,11,N'];
 
+/** tostões com que a casa começa */
+export const STARTING_FUNDS = 1500;
+/** tile da calçada, em frente à porta, onde a condução para */
+export const HOUSE_EXIT = { x: 7, y: 13 };
+
 export function starterHouse(seed = 20001): WorldSeed {
   return {
     seed,
@@ -55,6 +60,8 @@ export function starterHouse(seed = 20001): WorldSeed {
       { defId: 'dinette', x: 9, y: 8 },
       { defId: 'speaker', x: 13, y: 9 },
     ],
+    funds: STARTING_FUNDS,
+    exit: HOUSE_EXIT,
     folks: [
       {
         name: 'Tomé Varanda',

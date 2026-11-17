@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { t } from '../i18n';
-import { NEED_IDS, TICKS_PER_SECOND, clockOf, moodOf } from '../sim';
+import { NEED_IDS, TICKS_PER_SECOND, checkPlacement, clockOf, moodOf, objectSize } from '../sim';
 import type { Folk, InteractionDef, NeedId, ObjectDef, Speed, WorldObject } from '../sim';
 import type { Hud } from '../ui/hud';
 import { FolkModel } from './art/folk';
@@ -66,6 +66,7 @@ export class GameView {
   private postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private internalHeight = TARGET_LINES;
   private worldRoot = new THREE.Group();
+  private objectsRoot = new THREE.Group();
   private house!: House;
   private objects = new Map<number, ObjectEntry>();
   private folks = new Map<number, FolkEntry>();
@@ -73,6 +74,12 @@ export class GameView {
   private hoverTile: THREE.Mesh;
   private hoverPad: THREE.Mesh;
   private pings: Ping[] = [];
+  /** objeto fantasma do modo compra, seguindo o mouse */
+  private ghost: { key: string; group: THREE.Group } | null = null;
+  private ghostPad: THREE.Mesh;
+  private ghostTile: { x: number; y: number } | null = null;
+  private builtObjects = -1;
+  private thumbs = new Map<string, string>();
 
   private target = new THREE.Vector3();
   private azimuth = Math.PI / 4;
@@ -134,7 +141,10 @@ export class GameView {
     this.hoverTile.rotation.x = -Math.PI / 2;
     this.hoverPad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), flat(PAL.mustard, 0.6));
     this.hoverPad.rotation.x = -Math.PI / 2;
-    this.scene.add(this.ring, this.hoverTile, this.hoverPad);
+    this.ghostPad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), flat(0x6fd06a, 0.45));
+    this.ghostPad.rotation.x = -Math.PI / 2;
+    this.ghostPad.visible = false;
+    this.scene.add(this.ring, this.hoverTile, this.hoverPad, this.ghostPad);
 
     this.post.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), retroPass(this.frameBuffer.texture)));
 
@@ -160,6 +170,8 @@ export class GameView {
       if (o instanceof THREE.Mesh) o.geometry.dispose();
     });
     this.worldRoot.clear();
+    this.objectsRoot = new THREE.Group();
+    this.clearGhost();
     this.objects.clear();
     this.folks.clear();
     for (const p of this.pings) this.scene.remove(p.mesh);
@@ -175,20 +187,8 @@ export class GameView {
     }
     this.house = new House(grid, occupied);
     this.worldRoot.add(buildScenery(grid), this.house.group);
-
-    for (const obj of world.objects) {
-      const def = this.ctrl.sim.defOf(obj);
-      if (!def) continue;
-      const spec = furnitureSpec(def.art);
-      const model = buildFurniture(def.art, obj.id);
-      const center = new THREE.Vector3(obj.x + def.size.w / 2, 0, obj.y + def.size.h / 2);
-      const turn = spec.facing === 'E' ? Math.PI / 2 : 0;
-      model.group.position.copy(center);
-      model.group.rotation.y = turn;
-      model.group.userData.objectId = obj.id;
-      this.worldRoot.add(model.group);
-      this.objects.set(obj.id, { obj, def, spec, model, center, turn });
-    }
+    this.worldRoot.add(this.objectsRoot);
+    this.rebuildObjects();
 
     for (const folk of world.folks) {
       const model = new FolkModel(folk.look);
@@ -210,6 +210,31 @@ export class GameView {
     this.acc = 0;
     this.hover = {};
     this.hud.closeMenu();
+  }
+
+  /** Refaz só os móveis (depois de comprar, vender ou mover). */
+  private rebuildObjects(): void {
+    this.objectsRoot.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.geometry.dispose();
+    });
+    this.objectsRoot.clear();
+    this.objects.clear();
+    for (const obj of this.ctrl.world.objects) {
+      const def = this.ctrl.sim.defOf(obj);
+      if (!def) continue;
+      const spec = furnitureSpec(def.art);
+      const model = buildFurniture(def.art, obj.id);
+      const size = objectSize(def, obj.rot);
+      const center = new THREE.Vector3(obj.x + size.w / 2, 0, obj.y + size.h / 2);
+      const turn = (spec.facing === 'E' ? Math.PI / 2 : 0) + obj.rot * (Math.PI / 2);
+      model.group.position.copy(center);
+      model.group.rotation.y = turn;
+      model.group.userData.objectId = obj.id;
+      this.objectsRoot.add(model.group);
+      this.objects.set(obj.id, { obj, def, spec, model, center, turn });
+    }
+    this.builtObjects = this.ctrl.objectsVersion;
+    this.hover = {};
   }
 
   private resize(): void {
@@ -290,8 +315,14 @@ export class GameView {
           this.hud.closeMenu();
           this.hud.setTooltip(0, 0, null);
         }
+      } else if (this.ctrl.placing) {
+        this.hover = {};
+        this.ghostTile = this.groundTile(e.clientX, e.clientY);
+        el.style.cursor = 'crosshair';
+        this.hud.setTooltip(0, 0, null);
       } else {
         this.hover = this.pick(e.clientX, e.clientY);
+        if (this.ctrl.mode === 'buy') this.hover.tile = undefined;
         el.style.cursor = this.hover.entry ? 'pointer' : 'default';
         this.hud.setTooltip(e.clientX, e.clientY, this.hover.entry ? t(this.hover.entry.def.name) : null);
       }
@@ -301,7 +332,13 @@ export class GameView {
     el.addEventListener('pointerup', (e) => {
       const wasDrag = this.pointer.dragged;
       this.pointer.down = false;
-      if (!wasDrag) this.click(e.clientX, e.clientY);
+      if (wasDrag) return;
+      if (e.button === 2) {
+        // clique direito desiste do que estava sendo posto
+        if (this.ctrl.placing) this.ctrl.placing = null;
+        return;
+      }
+      this.click(e.clientX, e.clientY);
     });
     el.addEventListener('pointerleave', () => {
       this.hover = {};
@@ -335,8 +372,16 @@ export class GameView {
         case 'KeyE':
           this.ctrl.rotateCamera(1);
           break;
+        case 'KeyR':
+          this.ctrl.rotatePlacing();
+          break;
+        case 'KeyB':
+          this.hud.toggleBuyMode();
+          break;
         case 'Escape':
-          this.hud.closeMenu();
+          if (this.hud.isMenuOpen()) this.hud.closeMenu();
+          else if (this.ctrl.placing) this.ctrl.placing = null;
+          else if (this.ctrl.mode === 'buy') this.hud.toggleBuyMode();
           break;
       }
     });
@@ -385,9 +430,32 @@ export class GameView {
     return this.ctrl.sim.getNav().isFree(tile.x, tile.y) ? { tile } : {};
   }
 
+  /** Tile do chão sob o mouse (sem olhar para objetos), ou null fora do terreno. */
+  private groundTile(clientX: number, clientY: number): { x: number; y: number } | null {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const ground = this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), this.tmp);
+    if (!ground || !this.ctrl.placing) return null;
+    // o tile sob o mouse fica no centro do objeto
+    const def = this.ctrl.sim.catalog.objects[this.ctrl.placing.defId];
+    const size = def ? objectSize(def, this.ctrl.placing.rot) : { w: 1, h: 1 };
+    return { x: Math.floor(ground.x - (size.w - 1) / 2), y: Math.floor(ground.z - (size.h - 1) / 2) };
+  }
+
   private click(clientX: number, clientY: number): void {
     if (this.hud.isMenuOpen()) {
       this.hud.closeMenu();
+      return;
+    }
+    if (this.ctrl.mode === 'buy') {
+      if (this.ctrl.placing) {
+        const tile = this.groundTile(clientX, clientY);
+        if (tile && this.ctrl.place(tile.x, tile.y)) this.addPing(tile.x, tile.y);
+        return;
+      }
+      const hit = this.pick(clientX, clientY);
+      if (hit.entry) this.hud.openBuyMenu(clientX, clientY, hit.entry.obj);
       return;
     }
     const hit = this.pick(clientX, clientY);
@@ -396,10 +464,8 @@ export class GameView {
       this.hud.setTooltip(0, 0, null);
       this.hud.openMenu(clientX, clientY, hit.entry.obj);
     } else if (hit.tile) {
-      if (this.ctrl.command({ type: 'queueGoto', folkId: folk.id, ...hit.tile })) {
+      if (this.ctrl.commandOrExplain({ type: 'queueGoto', folkId: folk.id, ...hit.tile })) {
         this.addPing(hit.tile.x, hit.tile.y);
-      } else {
-        this.ctrl.toast(folk.collapsed > 0 ? t('toast.collapsed', { name: folk.name }) : t('toast.queueFull'));
       }
     }
   }
@@ -419,6 +485,7 @@ export class GameView {
 
   private frame(dt: number): void {
     if (this.builtVersion !== this.ctrl.worldVersion) this.rebuild();
+    if (this.builtObjects !== this.ctrl.objectsVersion) this.rebuildObjects();
     const world = this.ctrl.world;
 
     const rate = TICKS_PER_SECOND[world.speed];
@@ -453,6 +520,7 @@ export class GameView {
 
     for (const folk of world.folks) this.updateFolk(folk, alpha, dt);
     this.updateMarkers(dt);
+    this.updateGhost();
 
     this.renderer.setRenderTarget(this.frameBuffer);
     this.renderer.render(this.scene, this.camera);
@@ -488,6 +556,17 @@ export class GameView {
   private updateFolk(folk: Folk, alpha: number, dt: number): void {
     const view = this.folks.get(folk.id);
     if (!view) return;
+    const selected = folk.id === this.ctrl.selectedFolkId;
+    // no trabalho, o folk não está em casa
+    view.model.group.visible = !folk.away;
+    if (folk.away) {
+      view.zzz.forEach((z) => (z.visible = false));
+      if (selected) {
+        this.ring.visible = false;
+        this.hud.setBubble(-1000, 0, null);
+      }
+      return;
+    }
     const sim = this.ctrl.sim;
     const action = folk.queue[0];
     const it: InteractionDef | undefined = action?.phase === 'using' ? sim.interactionOf(action) : undefined;
@@ -533,7 +612,6 @@ export class GameView {
     const mood = moodOf(sim.catalog, folk.needs);
     view.model.update({ anim, ...place, mood, time: this.animTime, dt });
 
-    const selected = folk.id === this.ctrl.selectedFolkId;
     if (selected) {
       this.ring.visible = !onObject && folk.collapsed === 0;
       this.ring.position.set(view.model.group.position.x, 0.04, view.model.group.position.z);
@@ -569,7 +647,8 @@ export class GameView {
     this.hoverPad.visible = !!entry;
     if (entry) {
       this.hoverPad.position.set(entry.center.x, 0.03, entry.center.z);
-      this.hoverPad.scale.set(entry.def.size.w + 0.14, entry.def.size.h + 0.14, 1);
+      const size = objectSize(entry.def, entry.obj.rot);
+      this.hoverPad.scale.set(size.w + 0.14, size.h + 0.14, 1);
     }
     for (const p of this.pings) {
       p.age += dt;
@@ -583,6 +662,129 @@ export class GameView {
       p.mesh.geometry.dispose();
       return false;
     });
+  }
+  // ---------- modo compra ----------
+
+  private clearGhost(): void {
+    if (!this.ghost) return;
+    this.scene.remove(this.ghost.group);
+    this.ghost.group.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        o.geometry.dispose();
+        (o.material as THREE.Material).dispose();
+      }
+    });
+    this.ghost = null;
+  }
+
+  /** Mostra o objeto sendo posto, com o chão verde (cabe) ou vermelho (não cabe). */
+  private updateGhost(): void {
+    const placing = this.ctrl.mode === 'buy' ? this.ctrl.placing : null;
+    const def = placing && this.ctrl.sim.catalog.objects[placing.defId];
+    const tile = this.ghostTile;
+    if (!placing || !def || !tile) {
+      this.clearGhost();
+      this.ghostPad.visible = false;
+      for (const e of this.objects.values()) e.model.group.visible = true;
+      return;
+    }
+    const key = `${placing.defId}|${placing.moveId ?? ''}`;
+    if (this.ghost?.key !== key) {
+      this.clearGhost();
+      const group = buildFurniture(def.art, placing.moveId ?? 1).group;
+      group.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        const ghosts = mats.map((m: THREE.Material) => {
+          const c = m.clone();
+          c.transparent = true;
+          c.opacity = 0.72;
+          return c;
+        });
+        o.material = Array.isArray(o.material) ? ghosts : ghosts[0];
+        o.castShadow = false;
+        o.raycast = () => {};
+      });
+      this.scene.add(group);
+      this.ghost = { key, group };
+    }
+    // o objeto que está sendo movido some do lugar antigo
+    for (const e of this.objects.values()) e.model.group.visible = e.obj.id !== placing.moveId;
+
+    const spec = furnitureSpec(def.art);
+    const size = objectSize(def, placing.rot);
+    const g = this.ghost.group;
+    g.position.set(tile.x + size.w / 2, 0.02, tile.y + size.h / 2);
+    g.rotation.y = (spec.facing === 'E' ? Math.PI / 2 : 0) + placing.rot * (Math.PI / 2);
+    const ok = checkPlacement(this.ctrl.world, this.ctrl.sim.catalog, placing.defId, tile.x, tile.y, placing.rot, placing.moveId).ok;
+    const affordable = placing.moveId !== undefined || this.ctrl.world.household.funds >= def.price;
+    this.ghostPad.visible = true;
+    this.ghostPad.position.set(tile.x + size.w / 2, 0.04, tile.y + size.h / 2);
+    this.ghostPad.scale.set(size.w, size.h, 1);
+    (this.ghostPad.material as THREE.MeshBasicMaterial).color.setHex(ok && affordable ? 0x6fd06a : 0xe0533f);
+  }
+
+  /**
+   * Miniatura de um objeto para o catálogo, renderizada com o mesmo ângulo e
+   * as mesmas cores de 16 bits do jogo. Fica em cache por id de desenho.
+   */
+  thumbnail(art: string): string {
+    const hit = this.thumbs.get(art);
+    if (hit) return hit;
+    const size = 96;
+    const scene = new THREE.Scene();
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xc4b295, 1.6));
+    const sun = new THREE.DirectionalLight(PAL.sun, 2.0);
+    sun.position.set(-3, 6, 4);
+    scene.add(sun);
+    const model = buildFurniture(art, 3);
+    const spec = furnitureSpec(art);
+    model.group.rotation.y = spec.facing === 'E' ? Math.PI / 2 : 0;
+    scene.add(model.group);
+    const box = new THREE.Box3().setFromObject(model.group);
+    const center = box.getCenter(new THREE.Vector3());
+    const radius = Math.max(0.5, box.getSize(new THREE.Vector3()).length() / 2);
+    const cam = new THREE.OrthographicCamera(-radius, radius, radius, -radius, 0.1, 50);
+    const az = Math.PI / 4;
+    cam.position.set(Math.sin(az) * Math.cos(ELEVATION), Math.sin(ELEVATION), Math.cos(az) * Math.cos(ELEVATION)).multiplyScalar(20).add(center);
+    cam.lookAt(center);
+    cam.updateMatrixWorld();
+
+    const target = new THREE.WebGLRenderTarget(size, size, { type: THREE.UnsignedByteType, colorSpace: THREE.SRGBColorSpace });
+    const prevColor = this.renderer.getClearColor(new THREE.Color());
+    const prevAlpha = this.renderer.getClearAlpha();
+    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.setRenderTarget(target);
+    this.renderer.clear();
+    this.renderer.render(scene, cam);
+    const pixels = new Uint8Array(size * size * 4);
+    this.renderer.readRenderTargetPixels(target, 0, 0, size, size, pixels);
+    this.renderer.setRenderTarget(null);
+    this.renderer.setClearColor(prevColor, prevAlpha);
+    target.dispose();
+    model.group.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.geometry.dispose();
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    const img = ctx.createImageData(size, size);
+    // a imagem vem de baixo para cima; reduz para 5-6-5 bits como o jogo
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const src = ((size - 1 - y) * size + x) * 4;
+        const dst = (y * size + x) * 4;
+        img.data[dst] = pixels[src] & 0xf8;
+        img.data[dst + 1] = pixels[src + 1] & 0xfc;
+        img.data[dst + 2] = pixels[src + 2] & 0xf8;
+        img.data[dst + 3] = pixels[src + 3] > 8 ? 255 : 0;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    const url = canvas.toDataURL();
+    this.thumbs.set(art, url);
+    return url;
   }
 }
 

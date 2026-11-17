@@ -1,4 +1,21 @@
-import type { Catalog, Grid, ObjectDef, Side, Vec, World, WorldObject } from './types';
+import type { Catalog, Grid, ObjectDef, Rotation, Side, Vec, World, WorldObject } from './types';
+
+/** Ordem em que um quarto de volta leva cada lado ao seguinte. */
+const SIDE_ORDER: Side[] = ['S', 'E', 'N', 'W'];
+
+export function rotateSide(side: Side, rot: Rotation): Side {
+  return SIDE_ORDER[(SIDE_ORDER.indexOf(side) + rot) % 4];
+}
+
+/** Tamanho ocupado no grid, já considerando a rotação. */
+export function objectSize(def: ObjectDef, rot: Rotation): { w: number; h: number } {
+  return rot % 2 === 1 ? { w: def.size.h, h: def.size.w } : { w: def.size.w, h: def.size.h };
+}
+
+/** Lados de uso já girados (undefined = todos). */
+export function useSidesOf(def: ObjectDef, rot: Rotation): Side[] | undefined {
+  return def.useSides?.map((s) => rotateSide(s, rot));
+}
 
 export function edgeKey(ax: number, ay: number, bx: number, by: number): string {
   // borda entre dois tiles ortogonalmente vizinhos
@@ -18,10 +35,11 @@ export function floorAt(grid: Grid, x: number, y: number): string {
   return grid.floor[y * grid.w + x];
 }
 
-export function footprint(obj: WorldObject, def: ObjectDef): Vec[] {
+export function footprint(obj: Pick<WorldObject, 'x' | 'y' | 'rot'>, def: ObjectDef): Vec[] {
   const tiles: Vec[] = [];
-  for (let dy = 0; dy < def.size.h; dy++) {
-    for (let dx = 0; dx < def.size.w; dx++) {
+  const size = objectSize(def, obj.rot ?? 0);
+  for (let dy = 0; dy < size.h; dy++) {
+    for (let dx = 0; dx < size.w; dx++) {
       tiles.push({ x: obj.x + dx, y: obj.y + dy });
     }
   }
@@ -77,9 +95,10 @@ export function useTiles(world: World, nav: Nav, obj: WorldObject, def: ObjectDe
   const own = footprint(obj, def);
   const isOwn = (x: number, y: number) => own.some((t) => t.x === x && t.y === y);
   const out: Vec[] = [];
+  const sides = useSidesOf(def, obj.rot ?? 0);
   for (const t of own) {
     for (const d of DIRS) {
-      if (def.useSides && !def.useSides.includes(d.side)) continue;
+      if (sides && !sides.includes(d.side)) continue;
       const x = t.x + d.x;
       const y = t.y + d.y;
       if (isOwn(x, y) || !nav.isFree(x, y)) continue;

@@ -1,7 +1,11 @@
 import type { World } from './types';
+import { firstBillAfter } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
+
+/** Dinheiro e saída da casa para saves da fatia 1 (só existia a casa pronta). */
+export const V1_DEFAULTS = { funds: 1500, exit: { x: 7, y: 13 } };
 
 export interface SaveFile {
   version: number;
@@ -11,12 +15,21 @@ export interface SaveFile {
 
 type Migration = (data: Record<string, unknown>) => Record<string, unknown>;
 
-/**
- * migrations[n] leva um save da versão n para a n+1.
- * Exemplo para o futuro:
- *   1: (save) => ({ ...save, world: { ...save.world, money: 0 } }),
- */
-const migrations: Record<number, Migration> = {};
+type Obj = Record<string, unknown>;
+
+/** migrations[n] leva um save da versão n para a n+1. */
+const migrations: Record<number, Migration> = {
+  // fatia 2: dinheiro, contas, habilidades, emprego e objetos girados
+  1: (save) => {
+    const world = { ...(save.world as Obj) };
+    const tick = typeof world.tick === 'number' ? world.tick : 0;
+    world.objects = ((world.objects as Obj[]) ?? []).map((o) => ({ rot: 0, paid: 0, ...o }));
+    world.folks = ((world.folks as Obj[]) ?? []).map((f) => ({ skills: {}, job: null, away: null, ...f }));
+    world.household = { funds: V1_DEFAULTS.funds, nextBills: firstBillAfter(tick), lastBill: 0 };
+    world.exit = { ...V1_DEFAULTS.exit };
+    return { ...save, world };
+  },
+};
 
 export class SaveError extends Error {}
 

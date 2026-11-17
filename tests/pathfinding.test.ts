@@ -17,6 +17,8 @@ function navOf(rows: string[], doors: string[] = [], objects: WorldSeed['objects
     grid: gridFromMap(rows, STYLES, doors),
     objects,
     folks: [],
+    funds: 0,
+    exit: { x: 0, y: 0 },
   });
   return { world, nav: buildNav(world, CATALOG) };
 }
@@ -106,7 +108,7 @@ describe('pathfinding (A*)', () => {
     expect(grid.floor).toEqual(['wood', 'wood', 'kitchen', 'kitchen', 'tile', 'tile']);
     expect(grid.edges['2,0,W']).toBeUndefined();
     expect(grid.edges['4,0,W']).toBe('wall');
-    const world = createWorld({ seed: 1, startTick: 0, grid, objects: [], folks: [] });
+    const world = createWorld({ seed: 1, startTick: 0, grid, objects: [], folks: [], funds: 0, exit: { x: 0, y: 0 } });
     const nav = buildNav(world, CATALOG);
     expect(findPath(nav, { x: 0, y: 0 }, { x: 3, y: 0 })).toHaveLength(3);
     expect(findPath(nav, { x: 0, y: 0 }, { x: 4, y: 0 })).toBeNull();

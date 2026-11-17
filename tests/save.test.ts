@@ -47,3 +47,34 @@ describe('determinismo e save', () => {
     expect(sim.world.tick).toBe(before + 90);
   });
 });
+
+describe('migração de save', () => {
+  it('um save da fatia 1 (versão 1) carrega com dinheiro, habilidades e sem emprego', () => {
+    const sim = starterSim(4);
+    const v1 = JSON.parse(JSON.stringify({ version: 1, savedAt: 9, world: sim.world }));
+    delete v1.world.household;
+    delete v1.world.exit;
+    for (const o of v1.world.objects) {
+      delete o.rot;
+      delete o.paid;
+    }
+    for (const f of v1.world.folks) {
+      delete f.skills;
+      delete f.job;
+      delete f.away;
+    }
+    const file = deserialize(v1);
+    expect(file.version).toBe(SAVE_VERSION);
+    const world = file.world;
+    expect(world.household.funds).toBeGreaterThan(0);
+    expect(world.household.nextBills).toBeGreaterThan(world.tick);
+    expect(world.exit).toEqual(sim.world.exit);
+    expect(world.objects.every((o) => o.rot === 0 && o.paid === 0)).toBe(true);
+    expect(world.folks[0]).toMatchObject({ skills: {}, job: null, away: null });
+    // e o jogo segue rodando normalmente
+    const startTick = world.tick;
+    const restored = new Sim(CATALOG, world);
+    run(restored, 3000);
+    expect(restored.world.tick).toBe(startTick + 3000);
+  });
+});

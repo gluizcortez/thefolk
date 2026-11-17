@@ -1,5 +1,5 @@
 import { fullNeeds } from './needs';
-import type { EdgeKind, Folk, Grid, Needs, World, WorldObject } from './types';
+import type { EdgeKind, Folk, Grid, Needs, Rotation, Vec, World } from './types';
 
 export interface RoomStyle {
   floor: string;
@@ -53,19 +53,42 @@ export interface FolkSeed {
   y: number;
   needs?: Partial<Needs>;
   look?: Folk['look'];
+  skills?: Record<string, number>;
+}
+
+export interface ObjectSeed {
+  defId: string;
+  x: number;
+  y: number;
+  rot?: Rotation;
 }
 
 export interface WorldSeed {
   seed: number;
   startTick: number;
   grid: Grid;
-  objects: Omit<WorldObject, 'id'>[];
+  objects: ObjectSeed[];
   folks: FolkSeed[];
+  /** tostões no começo */
+  funds: number;
+  /** tile na calçada de onde a condução sai */
+  exit: Vec;
+}
+
+/** De quanto em quanto tempo as contas chegam, em minutos. */
+export const BILL_INTERVAL = 3 * 24 * 60;
+/** Hora em que as contas chegam. */
+export const BILL_HOUR = 10;
+
+/** Primeiro tick de cobrança depois de `tick`. */
+export function firstBillAfter(tick: number): number {
+  const day = Math.floor(tick / 1440);
+  return day * 1440 + BILL_HOUR * 60 + BILL_INTERVAL;
 }
 
 export function createWorld(seed: WorldSeed): World {
   let nextId = 1;
-  const objects = seed.objects.map((o) => ({ ...o, id: nextId++ }));
+  const objects = seed.objects.map((o) => ({ defId: o.defId, x: o.x, y: o.y, rot: o.rot ?? 0, paid: 0, id: nextId++ }));
   const folks: Folk[] = seed.folks.map((f) => ({
     id: nextId++,
     name: f.name,
@@ -82,6 +105,9 @@ export function createWorld(seed: WorldSeed): World {
     idleTicks: 0,
     collapsed: 0,
     look: f.look ?? { skin: 0, hair: 0, shirt: 0, pants: 0 },
+    skills: { ...f.skills },
+    job: null,
+    away: null,
   }));
   return {
     tick: seed.startTick,
@@ -91,6 +117,8 @@ export function createWorld(seed: WorldSeed): World {
     grid: seed.grid,
     objects,
     folks,
+    household: { funds: seed.funds, nextBills: firstBillAfter(seed.startTick), lastBill: 0 },
+    exit: { ...seed.exit },
     log: [],
   };
 }

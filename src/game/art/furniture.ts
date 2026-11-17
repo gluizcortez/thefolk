@@ -600,6 +600,242 @@ const lamp: FurnitureSpec = {
   },
 };
 
+
+// ---------- catálogo da fatia 2 ----------
+
+const armchair: FurnitureSpec = {
+  sit: [{ x: 0, y: 0.43, z: 0.05, heading: 0 }],
+  build() {
+    const fab = texMat('fabric', { color: 0x9c3b2c });
+    const light = texMat('fabric', { color: 0xbb5640 });
+    const wood = texMat('walnut', { gloss: 0.3 });
+    const g = group(
+      ...feet(0.7, 0.66, 0.12, wood, 0.03),
+      rbox(0.8, 0.22, 0.78, 0.05, fab, 0, 0.1, 0),
+      rbox(0.8, 0.76, 0.2, 0.08, fab, 0, 0.18, -0.3),
+      rbox(0.56, 0.15, 0.56, 0.06, light, 0, 0.29, 0.08),
+    );
+    for (const sx of [-1, 1]) g.add(rbox(0.13, 0.48, 0.76, 0.06, fab, sx * 0.34, 0.14, 0.0));
+    const back = rbox(0.54, 0.4, 0.15, 0.06, light, 0, 0.42, -0.18);
+    back.rotation.x = -0.15;
+    g.add(back);
+    // capinha de crochê no encosto
+    g.add(box(0.3, 0.12, 0.012, colorMat(0xf1ead6), 0, 0.8, -0.205));
+    return { group: g };
+  },
+};
+
+const desk: FurnitureSpec = {
+  sit: [{ x: 0, y: 0.47, z: 0.34, heading: Math.PI }],
+  build() {
+    const oak = texMat('oak', { gloss: 0.35 });
+    const drawers = fronted(oak, texMat('counterFront', { color: 0xd8b07a, gloss: 0.3 }));
+    const seat = chair(colorMat(0x2f6f73, { gloss: 0.7 }));
+    seat.position.set(0, 0, 0.36);
+    seat.rotation.y = Math.PI;
+    const g = group(
+      seat,
+      rbox(1.5, 0.05, 0.6, 0.02, oak, 0, 0.72, -0.16),
+      box(0.42, 0.68, 0.54, drawers, 0.5, 0.04, -0.16),
+      box(0.05, 0.72, 0.54, oak, -0.7, 0, -0.16),
+      box(1.3, 0.3, 0.02, oak, -0.05, 0.42, -0.42),
+      // luminária de braço, mata-borrão, papéis e uma caneca
+      lathe(
+        [
+          [0.08, 0],
+          [0.08, 0.02],
+          [0.02, 0.04],
+        ],
+        12,
+        colorMat(0x2a7a4a, { gloss: 0.7 }),
+        -0.52,
+        0.77,
+        -0.32,
+      ),
+      rod([-0.52, 0.8, -0.32], [-0.46, 1.08, -0.28], 0.012, chrome()),
+      rod([-0.46, 1.08, -0.28], [-0.34, 1.0, -0.14], 0.012, chrome()),
+      cyl(0.05, 0.09, 0.09, 12, colorMat(0x2a7a4a, { gloss: 0.7, doubleSide: true }), -0.32, 0.92, -0.12, true),
+      box(0.5, 0.008, 0.32, colorMat(0x3c6b45), 0.02, 0.77, -0.1),
+      box(0.2, 0.006, 0.28, colorMat(0xf4efe0), 0.05, 0.778, -0.08),
+      cyl(0.035, 0.035, 0.09, 10, colorMat(0xe8b830, { gloss: 0.6 }), 0.42, 0.77, -0.3),
+    );
+    const pencil = rod([0.2, 0.785, -0.02], [0.32, 0.785, 0.02], 0.006, colorMat(0xe8b830));
+    g.add(pencil);
+    return { group: g };
+  },
+};
+
+const easel: FurnitureSpec = {
+  build(seed) {
+    const pine = texMat('pine', { gloss: 0.2 });
+    const canvas = colorMat(0xf6f0e0);
+    const g = group(
+      rod([-0.28, 0, 0.12], [-0.06, 1.7, -0.05], 0.022, pine, 6),
+      rod([0.28, 0, 0.12], [0.06, 1.7, -0.05], 0.022, pine, 6),
+      rod([0, 0, -0.42], [0, 1.6, -0.06], 0.02, pine, 6),
+      box(0.66, 0.04, 0.08, pine, 0, 0.66, 0.04),
+      box(0.62, 0.5, 0.03, canvas, 0, 0.7, 0.02),
+      // banquinho com paleta e potes de tinta
+      cyl(0.16, 0.16, 0.035, 12, pine, 0.42, 0.44, 0.22),
+      rod([0.32, 0, 0.12], [0.36, 0.44, 0.18], 0.014, pine, 6),
+      rod([0.52, 0, 0.12], [0.48, 0.44, 0.18], 0.014, pine, 6),
+      rod([0.42, 0, 0.36], [0.42, 0.44, 0.26], 0.014, pine, 6),
+    );
+    // pinceladas no quadro: cada cavalete tem a sua pintura
+    const rnd = seeded(seed + 7);
+    const paints = [0xc9382f, 0x2c55a6, 0xe8b830, 0x3f9455, 0xe07a2c, 0x7d55ad];
+    const strokes: THREE.Mesh[] = [];
+    for (let i = 0; i < 9; i++) {
+      const w = 0.08 + rnd() * 0.22;
+      const m = box(w, 0.04 + rnd() * 0.12, 0.006, colorMat(paints[Math.floor(rnd() * paints.length)]), (rnd() - 0.5) * (0.56 - w), 0.73 + rnd() * 0.36, 0.037);
+      strokes.push(m);
+      g.add(m);
+    }
+    for (let i = 0; i < 3; i++) g.add(cyl(0.03, 0.03, 0.05, 8, colorMat(paints[i], { gloss: 0.6 }), 0.36 + i * 0.06, 0.475, 0.2 + (i % 2) * 0.05));
+    return {
+      group: g,
+      tick({ time, using }) {
+        // enquanto alguém pinta, as manchas mudam devagar de tamanho
+        strokes.forEach((m, i) => {
+          const k = using ? 1 + Math.sin(time * 1.3 + i * 1.7) * 0.18 : 1;
+          m.scale.set(k, 1, 1);
+        });
+      },
+    };
+  },
+};
+
+const recorder: FurnitureSpec = {
+  build() {
+    const teak = texMat('walnut', { gloss: 0.35 });
+    const body = colorMat(0x8a8577, { gloss: 0.6 });
+    const reelMat = colorMat(0xd9d4c6, { gloss: 0.8 });
+    const tape = colorMat(0x4a3324, { gloss: 0.4 });
+    const reels: THREE.Group[] = [];
+    const g = group(
+      ...feet(0.6, 0.46, 0.5, teak, 0.025),
+      rbox(0.66, 0.06, 0.5, 0.02, teak, 0, 0.5, 0),
+      // gravador de rolo, um pouco inclinado
+      rbox(0.5, 0.12, 0.38, 0.025, body, 0, 0.56, 0),
+      box(0.46, 0.012, 0.12, colorMat(0x26262b), 0, 0.68, 0.11),
+      box(0.12, 0.03, 0.04, colorMat(0xc9382f, { gloss: 0.7 }), -0.14, 0.68, 0.14),
+      box(0.12, 0.03, 0.04, colorMat(0xeee9da, { gloss: 0.7 }), 0.02, 0.68, 0.14),
+      // microfone de mesa
+      lathe(
+        [
+          [0.06, 0],
+          [0.06, 0.015],
+          [0.015, 0.03],
+        ],
+        10,
+        chrome(),
+        0.24,
+        0.56,
+        0.18,
+      ),
+      rod([0.24, 0.58, 0.18], [0.24, 0.74, 0.16], 0.008, chrome()),
+      ball(0.035, 0.05, 0.035, colorMat(0x2a2a2e, { gloss: 0.8 }), 0.24, 0.78, 0.16, 10),
+    );
+    for (const sx of [-1, 1]) {
+      const reel = group(cyl(0.11, 0.11, 0.012, 16, reelMat), cyl(0.075, 0.075, 0.02, 14, tape, 0, 0.004, 0));
+      for (let i = 0; i < 3; i++) {
+        const hole = box(0.03, 0.025, 0.05, colorMat(0x5b574d), 0, 0.002, 0.065);
+        hole.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), (i * Math.PI * 2) / 3);
+        hole.rotation.y = (i * Math.PI * 2) / 3;
+        reel.add(hole);
+      }
+      reel.position.set(sx * 0.13, 0.68, -0.05);
+      reels.push(reel);
+      g.add(reel);
+    }
+    return {
+      group: g,
+      tick({ time, using }) {
+        if (using) reels.forEach((r, i) => (r.rotation.y = -time * (i === 0 ? 2.2 : 2.6)));
+      },
+    };
+  },
+};
+
+const bike: FurnitureSpec = {
+  sit: [{ x: 0, y: 0.62, z: 0.12, heading: 0 }],
+  build() {
+    const frame = colorMat(0xd03a2e, { gloss: 0.75 });
+    const black = colorMat(0x1f1f23, { gloss: 0.4 });
+    const crank = new THREE.Group();
+    crank.position.set(0, 0.32, -0.04);
+    crank.add(
+      rod([-0.08, 0, 0], [-0.08, -0.12, 0], 0.012, chrome()),
+      rod([0.08, 0, 0], [0.08, 0.12, 0], 0.012, chrome()),
+      box(0.06, 0.02, 0.1, black, -0.11, -0.13, -0.05),
+      box(0.06, 0.02, 0.1, black, 0.11, 0.11, -0.05),
+    );
+    const wheel = cyl(0.2, 0.2, 0.05, 18, chrome(), 0, 0, 0);
+    wheel.rotation.z = Math.PI / 2;
+    const fly = group(wheel);
+    fly.position.set(0, 0.26, -0.3);
+    const g = group(
+      // base em T no chão
+      rbox(0.5, 0.05, 0.08, 0.02, black, 0, 0, -0.38),
+      rbox(0.5, 0.05, 0.08, 0.02, black, 0, 0, 0.32),
+      rod([0, 0.04, -0.38], [0, 0.04, 0.32], 0.03, frame),
+      // quadro, selim e guidão
+      rod([0, 0.04, 0.12], [0, 0.56, 0.12], 0.03, frame),
+      rod([0, 0.04, -0.3], [0, 0.88, -0.28], 0.03, frame),
+      rod([0, 0.32, -0.04], [0, 0.5, 0.12], 0.025, frame),
+      rbox(0.2, 0.06, 0.26, 0.03, black, 0, 0.56, 0.14),
+      rod([-0.2, 0.92, -0.2], [0.2, 0.92, -0.2], 0.016, black),
+      rod([0, 0.88, -0.28], [0, 0.92, -0.2], 0.02, frame),
+      box(0.14, 0.09, 0.03, colorMat(0x2f6f73, { gloss: 0.6 }), 0, 0.9, -0.31),
+      box(0.09, 0.03, 0.006, colorMat(0x9fe08a, { emissive: 0x4a8a3a }), 0, 0.92, -0.296),
+      fly,
+      crank,
+    );
+    return {
+      group: g,
+      tick({ time, using }) {
+        if (!using) return;
+        crank.rotation.x = -time * 5;
+        fly.rotation.x = -time * 9;
+      },
+    };
+  },
+};
+
+const flowers: FurnitureSpec = {
+  build(seed) {
+    const g = group(
+      lathe(
+        [
+          [0.1, 0],
+          [0.15, 0.08],
+          [0.16, 0.22],
+          [0.1, 0.4],
+          [0.075, 0.5],
+          [0.095, 0.56],
+        ],
+        14,
+        colorMat(0x2f6f73, { gloss: 0.85 }),
+      ),
+    );
+    const rnd = seeded(seed + 3);
+    const cols = [0xf2c744, 0xd9483f, 0xf3efe2, 0xe07aa8, 0xe07a2c];
+    for (let i = 0; i < 9; i++) {
+      const a = rnd() * Math.PI * 2;
+      const r = 0.05 + rnd() * 0.16;
+      const top: [number, number, number] = [Math.cos(a) * r, 0.78 + rnd() * 0.32, Math.sin(a) * r];
+      g.add(rod([0, 0.5, 0], top, 0.007, colorMat(0x3f7a2e), 5));
+      g.add(ball(0.05, 0.035, 0.05, colorMat(cols[i % cols.length]), top[0], top[1], top[2], 8));
+      if (i % 2 === 0) {
+        const leaf = ball(0.05, 0.012, 0.025, colorMat(PAL.leaf), top[0] * 0.6, 0.66, top[2] * 0.6, 6);
+        leaf.rotation.y = a;
+        g.add(leaf);
+      }
+    }
+    return { group: g };
+  },
+};
+
 // ---------- miudezas ----------
 // Detalhes que dão vida a cada objeto. Ficam separados do modelo principal
 // para ser fácil acrescentar ou tirar sem mexer na forma do móvel.
@@ -821,6 +1057,12 @@ const SPECS: Record<string, FurnitureSpec> = {
   speaker,
   plant,
   lamp,
+  armchair,
+  desk,
+  easel,
+  recorder,
+  bike,
+  flowers,
 };
 
 export function furnitureSpec(art: string): FurnitureSpec {

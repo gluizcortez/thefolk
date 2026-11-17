@@ -15,6 +15,7 @@ async function boot(): Promise<void> {
 
   const hud = new Hud(document.getElementById('ui')!, ctrl);
   const view = new GameView(document.getElementById('game')!, ctrl, hud);
+  hud.setThumbnailer((art) => view.thumbnail(art));
   view.start();
   if (import.meta.env.DEV) (window as unknown as { thefolkView: GameView }).thefolkView = view;
 

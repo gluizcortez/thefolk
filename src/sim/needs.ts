@@ -1,3 +1,4 @@
+import { skillBoost } from './skills';
 import type { Catalog, Folk, InteractionDef, NeedId, Needs, World } from './types';
 import { NEED_IDS } from './types';
 
@@ -60,7 +61,7 @@ export function decayNeeds(world: World, catalog: Catalog, folk: Folk, scale = 1
 export function applyEffects(folk: Folk, interaction: InteractionDef): void {
   for (const id of NEED_IDS) {
     const e = interaction.effects[id];
-    if (e) folk.needs[id] = clampNeed(folk.needs[id] + e);
+    if (e) folk.needs[id] = clampNeed(folk.needs[id] + (e > 0 ? e * skillBoost(folk, interaction, id) : e));
   }
 }
 

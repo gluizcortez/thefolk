@@ -14,8 +14,9 @@ export function openField(
   w: number,
   h: number,
   objects: WorldSeed['objects'],
-  folk: { x: number; y: number; needs?: Partial<Needs>; traits?: string[] },
+  folk: { x: number; y: number; needs?: Partial<Needs>; traits?: string[]; skills?: Record<string, number> },
   seed = 1,
+  funds = 1000,
 ): Sim {
   const rows = Array.from({ length: h }, () => '.'.repeat(w));
   const grid = gridFromMap(rows, { '.': { floor: 'grass', indoor: false } }, []);
@@ -26,7 +27,11 @@ export function openField(
       startTick: 0,
       grid,
       objects,
-      folks: [{ name: 'Teste', traits: folk.traits ?? [], x: folk.x, y: folk.y, needs: folk.needs }],
+      folks: [
+        { name: 'Teste', traits: folk.traits ?? [], x: folk.x, y: folk.y, needs: folk.needs, skills: folk.skills },
+      ],
+      funds,
+      exit: { x: 0, y: h - 1 },
     }),
   );
 }

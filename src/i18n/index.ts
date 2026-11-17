@@ -13,3 +13,7 @@ export function t(key: string, params?: Record<string, string | number>): string
   if (!params) return text;
   return text.replace(/\{(\w+)\}/g, (_, k: string) => String(params[k] ?? `{${k}}`));
 }
+
+export function hasText(key: string): boolean {
+  return key in current;
+}
