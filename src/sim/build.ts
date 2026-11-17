@@ -1,5 +1,6 @@
 import { reachable } from './economy';
-import { buildNav, edgeKey, inBounds, objectSize, useTiles } from './grid';
+import { buildNav, edgeKey, inBounds, objectSize, useTiles, wallBehind } from './grid';
+import { computeRooms, roomAt } from './rooms';
 import type { Catalog, Command, EdgeKind, Grid, Side, Vec, World } from './types';
 
 // Modo construção: paredes, portas e janelas nas bordas dos tiles, pisos nos
@@ -14,6 +15,7 @@ export type BuildProblem =
   | 'cutsObject'
   | 'trapsFolk'
   | 'blocksObject'
+  | 'holdsDecor'
   | 'unknown'
   | 'funds'
   | 'undoEmpty'
@@ -199,6 +201,16 @@ export function checkGrid(world: World, catalog: Catalog, after: Grid): BuildPro
         if (dx > 0 && after.edges[edgeKey(tx - 1, ty, tx, ty)]) return 'cutsObject';
         if (dy > 0 && after.edges[edgeKey(tx, ty - 1, tx, ty)]) return 'cutsObject';
       }
+    }
+  }
+  // bloco 3: quadro precisa da parede atrás; luminária de teto, de teto
+  let roomsAfter: ReturnType<typeof computeRooms> | null = null;
+  for (const obj of world.objects) {
+    const def = catalog.objects[obj.defId];
+    if (def?.layer === 'wall' && after.edges[wallBehind(obj)] !== 'wall') return 'holdsDecor';
+    if (def?.layer === 'ceiling') {
+      roomsAfter ??= computeRooms(after, catalog);
+      if (roomAt(roomsAfter, obj.x, obj.y)?.outdoor !== false) return 'holdsDecor';
     }
   }
 

@@ -1,13 +1,15 @@
 import { relKey } from './relations';
-import type { Catalog, Grid, Neighbor, World } from './types';
-import { footprint } from './grid';
+import type { Catalog, Grid, Neighbor, Vec, World, WorldObject } from './types';
+import { checkPlacement } from './economy';
+import { footprint, objectSize } from './grid';
+import { computeRooms, lightsIn } from './rooms';
 import { START_PANTRY } from './services';
 import type { NeighborSeed, RelationSeed } from './world';
 import { freshState } from './upkeep';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -131,7 +133,122 @@ const migrations: Record<number, Migration> = {
     if (ctx.catalog) placeMailbox(world, ctx.catalog);
     return { ...save, world: world as unknown as Obj };
   },
+  // bloco 3: cômodos, luz e enfeites. As luminárias começam apagadas; os
+  // quadros e o relógio que a tela pendurava sozinha viram objetos nos mesmos
+  // lugares, o tapete da frente do sofá também, e cada cômodo sem nenhuma
+  // luminária ganha uma luz de teto (para a casa antiga não ficar no breu).
+  7: (save, ctx) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    world.household = { ...world.household, lightMinutes: 0 };
+    world.objects = [...(world.objects ?? [])];
+    if (ctx.catalog) {
+      hangLegacyPictures(world, ctx.catalog);
+      laySofaRugs(world, ctx.catalog);
+      lightDarkRooms(world, ctx.catalog);
+    }
+    return { ...save, world: world as unknown as Obj };
+  },
 };
+
+function addFree(world: World, defId: string, x: number, y: number, rot: WorldObject['rot']): void {
+  world.objects.push({ id: world.nextId++, defId, x, y, rot, paid: 0, state: freshState() });
+}
+
+/**
+ * Onde a tela até o bloco 2 pendurava quadros: paredes (sem porta nem janela)
+ * em que (5x + 3y + 2 se for borda oeste) é múltiplo de 4, do lado de dentro
+ * sem móvel encostado. Na cozinha ia um relógio.
+ */
+export function legacyPictures(world: World, catalog: Catalog): { defId: string; x: number; y: number; rot: WorldObject['rot'] }[] {
+  const grid = world.grid;
+  const taken = new Set<string>();
+  for (const o of world.objects) {
+    const def = catalog.objects[o.defId];
+    if (!def || def.layer) continue;
+    for (const t of footprint(o, def)) taken.add(`${t.x},${t.y}`);
+  }
+  const indoor = (x: number, y: number) =>
+    x >= 0 && y >= 0 && x < grid.w && y < grid.h && catalog.floors[grid.floor[y * grid.w + x]]?.outdoor !== true;
+  const out: { defId: string; x: number; y: number; rot: WorldObject['rot'] }[] = [];
+  for (const [key, kind] of Object.entries(grid.edges)) {
+    if (kind !== 'wall') continue;
+    const [xs, ys, side] = key.split(',');
+    const x = Number(xs);
+    const y = Number(ys);
+    const north = side === 'N';
+    if ((x * 5 + y * 3 + (north ? 0 : 2)) % 4 !== 0) continue;
+    const sides: [number, number, WorldObject['rot']][] = north
+      ? [
+          [x, y, 0],
+          [x, y - 1, 2],
+        ]
+      : [
+          [x, y, 1],
+          [x - 1, y, 3],
+        ];
+    for (const [tx, ty, rot] of sides) {
+      if (!indoor(tx, ty) || taken.has(`${tx},${ty}`)) continue;
+      const kitchen = grid.floor[ty * grid.w + tx] === 'kitchen';
+      out.push({ defId: kitchen ? 'wallclock' : 'painting', x: tx, y: ty, rot });
+      break;
+    }
+  }
+  return out;
+}
+
+function hangLegacyPictures(world: World, catalog: Catalog): void {
+  for (const p of legacyPictures(world, catalog)) {
+    if (!catalog.objects[p.defId]) continue;
+    if (checkPlacement(world, catalog, p.defId, p.x, p.y, p.rot).ok) addFree(world, p.defId, p.x, p.y, p.rot);
+  }
+}
+
+/** O tapete que vinha desenhado na frente de cada sofá vira um tapete grande. */
+function laySofaRugs(world: World, catalog: Catalog): void {
+  if (!catalog.objects.bigrug) return;
+  const fronts: Vec[] = [
+    { x: 0, y: 1 },
+    { x: 1, y: 0 },
+    { x: 0, y: -1 },
+    { x: -1, y: 0 },
+  ];
+  for (const sofa of world.objects.filter((o) => o.defId === 'sofa')) {
+    const f = fronts[sofa.rot];
+    const rot: WorldObject['rot'] = sofa.rot % 2 === 0 ? 0 : 1;
+    const size = objectSize(catalog.objects.bigrug, rot);
+    // encostado na frente do sofá, centrado nele quando der
+    const ax = f.x > 0 ? sofa.x + 1 : f.x < 0 ? sofa.x - size.w : sofa.x;
+    const ay = f.y > 0 ? sofa.y + 1 : f.y < 0 ? sofa.y - size.h : sofa.y;
+    const tries: Vec[] = f.x === 0 ? [{ x: ax, y: ay }, { x: ax - 1, y: ay }] : [{ x: ax, y: ay }, { x: ax, y: ay - 1 }];
+    const spot = tries.find((p) => checkPlacement(world, catalog, 'bigrug', p.x, p.y, rot).ok);
+    if (spot) addFree(world, 'bigrug', spot.x, spot.y, rot);
+  }
+}
+
+/** Cômodo fechado sem nenhuma luminária ganha uma luz de teto perto do meio. */
+function lightDarkRooms(world: World, catalog: Catalog): void {
+  if (!catalog.objects.ceilinglamp) return;
+  const map = computeRooms(world.grid, catalog);
+  for (const room of map.rooms) {
+    if (room.outdoor) continue;
+    if (lightsIn(world, catalog, map, room).length > 0) continue;
+    let sx = 0;
+    let sy = 0;
+    const tiles: Vec[] = [];
+    for (let i = 0; i < map.of.length; i++) {
+      if (map.of[i] !== room.id) continue;
+      const t = { x: i % map.w, y: Math.floor(i / map.w) };
+      tiles.push(t);
+      sx += t.x;
+      sy += t.y;
+    }
+    const cx = sx / tiles.length;
+    const cy = sy / tiles.length;
+    tiles.sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
+    const spot = tiles.find((t) => checkPlacement(world, catalog, 'ceilinglamp', t.x, t.y, 0).ok);
+    if (spot) addFree(world, 'ceilinglamp', spot.x, spot.y, 0);
+  }
+}
 
 /** Campos do bloco 2 que um save antigo não tem (os que já existem ficam). */
 function pickHousehold(old: Record<string, unknown>): Partial<World['household']> {

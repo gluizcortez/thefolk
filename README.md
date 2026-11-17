@@ -181,6 +181,27 @@ npm run preview  # serve o dist/ localmente
   perto, muito mais para quem é caprichoso ou caseiro. Quem se incomoda e
   recolhe o prato de outro morador reclama e guarda a lembrança "deixou
   bagunça para eu limpar".
+- **Cômodos (bloco 3)**: o Ambiente agora sai do cômodo inteiro onde o folk
+  está (a região fechada por paredes, portas e janelas): enfeites e móveis,
+  sujeira e bagunça, tamanho (apertado pesa), janelas, luz, piso e
+  revestimento e cantos vazios. O mesmo sofá vale muito mais numa sala bonita
+  do que num corredor. O quadro de necessidades mostra o nome do cômodo,
+  sugerido pelo uso ("Cozinha e sala", "Quarto", "Ateliê"), a nota e a luz;
+  passe o mouse para ver a conta. Cada traço tem um gosto: o caseiro ama
+  cômodo cheio, o reservado prefere quarto pequeno, o agitado e o tagarela
+  gostam de espaço, o romântico gosta da meia-luz de abajur à noite.
+- **Dia e noite (bloco 3)**: o sol nasce entre 5h e 7h e se põe entre 17h30
+  e 21h. De dia a luz entra pelas janelas (cômodo sem janela fica na
+  penumbra); à noite a casa escurece, e cômodo escuro derruba o Ambiente.
+  Abajur e **luminária de teto** têm **Acender a luz** e **Apagar a luz**;
+  com a IA ligada, quem vai usar algo num cômodo escuro acende a luz antes,
+  quem vai dormir apaga a do quarto e quem sai de um cômodo vazio apaga ou
+  não conforme o traço (o caprichoso quase sempre, o desleixado quase
+  nunca). Lâmpada acesa entra na conta de luz.
+- **Quadros, tapetes e luz de teto (bloco 3)** são objetos de compra: quadro
+  e relógio penduram na parede atrás do tile (o fantasma gira sozinho para a
+  parede), tapete vai rente ao chão e não fecha passagem, luminária de teto
+  só dentro de cômodo. Parede com quadro pendurado não pode ser derrubada.
 - **Despensa (bloco 2)**: a geladeira guarda porções (até 24 por geladeira;
   o menu mostra quantas sobram). Refeição e cozinhar no fogão gastam uma
   porção; sem estoque só sobra o lanche ou pedir comida. A casa começa com 16.
@@ -250,6 +271,7 @@ src/
     social.ts       quem pode conversar com quem e a chance de o outro topar
     economy.ts      tostões, contas, preço de revenda e regras de onde um objeto cabe
     services.ts     bloco 2: despensa, cartas de conta, penhora, jornal, pedidos e campainha
+    rooms.ts        bloco 3: cômodos, nota de ambiente, luz do dia e das luminárias, nome do cômodo
     build.ts        modo construção: planos de obra, custo, validação, desfazer
   data/       conteúdo como dados: objetos (com preço e categoria), pisos,
               revestimentos e preço de parede, porta e janela (build.ts), traços,
@@ -360,6 +382,14 @@ Decisões principais do núcleo:
   seguinte na frente da fila. Bagunça é recolhida pela ação `tidy`. A IA soma
   as opções de cuidado com nota própria vezes `careDrive` (traços `tidy` e
   humor); o ambiente soma o estado dos objetos e a bagunça vezes `messSense`.
+- **Cômodos e luz (bloco 3)** moram em `sim/rooms.ts`: `roomsOf` (cache pela
+  assinatura do grid), `roomScore` (peça por peça), `roomLight`, `isDark`,
+  `roomKind`. `ObjectDef` ganhou `layer` ('wall' | 'floor' | 'ceiling', não
+  ocupa o chão, veja `blocksFloor` e `wallBehind` em `sim/grid.ts`), `light`
+  e `room`; `WorldObject.lit`; `InteractionDef.light` ('on' | 'off');
+  `FloorDef.ambience/cover`, `CoveringDef.ambience`; `TraitDef.roomTaste` e
+  `saver`; `household.lightMinutes`. `nightAmount`/`daylightAt` em
+  `sim/clock.ts` servem à simulação e à tela.
 - **Despensa, correio e serviços (bloco 2)** moram em `sim/services.ts`.
   `household` ganhou `pantry`, `takeout`, `bills`, `orders`, `maid`,
   `paperDay` e `readDay`. Interações novas: `portions` e `takeout` (consomem
@@ -472,7 +502,24 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
 - **Bloco 1 (feito)**: casa viva: sujeira, desgaste, conserto, Jeito e Capricho (save v6).
 - **Bloco 2 (feito)**: despensa, correio com contas e penhora, telefone com
   serviços, jornal com classificados, campainha e feira de sábado (save v7).
-- Próximo: bloco 3, ambiente por cômodo, dia e noite.
+- **Bloco 3 (feito)**: ambiente por cômodo, dia e noite, luminárias que a IA
+  acende e apaga, quadros, tapetes e luz de teto de compra (save v8).
+- Próximo: bloco 4, catálogo em faixas de preço e atividades a dois.
+
+## Limitações conhecidas do bloco 3
+
+- A luz é por cômodo inteiro: uma sala enorme com um abajur num canto fica
+  igualmente "meia-luz" em toda parte. A tela acende uma luz pontual por
+  luminária, sem sombra própria.
+- Não há interruptor na parede: acender e apagar é na própria luminária, e o
+  folk apaga ao sair sem dar a volta.
+- Quadros, relógio e tapete não têm cor ou modelo para escolher (vem no
+  bloco 4). Ninguém rouba nem estraga quadro.
+- Cercado de paredes sem piso conta como cômodo; o quintal (o que encosta na
+  divisa do lote) segue com o raio em volta do folk.
+- Saves antigos ganham os quadros e o relógio nos lugares onde a tela os
+  pendurava, o tapete da frente do sofá e uma luz de teto em cada cômodo sem
+  luminária, tudo de graça.
 
 ## Limitações conhecidas do bloco 2
 
@@ -489,7 +536,7 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
 ## Limitações conhecidas do bloco 1
 
 - Sujeira só nasce do uso: a casa parada não acumula poeira. Pisos e paredes
-  não sujam (o ambiente por cômodo vem no bloco 3).
+  não sujam.
 - O folk não carrega o prato nem o saco na mão: ele só anda até a pia ou o
   latão. O latão da calçada nunca enche.
 - Saves antigos não ganham lixeira, pia da cozinha nem latão: sem lixeira o

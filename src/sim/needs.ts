@@ -1,13 +1,11 @@
-import { windowAmbience } from './build';
+import { roomAmbience } from './rooms';
 import { skillBoost } from './skills';
-import { MESS_AMBIENCE, messSenseOf, stateAmbience } from './upkeep';
 import type { Catalog, Folk, InteractionDef, NeedId, Needs, World } from './types';
 import { NEED_IDS } from './types';
 
 export const NEED_MAX = 100;
-/** raio (distância de Manhattan) em que objetos influenciam o ambiente */
+/** raio (distância de Manhattan) em que objetos do quintal influenciam o ambiente */
 export const AMBIENCE_RADIUS = 6;
-const AMBIENCE_BASE = 35;
 const AMBIENCE_DRIFT = 0.5;
 
 export function clampNeed(v: number): number {
@@ -34,25 +32,12 @@ export function needWeight(catalog: Catalog, folk: Folk, need: NeedId): number {
   return m;
 }
 
-/** Valor para onde a necessidade "ambiente" tende, dado o que há por perto. */
+/**
+ * Valor para onde a necessidade "ambiente" tende. Bloco 3: sai da nota do
+ * cômodo inteiro onde o folk está (veja sim/rooms.ts).
+ */
 export function ambienceTarget(world: World, catalog: Catalog, folk: Folk): number {
-  let sum = AMBIENCE_BASE + windowAmbience(world, catalog, folk);
-  // sujeira, quebrados e bagunça pesam conforme quanto o folk se incomoda
-  let mess = 0;
-  for (const obj of world.objects) {
-    const def = catalog.objects[obj.defId];
-    if (!def) continue;
-    const d = Math.abs(obj.x - folk.x) + Math.abs(obj.y - folk.y);
-    if (d > AMBIENCE_RADIUS) continue;
-    sum += def.ambience;
-    mess += stateAmbience(obj, def);
-  }
-  for (const m of world.mess ?? []) {
-    const d = Math.abs(m.x - folk.x) + Math.abs(m.y - folk.y);
-    if (d <= AMBIENCE_RADIUS) mess += MESS_AMBIENCE[m.kind];
-  }
-  if (mess < 0) sum += mess * messSenseOf(catalog, folk);
-  return clampNeed(sum);
+  return clampNeed(roomAmbience(world, catalog, folk));
 }
 
 /** Aplica um minuto de decaimento natural (e a deriva do ambiente). */

@@ -1,5 +1,6 @@
 import type { Nav } from './grid';
-import { buildNav, edgeKey, footprint, inBounds, objectSize, useTiles } from './grid';
+import { buildNav, edgeKey, footprint, inBounds, objectSize, useTiles, wallBehind } from './grid';
+import { roomAt, roomsOf } from './rooms';
 import { freshState } from './upkeep';
 import type { Catalog, ObjectDef, Rotation, Vec, World, WorldObject } from './types';
 
@@ -51,7 +52,9 @@ export type PlaceProblem =
   | 'blocksWay'
   | 'unreachable'
   | 'inUse'
-  | 'funds';
+  | 'funds'
+  | 'needsWall'
+  | 'needsRoof';
 
 export interface PlaceCheck {
   ok: boolean;
@@ -107,6 +110,7 @@ export function checkPlacement(
 ): PlaceCheck {
   const def = catalog.objects[defId];
   if (!def) return { ok: false, problem: 'unknown' };
+  if (def.layer) return checkLayered(world, catalog, def, x, y, rot, ignoreId);
   const others: World = { ...world, objects: world.objects.filter((o) => o.id !== ignoreId) };
   const before = buildNav(others, catalog);
   const tiles = footprint({ x, y, rot }, def);
@@ -144,6 +148,62 @@ export function checkPlacement(
       if (!uses.some((u) => reachAfter.has(u.y * world.grid.w + u.x))) {
         return { ok: false, problem: 'unreachable' };
       }
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * Bloco 3: quadro, tapete e luminária de teto não ocupam o chão. Só não podem
+ * ficar em cima de outro da mesma camada; o quadro precisa de parede atrás,
+ * a luminária de teto precisa de cômodo coberto e o tapete não passa por
+ * baixo de parede.
+ */
+function checkLayered(
+  world: World,
+  catalog: Catalog,
+  def: ObjectDef,
+  x: number,
+  y: number,
+  rot: Rotation,
+  ignoreId?: number,
+): PlaceCheck {
+  const tiles = footprint({ x, y, rot }, def);
+  const taken = new Set<string>();
+  for (const o of world.objects) {
+    if (o.id === ignoreId) continue;
+    const od = catalog.objects[o.defId];
+    if (!od || od.layer !== def.layer) continue;
+    for (const t of footprint(o, od)) taken.add(`${t.x},${t.y}`);
+  }
+  for (const t of tiles) {
+    if (!inBounds(world.grid, t.x, t.y)) return { ok: false, problem: 'outside' };
+    if (taken.has(`${t.x},${t.y}`)) return { ok: false, problem: 'occupied' };
+  }
+  const size = objectSize(def, rot);
+  for (let dy = 0; dy < size.h; dy++) {
+    for (let dx = 0; dx < size.w; dx++) {
+      const tx = x + dx;
+      const ty = y + dy;
+      if (dx > 0 && world.grid.edges[edgeKey(tx - 1, ty, tx, ty)]) return { ok: false, problem: 'wall' };
+      if (dy > 0 && world.grid.edges[edgeKey(tx, ty - 1, tx, ty)]) return { ok: false, problem: 'wall' };
+    }
+  }
+  if (def.layer === 'wall') {
+    if (world.grid.edges[wallBehind({ x, y, rot })] !== 'wall') return { ok: false, problem: 'needsWall' };
+  }
+  if (def.layer === 'ceiling') {
+    const room = roomAt(roomsOf(world, catalog), x, y);
+    if (!room || room.outdoor) return { ok: false, problem: 'needsRoof' };
+  }
+  if (def.interactions.length > 0) {
+    const nav = buildNav(world, catalog);
+    const placed: WorldObject = { id: -1, defId: def.id, x, y, rot, paid: 0, state: freshState() };
+    const uses = useTiles(world, nav, placed, def);
+    for (const folk of world.folks) {
+      if (folk.away) continue;
+      const reach = reachable(nav, folk);
+      if (!uses.some((u) => reach.has(u.y * world.grid.w + u.x))) return { ok: false, problem: 'unreachable' };
     }
   }
   return { ok: true };

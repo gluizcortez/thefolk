@@ -5,6 +5,8 @@ import {
   SAVE_VERSION,
   Sim,
   ambienceTarget,
+  roomAt,
+  roomsOf,
   createWorld,
   deserialize,
   facesOfEdge,
@@ -118,14 +120,19 @@ describe('modo construção: portas e janelas', () => {
     expect(sim.lastProblem).toBe('nothing');
   });
 
-  it('janelas perto clareiam o ambiente', () => {
-    const sim = openField(8, 8, [], { x: 3, y: 3 }, 1, 2000);
+  it('janela no cômodo clareia o ambiente (bloco 3: conta o cômodo todo)', () => {
+    const sim = openField(8, 8, [], { x: 3, y: 3 }, 1, 4000);
+    sim.world.tick = 12 * 60;
+    // um cômodo fechado de 4x4 em volta do folk, com porta
+    expect(sim.dispatch({ type: 'buildWalls', x0: 1, y0: 1, x1: 5, y1: 1 })).toBe(true);
+    expect(sim.dispatch({ type: 'buildWalls', x0: 1, y0: 5, x1: 5, y1: 5 })).toBe(true);
+    expect(sim.dispatch({ type: 'placeOpening', edge: '2,5,N', kind: 'door' })).toBe(true);
+    expect(sim.dispatch({ type: 'buildWalls', x0: 1, y0: 1, x1: 1, y1: 5 })).toBe(true);
+    expect(sim.dispatch({ type: 'buildWalls', x0: 5, y0: 1, x1: 5, y1: 5 })).toBe(true);
+    expect(roomAt(roomsOf(sim.world, CATALOG), 3, 3)?.outdoor).toBe(false);
     const before = ambienceTarget(sim.world, CATALOG, sim.world.folks[0]);
-    sim.dispatch({ type: 'buildWalls', x0: 0, y0: 3, x1: 8, y1: 3 });
-    // a parede passa ao norte do folk; sem janela, nada muda
-    expect(ambienceTarget(sim.world, CATALOG, sim.world.folks[0])).toBe(before);
-    sim.dispatch({ type: 'placeOpening', edge: '3,3,N', kind: 'window' });
-    expect(ambienceTarget(sim.world, CATALOG, sim.world.folks[0])).toBe(before + CATALOG.parts.window.ambience);
+    sim.dispatch({ type: 'placeOpening', edge: '3,1,N', kind: 'window' });
+    expect(ambienceTarget(sim.world, CATALOG, sim.world.folks[0])).toBeGreaterThanOrEqual(before + CATALOG.parts.window.ambience);
   });
 });
 

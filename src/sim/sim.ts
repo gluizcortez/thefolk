@@ -63,6 +63,7 @@ import { billAmount, checkPlacement, formatMoney, objectBusy, sellValue } from '
 import type { Nav } from './grid';
 import { buildNav, nearestFootprintTile, useTiles } from './grid';
 import { NEED_MAX, applyEffects, clampNeed, decayNeeds, moodOf } from './needs';
+import { isDark, lightsIn, roomAt, roomsOf, shining } from './rooms';
 import { findPath, findPathToAny } from './pathfinding';
 import { nextFloat, nextInt } from './rng';
 import { addMemory, affinity, applyDelta, coolRelations, ensureRelation, relationOf, setDating, touch } from './relations';
@@ -199,6 +200,22 @@ const LISTEN_LIMIT = 60;
 const COOL_HOUR = 4;
 
 export const MAX_QUEUE = 8;
+
+/** Bloco 3: tostões por minuto de lâmpada acesa (entra na conta de luz). */
+export const LIGHT_RATE = 0.012;
+/** Chance de apagar a luz ao sair de um cômodo vazio, sem traço que diga outra coisa. */
+export const SAVER_DEFAULT = 0.4;
+
+/** Interação de dormir (deitar e recuperar energia). */
+export function isSleep(it: InteractionDef): boolean {
+  return (it.effects.energy ?? 0) > 0 && it.pose === 'lie';
+}
+
+/** Chance de o folk apagar a luz ao sair (média dos traços que opinam). */
+export function saverOf(catalog: Catalog, folk: Folk): number {
+  const vals = folk.traits.map((t) => catalog.traits[t]?.saver).filter((v): v is number => v !== undefined);
+  return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : SAVER_DEFAULT;
+}
 const MAX_LOG = 30;
 /** minutos parado antes de a IA procurar algo para fazer */
 const IDLE_BEFORE_AUTO = 3;
@@ -330,7 +347,7 @@ export class Sim {
         // convites e serviços passam pelos comandos 'invite' e 'callService'
         if (!folk || !obj || !def || !it || it.special === 'invite' || it.special === 'services' || it.hidden) return false;
         if (folk.visit && (it.residentOnly || (it.cost ?? 0) > 0 || it.care)) return this.fail('visitor');
-        if (!interactionOpen(obj, it)) return this.fail(it.care ? 'nothingToDo' : 'broken');
+        if (!interactionOpen(obj, it)) return this.fail(it.care || it.light ? 'nothingToDo' : 'broken');
         if (!interactionReady(this.world, it)) {
           return this.fail(it.special === 'payBills' ? 'noBills' : it.special === 'fair' ? 'closed' : 'noFood');
         }
@@ -608,6 +625,7 @@ export class Sim {
     const world = this.world;
     world.tick++;
     this.stepBills();
+    for (const obj of world.objects) if (shining(obj, this.catalog.objects[obj.defId])) world.household.lightMinutes++;
     const minute = world.tick % MINUTES_PER_DAY;
     this.stepServices(minute);
     if (minute === COOL_HOUR * 60) {
@@ -654,8 +672,12 @@ export class Sim {
   private stepBills(): void {
     const house = this.world.household;
     if (this.world.tick < house.nextBills) return;
-    const amount = billAmount(this.world, this.catalog);
-    const bill = makeBill(this.world, this.catalog, amount);
+    // bloco 3: as lâmpadas acesas entram na parte da luz
+    const light = Math.round((house.lightMinutes ?? 0) * LIGHT_RATE);
+    house.lightMinutes = 0;
+    const amount = billAmount(this.world, this.catalog) + light;
+    const bill = makeBill(this.world, this.catalog, amount - light);
+    bill.power += light;
     house.bills.push(bill);
     house.lastBill = amount;
     house.nextBills += BILL_INTERVAL;
@@ -956,6 +978,72 @@ export class Sim {
     }
 
     this.processAction(folk);
+    if (folk.x !== folk.px || folk.y !== folk.py) this.leftRoom(folk);
+  }
+
+  // ---------- bloco 3: luz ----------
+
+  /** Acende ou apaga a luminária (o interruptor é instantâneo). */
+  private switchLight(obj: WorldObject, on: boolean): void {
+    if (!!obj.lit === on) return;
+    obj.lit = on;
+  }
+
+  /**
+   * Antes de começar alguma coisa num cômodo escuro, quem mora na casa vai
+   * acender a luz mais perto. Devolve true se a ação de acender entrou na frente.
+   */
+  private lightUp(folk: Folk): boolean {
+    if (folk.visit) return false;
+    const map = roomsOf(this.world, this.catalog);
+    const room = roomAt(map, folk.x, folk.y);
+    if (!room || !isDark(this.world, this.catalog, map, room)) return false;
+    let best: { obj: WorldObject; d: number } | null = null;
+    for (const obj of lightsIn(this.world, this.catalog, map, room)) {
+      if (obj.lit) continue;
+      const d = Math.abs(obj.x - folk.x) + Math.abs(obj.y - folk.y);
+      if (!best || d < best.d) best = { obj, d };
+    }
+    if (!best) return false;
+    folk.queue.unshift(this.makeAction({ kind: 'use', objectId: best.obj.id, interactionId: 'lightOn' }, 'auto'));
+    folk.path = [];
+    if (folk.queue.length > MAX_QUEUE) folk.queue.length = MAX_QUEUE;
+    return true;
+  }
+
+  /** Quem vai dormir apaga as luzes do cômodo, se não houver mais ninguém acordado ali. */
+  private lightsOutForSleep(folk: Folk): void {
+    const map = roomsOf(this.world, this.catalog);
+    const room = roomAt(map, folk.x, folk.y);
+    if (!room || room.outdoor) return;
+    const awake = this.world.folks.some(
+      (f) => f !== folk && !f.away && roomAt(map, f.x, f.y) === room && !this.sleeping(f),
+    );
+    if (awake) return;
+    for (const obj of lightsIn(this.world, this.catalog, map, room)) this.switchLight(obj, false);
+  }
+
+  private sleeping(folk: Folk): boolean {
+    const a = folk.queue[0];
+    if (a?.phase !== 'using') return folk.collapsed > 0;
+    const it = this.interactionOf(a);
+    return !!it && isSleep(it);
+  }
+
+  /**
+   * Saiu de um cômodo que ficou vazio com a luz acesa: conforme o traço,
+   * apaga ao passar (o desleixado quase nunca, o caprichoso quase sempre).
+   */
+  private leftRoom(folk: Folk): void {
+    if (folk.visit) return;
+    const map = roomsOf(this.world, this.catalog);
+    const from = roomAt(map, folk.px, folk.py);
+    if (!from || from.outdoor || from === roomAt(map, folk.x, folk.y)) return;
+    const lit = lightsIn(this.world, this.catalog, map, from).filter((o) => o.lit);
+    if (lit.length === 0) return;
+    if (this.world.folks.some((f) => f !== folk && !f.away && roomAt(map, f.x, f.y) === from)) return;
+    if (nextFloat(this.world) >= saverOf(this.catalog, folk)) return;
+    for (const obj of lit) this.switchLight(obj, false);
   }
 
   private checkFailures(folk: Folk): void {
@@ -1097,6 +1185,14 @@ export class Sim {
         this.finish(folk);
         return;
       }
+      if (it && !it.light && !action.lightChecked) {
+        // bloco 3: cômodo escuro? acende a luz primeiro (dormir dispensa)
+        action.lightChecked = true;
+        if (!isSleep(it) && this.lightUp(folk)) {
+          action.phase = 'queued';
+          return;
+        }
+      }
       const cost = it?.cost ?? 0;
       if (cost > 0) {
         if (this.world.household.funds < cost) {
@@ -1107,6 +1203,8 @@ export class Sim {
         this.world.household.funds -= cost;
       }
       if (it) consumeFor(this.world, it);
+      if (obj && it?.light) this.switchLight(obj, it.light === 'on');
+      if (it && isSleep(it)) this.lightsOutForSleep(folk);
       action.phase = 'using';
       if (obj) action.slot = this.freeSlot(obj.id, folk);
       this.faceObject(folk, action);

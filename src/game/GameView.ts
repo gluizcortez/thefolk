@@ -11,9 +11,11 @@ import {
   formatMoney,
   lineEdges,
   moodOf,
+  nightAmount,
   objectSize,
   planBuild,
   roomFaces,
+  wallBehind,
 } from '../sim';
 import type {
   Action,
@@ -294,12 +296,12 @@ export class GameView {
     const occupied = new Set<string>();
     for (const obj of world.objects) {
       const def = this.ctrl.sim.defOf(obj);
-      if (!def) continue;
+      if (!def || def.layer === 'wall' || def.layer === 'ceiling') continue;
       const size = objectSize(def, obj.rot);
       for (let dy = 0; dy < size.h; dy++) for (let dx = 0; dx < size.w; dx++) occupied.add(`${obj.x + dx},${obj.y + dy}`);
     }
     const floors = this.ctrl.sim.catalog.floors;
-    this.house = new House(grid, occupied, floors);
+    this.house = new House(grid, floors);
     const free = (x: number, y: number) =>
       x >= 0 && y >= 0 && x < grid.w && y < grid.h && floors[grid.floor[y * grid.w + x]]?.outdoor === true && !occupied.has(`${x},${y}`);
     this.scenery = buildScenery(grid, free);
@@ -612,7 +614,10 @@ export class GameView {
         if (mess) return { mess };
       }
     }
-    const groups = [...this.objects.values()].map((e) => e.model.group);
+    // no modo vivo, tapete não rouba o clique do chão; quadro escondido não conta
+    const groups = [...this.objects.values()]
+      .filter((e) => e.model.group.visible && (this.ctrl.mode !== 'live' || e.def.layer !== 'floor'))
+      .map((e) => e.model.group);
     const hit = this.raycaster.intersectObjects(groups, true)[0];
     if (hit) {
       let o: THREE.Object3D | null = hit.object;
@@ -752,7 +757,7 @@ export class GameView {
     }
     this.syncMess();
     for (const entry of this.objects.values()) {
-      entry.model.tick?.({ time: this.animTime, using: using.get(entry.obj.id), night });
+      entry.model.tick?.({ time: this.animTime, using: using.get(entry.obj.id), night, lit: !!entry.obj.lit && !entry.obj.state?.broken });
       if (entry.obj.state) entry.fx.update(entry.obj.state, !!entry.def.upkeep?.bin && entry.obj.state.fill >= 100, this.animTime);
       const s = entry === this.hover.entry ? 1.04 : 1;
       entry.model.group.scale.lerp(this.tmp.set(s, s, s), 0.3);
@@ -781,9 +786,9 @@ export class GameView {
   }
 
   private applyDaylight(night: number): void {
-    this.sun.intensity = THREE.MathUtils.lerp(2.0, 0.4, night);
+    this.sun.intensity = THREE.MathUtils.lerp(2.0, 0.32, night);
     this.sun.color.setHex(PAL.sun).lerp(new THREE.Color(PAL.moon), night);
-    this.hemi.intensity = THREE.MathUtils.lerp(1.5, 0.65, night);
+    this.hemi.intensity = THREE.MathUtils.lerp(1.5, 0.42, night);
     this.hemi.color.setHex(0xffffff).lerp(new THREE.Color(0x7f93d8), night);
     this.scene.background = new THREE.Color(PAL.sky).lerp(new THREE.Color(PAL.nightSky), night);
   }
@@ -1009,6 +1014,12 @@ export class GameView {
   }
 
   /** Mostra o objeto sendo posto, com o chão verde (cabe) ou vermelho (não cabe). */
+  /** Quadro em parede cortada sumiria no ar: esconde junto com a parede. */
+  private shown(e: ObjectEntry): boolean {
+    if (e.def.layer !== 'wall' || !this.house) return true;
+    return this.house.isTallEdge(wallBehind(e.obj));
+  }
+
   private updateGhost(): void {
     const placing = this.ctrl.mode === 'buy' ? this.ctrl.placing : null;
     const def = placing && this.ctrl.sim.catalog.objects[placing.defId];
@@ -1016,7 +1027,7 @@ export class GameView {
     if (!placing || !def || !tile) {
       this.clearGhost();
       this.ghostPad.visible = false;
-      for (const e of this.objects.values()) e.model.group.visible = true;
+      for (const e of this.objects.values()) e.model.group.visible = this.shown(e);
       return;
     }
     const key = `${placing.defId}|${placing.moveId ?? ''}`;
@@ -1040,8 +1051,16 @@ export class GameView {
       this.ghost = { key, group };
     }
     // o objeto que está sendo movido some do lugar antigo
-    for (const e of this.objects.values()) e.model.group.visible = e.obj.id !== placing.moveId;
+    for (const e of this.objects.values()) e.model.group.visible = e.obj.id !== placing.moveId && this.shown(e);
 
+    // quadro e relógio viram sozinhos para a parede mais perto do tile
+    if (def.layer === 'wall') {
+      const edges = this.ctrl.world.grid.edges;
+      if (edges[wallBehind({ x: tile.x, y: tile.y, rot: placing.rot })] !== 'wall') {
+        const r = ([0, 1, 2, 3] as const).find((rot) => edges[wallBehind({ x: tile.x, y: tile.y, rot })] === 'wall');
+        if (r !== undefined) placing.rot = r;
+      }
+    }
     const spec = furnitureSpec(def.art);
     const size = objectSize(def, placing.rot);
     const g = this.ghost.group;
@@ -1530,11 +1549,3 @@ function bubbleIcon(folk: Folk, effects?: Partial<Record<NeedId, number>>): Need
   return best;
 }
 
-/** 0 de dia, 1 no meio da noite. */
-function nightAmount(dayFraction: number): number {
-  const h = (dayFraction % 1) * 24;
-  if (h >= 7 && h < 17.5) return 0;
-  if (h >= 17.5 && h < 21) return (h - 17.5) / 3.5;
-  if (h >= 5 && h < 7) return 1 - (h - 5) / 2;
-  return 1;
-}

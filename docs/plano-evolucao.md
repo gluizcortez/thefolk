@@ -141,7 +141,7 @@ prestadores são vizinhos (Zeca, Marta, Ivo, Plácido); Marta espalha a notícia
 "a casa vive uma bagunça". O **jardineiro ficou para o bloco 13**, junto com
 as plantas que secam.
 
-## Bloco 3 — Ambiente por cômodo, dia e noite (save v8)
+## Bloco 3 — Ambiente por cômodo, dia e noite (save v8) — feito em 17/11/2026
 
 **Lacuna**: "ambiente" é raio em volta de objetos e não existe noite de
 verdade dentro de casa.
@@ -167,6 +167,19 @@ verdade dentro de casa.
 **Pronto quando**: o mesmo sofá dá ambiente diferente em sala bonita e em
 corredor vazio; à noite a casa escurece e a IA acende luzes; testes de
 detecção de cômodo, nota e migração.
+
+**Como ficou**: módulo `sim/rooms.ts`. Cômodo = região fechada por parede,
+porta ou janela (o que encosta na divisa é quintal). A nota soma objetos
+(com teto suave), janelas, piso e revestimento, tamanho, cantos vazios,
+sujeira e bagunça, luz (escuro tira até 22) e o gosto do traço (`roomTaste`:
+pequeno, grande, cheio, vazio, aconchego, claro). Luminárias (`light`) com
+acender e apagar; a IA acende antes de usar algo no escuro, apaga ao deitar
+e ao sair de cômodo vazio conforme `saver`. Quadrinho, tela grande, relógio,
+tapete, tapete grande e luminária de teto viraram objetos com `layer`
+('wall', 'floor', 'ceiling'), fora do chão. Conta de luz cobra minutos de
+lâmpada acesa. Nome do cômodo pelo uso (`ObjectDef.room`), mostrado no quadro
+de necessidades. Migração v8 recoloca quadros, tapete e luz de teto nos
+saves antigos.
 
 ## Bloco 4 — Catálogo em faixas de preço e atividades a dois (save v9)
 

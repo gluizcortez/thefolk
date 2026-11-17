@@ -1,5 +1,20 @@
 import type { InteractionDef, ObjectDef } from '../sim/types';
 
+// ---------- bloco 3: interruptor e quadros ----------
+// Acender e apagar só aparecem quando fazem sentido (veja sim/upkeep.ts).
+const lightOn = (): InteractionDef => ({ id: 'lightOn', label: 'act.lightOn', duration: 1, effects: {}, light: 'on', autonomous: false });
+const lightOff = (): InteractionDef => ({ id: 'lightOff', label: 'act.lightOff', duration: 1, effects: {}, light: 'off', autonomous: false });
+/** parar um pouco diante do quadro: diverte pouco, mas quem é criativo aprende */
+const admire = (fun: number): InteractionDef => ({
+  id: 'admire',
+  label: 'act.admire',
+  duration: 15,
+  effects: { fun },
+  until: 'fun',
+  autoBelow: 60,
+  skill: { id: 'creativity', xpPerMinute: 0.2 },
+});
+
 // ---------- bloco 1: cuidados com a casa ----------
 // Interações de cuidado só aparecem quando há o que fazer (sujeira, objeto
 // quebrado, desgaste, lixeira com lixo). Veja sim/upkeep.ts.
@@ -49,6 +64,7 @@ const dishes = (): InteractionDef => ({
 const list: ObjectDef[] = [
   {
     id: 'fridge',
+    room: 'kitchen',
     name: 'obj.fridge',
     price: 600,
     category: 'appliances',
@@ -88,6 +104,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'bed',
+    room: 'bedroom',
     name: 'obj.bed',
     price: 450,
     category: 'beds',
@@ -123,6 +140,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'shower',
+    room: 'bath',
     name: 'obj.shower',
     price: 650,
     category: 'plumbing',
@@ -148,6 +166,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'toilet',
+    room: 'bath',
     name: 'obj.toilet',
     price: 300,
     category: 'plumbing',
@@ -174,6 +193,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'sink',
+    room: 'bath',
     name: 'obj.sink',
     price: 250,
     category: 'plumbing',
@@ -190,6 +210,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'sofa',
+    room: 'living',
     name: 'obj.sofa',
     price: 520,
     category: 'seating',
@@ -212,6 +233,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'tv',
+    room: 'living',
     name: 'obj.tv',
     price: 700,
     category: 'electronics',
@@ -228,6 +250,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'bookshelf',
+    room: 'office',
     name: 'obj.bookshelf',
     price: 280,
     category: 'decor',
@@ -303,6 +326,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'speaker',
+    room: 'living',
     name: 'obj.speaker',
     price: 380,
     category: 'electronics',
@@ -345,11 +369,82 @@ const list: ObjectDef[] = [
     category: 'lighting',
     art: 'lamp',
     size: { w: 1, h: 1 },
+    ambience: 6,
+    light: 0.7,
+    interactions: [lightOn(), lightOff()],
+  },
+  // ---------- bloco 3: luz e enfeites de verdade ----------
+  {
+    id: 'ceilinglamp',
+    name: 'obj.ceilinglamp',
+    price: 150,
+    category: 'lighting',
+    art: 'ceilinglamp',
+    size: { w: 1, h: 1 },
+    layer: 'ceiling',
+    ambience: 2,
+    light: 1.2,
+    interactions: [lightOn(), lightOff()],
+  },
+  {
+    id: 'painting',
+    name: 'obj.painting',
+    price: 85,
+    category: 'decor',
+    art: 'painting',
+    size: { w: 1, h: 1 },
+    layer: 'wall',
+    ambience: 7,
+    interactions: [admire(0.5)],
+  },
+  {
+    id: 'canvas',
+    name: 'obj.canvas',
+    price: 320,
+    category: 'decor',
+    art: 'canvas',
+    size: { w: 1, h: 1 },
+    layer: 'wall',
+    ambience: 16,
+    interactions: [admire(0.9)],
+  },
+  {
+    id: 'wallclock',
+    name: 'obj.wallclock',
+    price: 55,
+    category: 'decor',
+    art: 'wallclock',
+    size: { w: 1, h: 1 },
+    layer: 'wall',
+    ambience: 3,
+    room: 'kitchen',
+    interactions: [],
+  },
+  {
+    id: 'rug',
+    name: 'obj.rug',
+    price: 110,
+    category: 'decor',
+    art: 'rug',
+    size: { w: 2, h: 1 },
+    layer: 'floor',
+    ambience: 6,
+    interactions: [],
+  },
+  {
+    id: 'bigrug',
+    name: 'obj.bigrug',
+    price: 260,
+    category: 'decor',
+    art: 'bigrug',
+    size: { w: 3, h: 2 },
+    layer: 'floor',
     ambience: 12,
     interactions: [],
   },
   {
     id: 'stove',
+    room: 'kitchen',
     name: 'obj.stove',
     price: 520,
     category: 'appliances',
@@ -397,6 +492,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'counter',
+    room: 'kitchen',
     name: 'obj.counter',
     price: 180,
     category: 'surfaces',
@@ -407,6 +503,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'dinette',
+    room: 'dining',
     name: 'obj.dinette',
     price: 340,
     category: 'surfaces',
@@ -429,6 +526,7 @@ const list: ObjectDef[] = [
   // ---------- comprados no catálogo (fatia 2) ----------
   {
     id: 'armchair',
+    room: 'living',
     name: 'obj.armchair',
     price: 260,
     category: 'seating',
@@ -450,6 +548,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'desk',
+    room: 'office',
     name: 'obj.desk',
     price: 310,
     category: 'surfaces',
@@ -500,6 +599,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'easel',
+    room: 'studio',
     name: 'obj.easel',
     price: 340,
     category: 'hobbies',
@@ -538,6 +638,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'recorder',
+    room: 'studio',
     name: 'obj.recorder',
     price: 210,
     category: 'electronics',
@@ -569,6 +670,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'bike',
+    room: 'gym',
     name: 'obj.bike',
     price: 480,
     category: 'hobbies',
@@ -604,6 +706,7 @@ const list: ObjectDef[] = [
   // ---------- bloco 1: casa viva ----------
   {
     id: 'kitchensink',
+    room: 'kitchen',
     name: 'obj.kitchensink',
     price: 230,
     category: 'plumbing',
@@ -649,6 +752,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'workbench',
+    room: 'workshop',
     name: 'obj.workbench',
     price: 390,
     category: 'hobbies',

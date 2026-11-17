@@ -20,3 +20,4 @@ export * from './work';
 export * from './hustle';
 export * from './upkeep';
 export * from './services';
+export * from './rooms';

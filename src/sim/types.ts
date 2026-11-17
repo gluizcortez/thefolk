@@ -77,6 +77,8 @@ export interface InteractionDef {
   leaves?: { kind: MessKind; chance: number };
   /** quanto lixo vai para a lixeira da cozinha ao terminar (0..100) */
   trash?: number;
+  /** bloco 3: interruptor da luminária ('on' acende, 'off' apaga) */
+  light?: 'on' | 'off';
   /** dicas só para a renderização */
   pose?: Pose;
   onObject?: boolean;
@@ -146,7 +148,19 @@ export interface ObjectDef {
   pantry?: number;
   /** bloco 2: o oficial de penhora não leva (caixa de correio, latão) */
   fixture?: boolean;
+  /**
+   * bloco 3: camada fora do chão. 'wall' = pendurado na parede atrás do tile
+   * (quadro, relógio); 'floor' = rente ao chão (tapete); 'ceiling' = no teto
+   * (luminária). Nenhuma delas fecha passagem; só se chocam com a mesma camada.
+   */
+  layer?: ObjectLayer;
+  /** bloco 3: quanto ilumina o cômodo quando acesa (1 = um cômodo médio inteiro) */
+  light?: number;
+  /** bloco 3: que cômodo este objeto sugere (dá nome ao cômodo: 'kitchen', 'bath'...) */
+  room?: string;
 }
+
+export type ObjectLayer = 'wall' | 'floor' | 'ceiling';
 
 export interface SkillDef {
   id: string;
@@ -297,6 +311,9 @@ export interface NewsDef {
   days: number;
 }
 
+/** Jeitos de cômodo de que um traço gosta ou desgosta. */
+export type RoomTaste = 'small' | 'large' | 'full' | 'bare' | 'cozy' | 'bright';
+
 export interface TraitDef {
   id: string;
   name: string;
@@ -320,6 +337,10 @@ export interface TraitDef {
   tidy?: number;
   /** quanto a bagunça incomoda (1 = normal) */
   messSense?: number;
+  /** bloco 3: gosto por tipo de cômodo (pontos de ambiente a mais ou a menos) */
+  roomTaste?: Partial<Record<RoomTaste, number>>;
+  /** bloco 3: chance de apagar a luz ao sair de um cômodo vazio (padrão 0.4) */
+  saver?: number;
 }
 
 // ---------- Relações ----------
@@ -518,6 +539,10 @@ export interface FloorDef {
   price: number;
   /** piso de fora (grama): o tile conta como quintal, não como cômodo */
   outdoor?: boolean;
+  /** bloco 3: quanto o piso soma à nota do cômodo */
+  ambience?: number;
+  /** bloco 3: revestimento que a parede usa quando o jogador não escolheu */
+  cover?: string;
 }
 
 /** Revestimento de uma face de parede (papel, azulejo, tijolo...). */
@@ -526,6 +551,8 @@ export interface CoveringDef {
   name: string;
   /** tostões por face de parede (um lado de um trecho de 1 m) */
   price: number;
+  /** bloco 3: quanto o revestimento soma à nota do cômodo */
+  ambience?: number;
 }
 
 /** Peças de parede: preço por trecho de parede, porta e janela. */
@@ -593,6 +620,8 @@ export interface WorldObject {
   paid: number;
   /** bloco 1: sujeira, desgaste e conserto */
   state: ObjectState;
+  /** bloco 3: luminária acesa */
+  lit?: boolean;
 }
 
 export interface ObjectState {
@@ -651,6 +680,8 @@ export interface Action {
   waited?: number;
   /** lugar no objeto (sofá de dois lugares, por exemplo) */
   slot?: number;
+  /** bloco 3: já viu se precisava acender a luz antes de começar */
+  lightChecked?: boolean;
   phase: ActionPhase;
   elapsed: number;
 }
@@ -790,6 +821,8 @@ export interface Household {
   paperDay: number;
   /** dia em que alguém da casa leu o jornal (classificados abertos) */
   readDay: number;
+  /** bloco 3: minutos de lâmpada acesa desde a última conta */
+  lightMinutes: number;
 }
 
 export interface LogEntry {

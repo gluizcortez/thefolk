@@ -9,6 +9,8 @@ import type { TraitDef } from '../sim/types';
 export const TRAITS: Record<string, TraitDef> = {
   caseiro: {
     id: 'caseiro',
+    roomTaste: { full: 6, cozy: 3 },
+    saver: 0.7,
     name: 'trait.caseiro',
     hint: 'traitHint.caseiro',
     needWeight: { comfort: 1.3, ambience: 1.3 },
@@ -20,6 +22,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   tagarela: {
     id: 'tagarela',
+    roomTaste: { large: 5 },
     name: 'trait.tagarela',
     hint: 'traitHint.tagarela',
     needWeight: { social: 1.5 },
@@ -31,6 +34,8 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   agitado: {
     id: 'agitado',
+    roomTaste: { large: 4, small: -3, bright: 3 },
+    saver: 0.2,
     name: 'trait.agitado',
     hint: 'traitHint.agitado',
     needWeight: { fun: 1.3 },
@@ -49,6 +54,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   brincalhao: {
     id: 'brincalhao',
+    roomTaste: { bright: 3 },
     name: 'trait.brincalhao',
     hint: 'traitHint.brincalhao',
     needWeight: { fun: 1.2 },
@@ -59,6 +65,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   romantico: {
     id: 'romantico',
+    roomTaste: { cozy: 7 },
     name: 'trait.romantico',
     hint: 'traitHint.romantico',
     likes: ['gentil', 'romantico'],
@@ -77,6 +84,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   reservado: {
     id: 'reservado',
+    roomTaste: { small: 6, large: -4 },
     name: 'trait.reservado',
     hint: 'traitHint.reservado',
     needWeight: { social: 0.7 },
@@ -88,6 +96,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   ambicioso: {
     id: 'ambicioso',
+    saver: 0.6,
     name: 'trait.ambicioso',
     hint: 'traitHint.ambicioso',
     likes: ['ambicioso'],
@@ -128,6 +137,8 @@ export const TRAITS: Record<string, TraitDef> = {
   // bloco 1: casa viva
   caprichoso: {
     id: 'caprichoso',
+    roomTaste: { bare: 4 },
+    saver: 0.9,
     name: 'trait.caprichoso',
     hint: 'traitHint.caprichoso',
     needWeight: { ambience: 1.3 },
@@ -138,6 +149,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   desleixado: {
     id: 'desleixado',
+    saver: 0.1,
     name: 'trait.desleixado',
     hint: 'traitHint.desleixado',
     needWeight: { comfort: 1.2 },

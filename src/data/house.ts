@@ -68,6 +68,18 @@ export function starterHouse(seed = 20001): WorldSeed {
       { defId: 'curbbin', x: 9, y: 13 },
       // bloco 2: caixa de correio na calçada (o jornal cai do lado da condução)
       { defId: 'mailbox', x: 5, y: 13 },
+      // bloco 3: luz de teto, quadros e tapetes viraram objetos de verdade
+      { defId: 'ceilinglamp', x: 6, y: 8 },
+      { defId: 'ceilinglamp', x: 10, y: 7 },
+      { defId: 'ceilinglamp', x: 12, y: 4 },
+      { defId: 'ceilinglamp', x: 9, y: 3 },
+      { defId: 'painting', x: 4, y: 2 },
+      { defId: 'painting', x: 6, y: 6 },
+      { defId: 'painting', x: 10, y: 5, rot: 2 },
+      { defId: 'canvas', x: 13, y: 7, rot: 3 },
+      { defId: 'wallclock', x: 12, y: 2 },
+      { defId: 'bigrug', x: 5, y: 7 },
+      { defId: 'rug', x: 4, y: 4 },
     ],
     funds: STARTING_FUNDS,
     exit: HOUSE_EXIT,

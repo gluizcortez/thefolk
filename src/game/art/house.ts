@@ -76,10 +76,8 @@ export class House {
   /** tiles cercados por paredes (sem saída sem cruzar parede, porta ou janela) */
   private enclosed: Uint8Array;
 
-  /** `occupied`: tiles com móveis ("x,y"), para não pendurar quadro atrás deles. */
   constructor(
     private readonly grid: Grid,
-    private readonly occupied: Set<string> = new Set(),
     private readonly floors?: Catalog['floors'],
   ) {
     this.enclosed = enclosedTiles(grid);
@@ -98,7 +96,8 @@ export class House {
     const chosen = this.grid.coverings[`${x},${y},${side}`];
     if (chosen && COVER_ART[chosen]) return COVER_ART[chosen];
     if (!this.indoor(x, y)) return EXTERIOR;
-    return COVER_ART[DEFAULT_COVER[this.grid.floor[y * this.grid.w + x]] ?? 'plaster'];
+    const f = this.grid.floor[y * this.grid.w + x];
+    return COVER_ART[this.floors?.[f]?.cover ?? DEFAULT_COVER[f] ?? 'plaster'] ?? COVER_ART.plaster;
   }
 
   /**
@@ -228,25 +227,8 @@ export class House {
               tall.add(blooms);
             }
           }
-        } else if ((x * 5 + y * 3 + (north ? 0 : 2)) % 4 === 0) {
-          // quadro no lado de dentro, se não houver móvel encostado
-          const sides: [boolean, number, number, number][] = [
-            [frontIn, x, y, 1],
-            [backIn, bx, by, -1],
-          ];
-          for (const [inside, tx, ty, dir] of sides) {
-            if (!inside || this.occupied.has(`${tx},${ty}`)) continue;
-            const n = (x + y * 2) % 3;
-            // na cozinha vai um relógio no lugar do quadro
-            const isKitchen = this.grid.floor[ty * this.grid.w + tx] === 'kitchen';
-            const art = texMat(isKitchen ? 'clock' : `painting:${n}`);
-            const wood = colorMat(isKitchen ? 0xc9382f : 0x4a3220);
-            const size = isKitchen ? 0.36 : 0.66;
-            const pic = box(size, isKitchen ? 0.36 : 0.5, 0.05, [wood, wood, wood, wood, art, art], 0, isKitchen ? 1.7 : 1.42, dir * (TH / 2 + 0.025));
-            tall.add(pic);
-            break;
-          }
         }
+        // bloco 3: quadros e relógio viraram objetos de compra (layer 'wall')
       }
       setShadows(tall, false, true);
       setShadows(low, false, true);

@@ -40,6 +40,20 @@ export function floorAt(grid: Grid, x: number, y: number): string {
   return grid.floor[y * grid.w + x];
 }
 
+/** O objeto ocupa o chão (fecha passagem)? Quadros, tapetes e luminárias de teto não. */
+export function blocksFloor(def: ObjectDef): boolean {
+  return def.layer === undefined;
+}
+
+/** Tile e lado da parede atrás de um objeto de parede (`layer: 'wall'`). */
+export function wallBehind(obj: Pick<WorldObject, 'x' | 'y' | 'rot'>): string {
+  const side = rotateSide('N', obj.rot ?? 0);
+  if (side === 'N') return `${obj.x},${obj.y},N`;
+  if (side === 'S') return `${obj.x},${obj.y + 1},N`;
+  if (side === 'W') return `${obj.x},${obj.y},W`;
+  return `${obj.x + 1},${obj.y},W`;
+}
+
 export function footprint(obj: Pick<WorldObject, 'x' | 'y' | 'rot'>, def: ObjectDef): Vec[] {
   const tiles: Vec[] = [];
   const size = objectSize(def, obj.rot ?? 0);
@@ -66,7 +80,7 @@ export function buildNav(world: World, catalog: Catalog): Nav {
   const blocked = new Uint8Array(grid.w * grid.h);
   for (const obj of world.objects) {
     const def = catalog.objects[obj.defId];
-    if (!def) continue;
+    if (!def || !blocksFloor(def)) continue;
     for (const t of footprint(obj, def)) {
       if (inBounds(grid, t.x, t.y)) blocked[t.y * grid.w + t.x] = 1;
     }
@@ -101,6 +115,8 @@ export function useTiles(world: World, nav: Nav, obj: WorldObject, def: ObjectDe
   const isOwn = (x: number, y: number) => own.some((t) => t.x === x && t.y === y);
   const out: Vec[] = [];
   const sides = useSidesOf(def, obj.rot ?? 0);
+  // o que não ocupa o chão (luminária de teto) se usa debaixo dele também
+  if (!blocksFloor(def)) for (const t of own) if (nav.isFree(t.x, t.y)) out.push({ ...t });
   for (const t of own) {
     for (const d of DIRS) {
       if (sides && !sides.includes(d.side)) continue;

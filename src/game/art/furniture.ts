@@ -22,6 +22,8 @@ export interface TickInfo {
   using?: string;
   /** 0 de dia, 1 no meio da noite */
   night: number;
+  /** bloco 3: a luminária está acesa */
+  lit?: boolean;
 }
 
 export interface FurnitureModel {
@@ -592,9 +594,9 @@ const lamp: FurnitureSpec = {
     );
     return {
       group: g,
-      tick({ night }) {
-        shadeMat.emissiveIntensity = 0.2 + night * 0.8;
-        light.intensity = night * 5;
+      tick({ night, lit }) {
+        shadeMat.emissiveIntensity = lit ? 0.45 + night * 0.55 : 0.08;
+        light.intensity = lit ? 1.5 + night * 4.5 : 0;
       },
     };
   },
@@ -1134,7 +1136,7 @@ const DETAILS: Record<string, (g: THREE.Group, seed: number) => void> = {
     }
     const pillow = rbox(0.28, 0.28, 0.1, 0.05, texMat('fabric', { color: 0xc9382f }), 0.58, 0.44, -0.04);
     pillow.rotation.set(-0.3, -0.35, -0.12);
-    g.add(pillow, floorRug(2.5, 1.56, 0, 1.3, texMat('rug')));
+    g.add(pillow);
   },
   tv(g) {
     const dark = colorMat(0x1b1c20, { gloss: 0.6 });
@@ -1196,6 +1198,102 @@ const DETAILS: Record<string, (g: THREE.Group, seed: number) => void> = {
   },
 };
 
+
+// ---------- bloco 3: luz de teto, quadros e tapetes ----------
+// Quadro e relógio são desenhados pendurados na parede de trás do tile (norte
+// com rot 0); a luminária de teto pende do forro; o tapete é rente ao chão.
+
+/** z da face da parede de trás, vista do centro do tile */
+const WALL_FACE = -0.5 + 0.09;
+
+const ceilinglamp: FurnitureSpec = {
+  build() {
+    const brass = colorMat(PAL.brass, { gloss: 0.9 });
+    const glass = colorMat(0xf6e7c1, { emissive: 0xffe2a0, emissiveIntensity: 0.05, gloss: 0.8, doubleSide: true });
+    const light = new THREE.PointLight(0xffdca8, 0, 9, 1.4);
+    light.position.y = 1.9;
+    const g = group(
+      cyl(0.08, 0.08, 0.03, 12, brass, 0, 2.57, 0),
+      rod([0, 2.57, 0], [0, 2.2, 0], 0.008, colorMat(0x2a2522), 4),
+      lathe(
+        [
+          [0.02, 0.2],
+          [0.12, 0.17],
+          [0.24, 0.05],
+          [0.27, 0],
+        ],
+        16,
+        glass,
+        0,
+        2.0,
+      ),
+      ball(0.06, 0.06, 0.06, glass, 0, 2.0, 0, 8),
+      light,
+    );
+    return {
+      group: g,
+      tick({ night, lit }) {
+        glass.emissiveIntensity = lit ? 0.5 + night * 0.5 : 0.05;
+        light.intensity = lit ? 2.5 + night * 5 : 0;
+      },
+    };
+  },
+};
+
+function framed(w: number, h: number, y: number, art: THREE.Material, frameCol: number, depth = 0.05): THREE.Group {
+  const wood = colorMat(frameCol, { gloss: 0.5 });
+  const g = group(
+    box(w, h, depth, [wood, wood, wood, wood, art, wood], 0, y, WALL_FACE + depth / 2),
+    // moldura saltada em volta
+    box(w + 0.06, 0.03, depth + 0.02, wood, 0, y + h, WALL_FACE + depth / 2),
+    box(w + 0.06, 0.03, depth + 0.02, wood, 0, y - 0.03, WALL_FACE + depth / 2),
+    box(0.03, h + 0.06, depth + 0.02, wood, -w / 2 - 0.015, y - 0.03, WALL_FACE + depth / 2),
+    box(0.03, h + 0.06, depth + 0.02, wood, w / 2 + 0.015, y - 0.03, WALL_FACE + depth / 2),
+  );
+  for (const m of g.children) m.castShadow = false;
+  return g;
+}
+
+const painting: FurnitureSpec = {
+  build(seed) {
+    return { group: framed(0.62, 0.46, 1.3, texMat(`painting:${seed % 3}`), 0x4a3220) };
+  },
+};
+
+const canvas: FurnitureSpec = {
+  build(seed) {
+    const g = framed(0.92, 0.68, 1.12, texMat(`painting:${(seed + 1) % 3}`), PAL.brass, 0.06);
+    // luz de quadro em cima, como em galeria
+    const brass = colorMat(PAL.brass, { gloss: 0.9 });
+    g.add(rod([-0.25, 1.95, WALL_FACE + 0.12], [0.25, 1.95, WALL_FACE + 0.12], 0.02, brass, 6), rod([0, 1.92, WALL_FACE], [0, 1.95, WALL_FACE + 0.12], 0.01, brass, 4));
+    return { group: g };
+  },
+};
+
+const wallclock: FurnitureSpec = {
+  build() {
+    const red = colorMat(0xc9382f, { gloss: 0.6 });
+    const face = cyl(0.17, 0.17, 0.04, 16, [red, texMat('clock'), red], 0, 0, 0);
+    face.rotation.x = Math.PI / 2;
+    face.position.set(0, 1.72, WALL_FACE + 0.02);
+    return { group: group(face) };
+  },
+};
+
+function rugSpec(w: number, d: number, color?: number): FurnitureSpec {
+  return {
+    build() {
+      const mat = texMat('rug', color ? { color } : {});
+      const m = box(w - 0.1, 0.014, d - 0.1, mat, 0, 0.004, 0);
+      m.userData.flat = true;
+      m.receiveShadow = true;
+      return { group: group(m) };
+    },
+  };
+}
+const rug = rugSpec(2, 1, 0x9fc0d8);
+const bigrug = rugSpec(3, 2);
+
 const fallback: FurnitureSpec = {
   build() {
     return { group: group(rbox(0.7, 0.5, 0.7, 0.04, colorMat(0xdccfb4))) };
@@ -1229,6 +1327,12 @@ const SPECS: Record<string, FurnitureSpec> = {
   curbbin,
   mailbox,
   workbench,
+  ceilinglamp,
+  painting,
+  canvas,
+  wallclock,
+  rug,
+  bigrug,
 };
 
 export function furnitureSpec(art: string): FurnitureSpec {

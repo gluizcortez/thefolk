@@ -326,6 +326,20 @@ button {
   color: var(--terracotta);
 }
 
+.room-line {
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(60, 40, 20, 0.25);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: help;
+}
+
+.room-line[data-light='dark'] {
+  color: var(--terracotta);
+}
+
 .need-icon {
   display: grid;
   place-items: center;

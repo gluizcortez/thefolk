@@ -3,6 +3,12 @@ import { COVER_ART, FLOOR_ART } from '../game/art/house';
 import type { BuildTool, GameController } from '../game/controller';
 import { t } from '../i18n';
 import {
+  DARK_BELOW,
+  roomAt,
+  roomGrade,
+  roomKind,
+  roomScore,
+  roomsOf,
   availableSocials,
   friendshipLabel,
   relationOf,
@@ -179,6 +185,8 @@ export class Hud {
   private nameEl = el('div', 'folk-name');
   private traitsEl = el('div', 'folk-traits');
   private moodWord = el('span', 'mood-word');
+  /** bloco 3: o cômodo onde o folk está, com nota e luz */
+  private roomEl = el('div', 'room-line');
   private moodFill = el('div', 'mood-fill');
   private autonomyInput = el('input');
   private queueEl = el('div', 'queue-list');
@@ -387,7 +395,40 @@ export class Hud {
       card.append(row);
       this.needRows.set(id, { segs, row });
     }
+    card.append(this.roomEl);
     this.root.append(card);
+  }
+
+  /** Bloco 3: "Sala e cozinha · agradável · claro", com a conta da nota na dica. */
+  private renderRoom(folk: Folk): void {
+    const sim = this.ctrl.sim;
+    const world = this.ctrl.world;
+    if (folk.away) {
+      if (this.roomEl.textContent !== '') this.roomEl.textContent = '';
+      return;
+    }
+    const map = roomsOf(world, sim.catalog);
+    const room = roomAt(map, folk.x, folk.y);
+    if (!room) return;
+    const score = roomScore(world, sim.catalog, map, room, folk, room.outdoor ? folk : undefined);
+    const kinds = roomKind(world, sim.catalog, map, room).map((k) => t(`room.${k}`));
+    const name = kinds.length > 1 ? t('room.combo', { a: kinds[0], b: kinds[1] }) : kinds[0];
+    const light = score.level < DARK_BELOW ? 'dark' : score.level < 0.75 ? 'dim' : 'bright';
+    const text = `${name.charAt(0).toUpperCase()}${name.slice(1)} · ${t(`room.grade.${roomGrade(score.total)}`)} · ${t(`room.light.${light}`)}`;
+    if (this.roomEl.textContent !== text) this.roomEl.textContent = text;
+    this.roomEl.dataset.light = light;
+    const n = (v: number) => (v >= 0 ? `+${Math.round(v)}` : `${Math.round(v)}`);
+    this.roomEl.title = t('room.tip', {
+      score: Math.round(score.total),
+      objects: n(score.objects),
+      windows: n(score.windows),
+      finish: n(score.finish),
+      size: n(score.size),
+      corners: n(score.corners),
+      mess: n(score.mess),
+      light: n(score.light),
+      taste: n(score.taste),
+    });
   }
 
   private buildQueue(): void {
@@ -459,6 +500,7 @@ export class Hud {
       row.segs.forEach((s, i) => s.classList.toggle('on', v >= (i + 0.5) * (100 / SEGMENTS)));
     }
 
+    this.renderRoom(folk);
     this.renderQueue();
     this.renderWorkEvent();
     this.renderPanel();
@@ -1674,6 +1716,7 @@ export class Hud {
     if (needs.length) tip.push(needs.join(', '));
     if (trains.length) tip.push(t('buy.trains', { skill: trains.join(', ') }));
     if (def.ambience > 0) tip.push(`${t('need.ambience')} +${def.ambience}`);
+    if (def.light) tip.push(`${t('tip.light')} ${Math.round(def.light * 100)}%`);
     if (!affordable) tip.push(t('buy.cantAfford'));
     item.title = tip.join(' · ');
     item.append(img, el('span', 'item-name', t(def.name)), el('span', 'item-price', formatMoney(def.price)));
