@@ -4,12 +4,17 @@ import { NEED_MAX, clampNeed, needWeight } from './needs';
 import { skillBoost } from './skills';
 import { findPathToAny } from './pathfinding';
 import { nextFloat } from './rng';
-import type { Catalog, Folk, InteractionDef, World } from './types';
+import { freshness, knows, relationOf } from './relations';
+import { guessAccept, onLot, socialAllowed, socialTaste, talkTiles, talkingWith } from './social';
+import type { Catalog, Folk, InteractionDef, Needs, SocialDef, World } from './types';
 import { NEED_IDS } from './types';
 
+/** Uma opção da IA: usar um objeto ou puxar conversa com alguém. */
 export interface Option {
-  objectId: number;
-  interactionId: string;
+  objectId?: number;
+  interactionId?: string;
+  otherId?: number;
+  socialId?: string;
   score: number;
   distance: number;
 }
@@ -41,17 +46,95 @@ export function expectedDuration(folk: Folk, it: InteractionDef): number {
 
 /** Utilidade de uma interação para o folk, sem contar a distância. */
 export function interactionUtility(catalog: Catalog, folk: Folk, it: InteractionDef): number {
-  const minutes = expectedDuration(folk, it);
+  return effectsUtility(catalog, folk, it.effects, expectedDuration(folk, it), (id) => skillBoost(folk, it, id));
+}
+
+/** Quanto `minutes` minutos destes efeitos valem para o folk agora. */
+export function effectsUtility(
+  catalog: Catalog,
+  folk: Folk,
+  effects: Partial<Needs>,
+  minutes: number,
+  boost: (id: keyof Needs) => number = () => 1,
+): number {
   let score = 0;
   for (const id of NEED_IDS) {
-    const base = it.effects[id];
+    const base = effects[id];
     if (!base) continue;
-    const rate = base > 0 ? base * skillBoost(folk, it, id) : base;
+    const rate = base > 0 ? base * boost(id) : base;
     const cur = folk.needs[id];
     const delta = clampNeed(cur + rate * minutes) - cur;
     score += delta * urgency(cur) * needWeight(catalog, folk, id);
   }
   return score;
+}
+
+/** Quantos outros folks estão usando o objeto ou indo até ele. */
+export function objectUsers(world: World, objectId: number, except?: Folk): number {
+  let n = 0;
+  for (const f of world.folks) {
+    if (f === except) continue;
+    const a = f.queue[0];
+    if (a?.kind === 'use' && a.objectId === objectId && a.phase !== 'queued') n++;
+  }
+  return n;
+}
+
+/** Bônus de curiosidade para cumprimentar quem ainda não conhece. */
+const MEET_BONUS = 25;
+/** quanto a mais a IA puxa conversa quando um dos dois é visita */
+const GUEST_BIAS = 1.5;
+/** minutos sem repetir conversa autônoma com a mesma pessoa */
+const PAIR_COOLDOWN = 20;
+
+/** O folk com estes traços e esta relação teria vontade de puxar esse tipo de conversa? */
+function socialMood(catalog: Catalog, world: World, folk: Folk, other: Folk, def: SocialDef): number {
+  const rel = relationOf(world, folk.id, other.id);
+  const f = rel?.friendship ?? 0;
+  const taste = socialTaste(catalog, folk, def.category);
+  if (def.category === 'mean' && !(taste >= 1.5 || f <= -20)) return 0;
+  if (def.category === 'romantic') {
+    const into = (rel?.romance ?? 0) >= 15 || rel?.dating || (taste >= 1.3 && f >= 30);
+    if (!into) return 0;
+  }
+  // visita veio para conversar; quem mora dá atenção a quem chegou
+  const guest = folk.visit || other.visit ? GUEST_BIAS : 1;
+  return taste * guest * (1 + Math.max(0, f) / 150);
+}
+
+/** Conversas autônomas possíveis com quem está em casa. */
+export function scoreSocialOptions(world: World, catalog: Catalog, folk: Folk, nav: Nav): Option[] {
+  const options: Option[] = [];
+  for (const other of world.folks) {
+    if (other === folk || !onLot(other)) continue;
+    const busyWith = talkingWith(other);
+    if (busyWith !== 0 && busyWith !== folk.id) continue;
+    const it = other.queue[0];
+    if (it?.phase === 'using' && it.kind === 'use' && catalog.objects[objectDefIdOf(world, it.objectId)]?.interactions.find((i) => i.id === it.interactionId)?.pose === 'lie') {
+      continue; // não acorda quem dorme
+    }
+    const rel = relationOf(world, folk.id, other.id);
+    if (rel && world.tick - rel.last < PAIR_COOLDOWN) continue;
+    const path = findPathToAny(nav, folk, talkTiles(world, nav, other, folk));
+    if (!path) continue;
+    const fresh = rel ? freshness(rel, world.tick) : 1;
+    for (const def of Object.values(catalog.socials)) {
+      if (def.autonomous === false || !socialAllowed(world, def, folk, other)) continue;
+      const mood = socialMood(catalog, world, folk, other, def);
+      if (mood <= 0) continue;
+      const gain = effectsUtility(catalog, folk, def.effects, def.duration);
+      const p = guessAccept(world, folk, other, def);
+      let utility = gain * (0.4 + 0.6 * p) * mood * fresh;
+      if (!knows(world, folk.id, other.id)) utility += MEET_BONUS;
+      const score = utility / (1 + DISTANCE_COST * path.length);
+      options.push({ otherId: other.id, socialId: def.id, score, distance: path.length });
+    }
+  }
+  return options;
+}
+
+function objectDefIdOf(world: World, id: number | undefined): string {
+  return world.objects.find((o) => o.id === id)?.defId ?? '';
 }
 
 /** Todas as opções autônomas alcançáveis, da melhor para a pior. */
@@ -60,13 +143,17 @@ export function scoreOptions(world: World, catalog: Catalog, folk: Folk, nav: Na
   for (const obj of world.objects) {
     const def = catalog.objects[obj.defId];
     if (!def) continue;
+    const visitor = folk.visit !== null;
     const auto = def.interactions.filter(
       (it) =>
         it.autonomous !== false &&
+        !it.special &&
         (it.cost ?? 0) <= world.household.funds &&
+        !(visitor && (it.residentOnly || (it.cost ?? 0) > 0)) &&
         (it.autoBelow === undefined || !it.until || folk.needs[it.until] < it.autoBelow),
     );
     if (auto.length === 0) continue;
+    if (objectUsers(world, obj.id, folk) >= (def.slots ?? 1)) continue;
     const path = findPathToAny(nav, folk, useTiles(world, nav, obj, def));
     if (!path) continue;
     for (const it of auto) {
@@ -75,10 +162,14 @@ export function scoreOptions(world: World, catalog: Catalog, folk: Folk, nav: Na
       options.push({ objectId: obj.id, interactionId: it.id, score, distance: path.length });
     }
   }
+  options.push(...scoreSocialOptions(world, catalog, folk, nav));
   // ordenação estável e determinística
   options.sort(
     (a, b) =>
-      b.score - a.score || a.objectId - b.objectId || a.interactionId.localeCompare(b.interactionId),
+      b.score - a.score ||
+      (a.objectId ?? 0) - (b.objectId ?? 0) ||
+      (a.otherId ?? 0) - (b.otherId ?? 0) ||
+      (a.interactionId ?? a.socialId ?? '').localeCompare(b.interactionId ?? b.socialId ?? ''),
   );
   return options;
 }

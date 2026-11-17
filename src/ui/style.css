@@ -199,7 +199,7 @@ button {
   border: 2px solid var(--ink);
   border-radius: 14px;
   background: var(--teal);
-  color: #d9a273;
+  overflow: hidden;
 }
 
 .folk-body {
@@ -1016,4 +1016,327 @@ button {
 
 #ui [hidden] {
   display: none !important;
+}
+
+/* ---------- fatia 3: moradores, conversas e relações ---------- */
+
+.household {
+  position: absolute;
+  left: 14px;
+  bottom: 196px;
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.household[hidden] {
+  display: none;
+}
+
+.member {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 4px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: 3px 3px 0 rgba(20, 14, 10, 0.45);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.member.on {
+  background: var(--mustard);
+}
+
+.member.away {
+  opacity: 0.6;
+}
+
+.member-face {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--teal);
+  border: 2px solid var(--ink);
+}
+
+.member-mood {
+  position: absolute;
+  left: 26px;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  background: var(--moss);
+}
+
+.member-mood.m1 {
+  background: var(--mustard);
+}
+
+.member-mood.m0 {
+  background: var(--terracotta);
+}
+
+.panel {
+  bottom: 248px;
+  max-height: calc(100vh - 330px);
+}
+
+.menu-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menu-face {
+  display: inline-grid;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--teal);
+}
+
+.menu-face.big {
+  width: 30px;
+  height: 30px;
+  border: 2px solid var(--ink);
+}
+
+.menu-sub {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #6a5a4c;
+}
+
+.menu-group {
+  margin: 6px 8px 0;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #6a5a4c;
+}
+
+.menu-dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 3px;
+  border: 2px solid var(--ink);
+  background: var(--teal);
+}
+
+.cat-romantic .menu-dot {
+  background: #c8463c;
+  border-radius: 999px;
+}
+
+.cat-professional .menu-dot {
+  background: #7a4e2a;
+}
+
+.cat-mean .menu-dot {
+  background: var(--terracotta);
+  transform: rotate(45deg);
+}
+
+.menu-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.floats {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.float-chip {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  padding: 2px 9px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--cream);
+  font-size: 11.5px;
+  font-weight: 800;
+  white-space: nowrap;
+  color: var(--moss);
+  animation: float-up 2.6s ease-out forwards;
+}
+
+.float-chip.bad {
+  color: var(--terracotta);
+}
+
+.float-chip.love {
+  color: #c8463c;
+}
+
+@keyframes float-up {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -80%);
+  }
+  12% {
+    opacity: 1;
+    transform: translate(-50%, -100%);
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -220%);
+  }
+}
+
+.rel-list {
+  display: grid;
+  gap: 6px;
+}
+
+.rel {
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  background: #fff7e6;
+  padding: 6px 8px;
+}
+
+.rel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.rel-head::-webkit-details-marker {
+  display: none;
+}
+
+.rel-face {
+  display: grid;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--teal);
+  border: 2px solid var(--ink);
+}
+
+.rel-names {
+  flex: 1;
+  min-width: 0;
+}
+
+.rel-name {
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.rel-sub {
+  font-size: 11px;
+  color: #6a5a4c;
+}
+
+.rel-bars {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.rel-bar {
+  grid-template-columns: 62px 1fr 26px;
+  font-size: 11px;
+}
+
+.rel-bar .perf-track {
+  height: 9px;
+}
+
+.rel-bar.romance .perf-fill {
+  background: #c8463c;
+}
+
+.rel-bar.respect .perf-fill {
+  background: var(--teal);
+}
+
+.rel-bar .perf-fill.neg {
+  background: var(--terracotta);
+}
+
+.rel-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.rel-tags {
+  margin-top: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.rel-theirs {
+  font-size: 11px;
+  color: #6a5a4c;
+}
+
+.rel-mems {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 2px dashed rgba(42, 35, 32, 0.25);
+  display: grid;
+  gap: 2px;
+  font-size: 11px;
+}
+
+.rel-mem-title {
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: #6a5a4c;
+}
+
+.rel-mem {
+  display: flex;
+  gap: 6px;
+}
+
+.rel-mem.pos {
+  color: var(--moss);
+}
+
+.rel-mem.neg {
+  color: var(--terracotta);
+}
+
+.rel-mem-day {
+  flex: none;
+  color: #8a7a6a;
+  min-width: 82px;
+}
+
+@media (max-width: 900px) {
+  .household {
+    bottom: 214px;
+  }
+  .member-name {
+    display: none;
+  }
 }

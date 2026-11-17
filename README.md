@@ -12,11 +12,13 @@ paredes cheios de textura, móveis arredondados com esmalte e cromados, e gente
 de proporção adulta realista. Tudo é modelado em 3D e pintado por código, sem
 assets externos e sem copiar nenhum jogo.
 
-**Estado atual: fatia 2** (fatia 1 mais emprego, dinheiro, habilidades e modo
-compra). A moeda do jogo é o **tostão** (⟡).
+**Estado atual: fatia 3** (fatias 1 e 2 mais outros folks, conversas e
+relações). A moeda do jogo é o **tostão** (⟡).
 
-> Saves da fatia 1 são convertidos sozinhos ao abrir: a casa ganha ⟡ 1.500, o
-> folk começa sem emprego e com todas as habilidades no zero.
+> Saves antigos são convertidos sozinhos ao abrir. Da fatia 1: a casa ganha
+> ⟡ 1.500, o folk começa sem emprego e com as habilidades no zero. Da fatia 2:
+> a casa continua com quem morava nela, a vizinhança passa a existir e
+> ninguém conhece ninguém ainda.
 
 ## Rodando
 
@@ -59,6 +61,27 @@ npm run preview  # serve o dist/ localmente
   no catálogo e clique no chão; o chão fica verde onde cabe e vermelho onde não
   cabe. `R` gira, clique direito ou `Esc` desiste. Clicar em um objeto da casa
   abre Mover, Girar e Vender (a venda devolve 70% do valor).
+- **Moradores**: o jogo novo começa com dois, Tomé Varanda e Lia Sacada, que
+  dividem a casa há pouco tempo. Troque quem você controla pelas fichas acima
+  do cartão do folk, com `Tab` ou clicando no outro e escolhendo "Controlar".
+- **Conversas**: clique em outra pessoa para abrir o menu de conversa, separado
+  em amizade, trabalho, romance e provocação. O que aparece depende de como o
+  seu folk vê o outro: quem não se conhece só se cumprimenta; abraço pede
+  amizade; beijo e pedido de namoro pedem romance. O outro pode não topar, e a
+  chance depende de como *ele* vê o seu folk, dos traços dos dois, das
+  lembranças e do humor. Depois de cada conversa, sobe uma etiqueta com o que
+  mudou ("Amizade +4") ou "não topou".
+- **Relações**: botão no cartão do folk. Mostra todo mundo que ele conhece, com
+  três barras separadas (amizade, romance e respeito, de -100 a 100), o que o
+  outro sente de volta e as lembranças marcantes (primeiro beijo, briga feia,
+  desabafo...). Sem contato, amizade e romance esfriam devagar.
+- **Vizinhança**: seis vizinhos aparecem para dar um oi de dia, de vez em
+  quando, e vão embora sozinhos. Para chamar alguém que já conhece, use o
+  telefone ("Convidar alguém para vir") ou o botão Convidar no painel de
+  relações. Visitas agem por conta própria: não usam cama nem chuveiro e não
+  gastam o dinheiro da casa. Dá para pedir que vão embora, e quem tem amizade
+  60 ou mais pode ser chamado para morar junto (até quatro moradores; traz o
+  emprego junto).
 - **Salvar / Carregar / Novo jogo** no canto superior direito. O jogo também
   salva sozinho a cada 30 segundos e continua de onde parou ao reabrir.
 
@@ -93,9 +116,12 @@ src/
     save.ts         formato de save versionado e migrações
     skills.ts       experiência, níveis e bônus de habilidade
     career.ts       turnos, desempenho, promoção e demissão
+    relations.ts    relações dirigidas (amizade, romance, respeito), afinidade, lembranças
+    social.ts       quem pode conversar com quem e a chance de o outro topar
     economy.ts      tostões, contas, preço de revenda e regras de onde um objeto cabe
   data/       conteúdo como dados: objetos (com preço e categoria), traços,
-              necessidades, habilidades, carreiras e casa inicial
+              necessidades, habilidades, carreiras, conversas (socials.ts),
+              lembranças (memories.ts), vizinhos (neighbors.ts) e casa inicial
   game/       cena 3D (Three.js): só lê o estado e manda comandos
     GameView.ts     câmera, luz, entrada do mouse e laço de quadros
     controller.ts   ponte entre a tela, a HUD e a Sim
@@ -140,6 +166,28 @@ Decisões principais do núcleo:
   caindo com o ritmo do trabalho. A nota do turno soma humor (o peso maior),
   habilidades da carreira acima do esperado para o cargo e atraso. Desempenho
   60 com as habilidades exigidas promove; -60 demite; faltar tira 30.
+- **Relações têm direção**: `world.relations["A>B"]` é como A vê B. Cada uma
+  guarda amizade, romance e respeito (-100 a 100), namoro, último contato,
+  cansaço e até dez lembranças. Ganhos são multiplicados pela afinidade de
+  traços (`likes` / `dislikes` em `traits.ts`), diminuem quando o par repete
+  conversa em pouco tempo e ficam mais lentos quanto mais alta a relação.
+- **Conversa** é uma ação `social` na fila de quem puxa: ele anda até um tile
+  colado no outro, e o outro ganha uma ação `listen` e espera (quem está
+  usando um objeto continua usando e conversa assim mesmo; quem está apertado
+  termina o que ia fazer). Ao começar, o RNG decide se o outro topa; no fim,
+  as mudanças entram nos dois sentidos, as lembranças são gravadas e o
+  resultado vai para a tela (`Sim.drainOutcomes`, fora do save).
+- **IA social**: conversas entram na mesma lista das opções de objeto, com a
+  nota `ganho nas necessidades × chance esperada de topar × gosto pelo tipo de
+  conversa`. Ninguém flerta sozinho sem interesse prévio (ou traço romântico)
+  nem provoca sem motivo (traço ou antipatia). Pedido de namoro, chamar para
+  morar e mandar embora só por ordem do jogador.
+- **Visitas** são folks com `visit` preenchido: chegam pela calçada, usam o que
+  é de graça e de uso comum, e vão embora no horário, à noite, cansadas ou com
+  fome. Entre visitas, o vizinho mora em `world.neighbors` (mesmo id), então
+  as relações continuam valendo.
+- **Objetos de vários lugares** (`slots`): sofá, mesa e caixa de som aceitam
+  dois. Quem chega num objeto cheio espera até meia hora e desiste.
 - **Objetos giram** em quartos de volta (`rot`): a área ocupada e os lados de uso
   giram junto. Um objeto só pode ser posto onde não fica dividido por parede,
   não pisa em ninguém, não fecha passagem para nenhum lugar que o folk
@@ -178,7 +226,13 @@ Decisões principais do núcleo:
   id de `art` (o spec também diz onde o folk senta, deita ou fica em pé).
 - **Textura nova**: um painter e uma entrada em `SPECS` em
   `src/game/art/textures.ts`; use com `getTexture('nome')`.
-- **Traço novo**: `src/data/traits.ts`.
+- **Traço novo**: `src/data/traits.ts` (com `likes`, `dislikes` e o gosto
+  por tipo de conversa em `social`).
+- **Conversa nova**: `src/data/socials.ts` (requisitos, chance base, mudanças
+  em quem puxa e em quem ouve, lembranças e animação) e o texto em i18n.
+- **Lembrança nova**: `src/data/memories.ts` (com o peso que ela tem na
+  próxima conversa).
+- **Vizinho novo**: `src/data/neighbors.ts`.
 - **Habilidade nova**: `src/data/skills.ts` e o nome em i18n.
 - **Carreira nova**: `src/data/careers.ts` (cargos com pagamento, horário, dias
   e exigências) e os nomes em i18n.
@@ -199,11 +253,40 @@ Decisões principais do núcleo:
 
 1. **Fatia 1 (feita)**: um folk, casa pronta, necessidades, IA, fila, A*, relógio, save/load.
 2. **Fatia 2 (feita)**: emprego, dinheiro, habilidades e modo compra.
-3. Outros folks, interações sociais e sistema de relações.
+3. **Fatia 3 (feita)**: outros folks, interações sociais e sistema de relações.
 4. Modo construção.
 5. Carreiras e relações aprofundadas.
 
-## Limitações conhecidas da fatia 2
+## Limitações conhecidas da fatia 3
+
+- Fofoca, ciúme e reputação se espalhando pela rede ainda não existem. As
+  lembranças já ficam guardadas (com peso) para a fatia 5 usar, mas hoje só
+  mexem na chance de topar a próxima conversa.
+- Namoro é só um estado: não há ciúme, término, casamento nem filhos. Também
+  não há regra de exclusividade (dá para namorar duas pessoas).
+- O respeito profissional sobe com "Falar de trabalho" e "Pedir um conselho",
+  mas ainda não afeta promoção; chefe e colegas de verdade ficam para a
+  fatia 5. Os vizinhos têm emprego só de enfeite: o turno deles não é
+  simulado.
+- Conversas são sempre entre duas pessoas; não há conversa em grupo, festa nem
+  atividade a dois em objetos (jogar, cozinhar junto, dançar junto conta só
+  como dividir o objeto).
+- Folks não se esbarram: dois podem ficar no mesmo tile por um instante. Quem
+  conversa escolhe um lado livre, mas no meio do caminho atravessa os outros.
+- A plaquinha sobre quem puxa conversa mostra só o tipo de conversa, não o
+  assunto. As animações de abraço e beijo aproximam os dois, mas os corpos
+  podem se atravessar um pouco.
+- Visitas não comem, não tomam banho nem dormem na casa, e vão embora com
+  fome ou cansadas. Não há visita de grupo nem "toque a campainha": quem chega
+  já entra.
+- Não dá para mudar alguém para fora de casa, nem criar folks novos: os
+  moradores novos só vêm da vizinhança fixa (seis pessoas).
+- A casa pronta tem duas camas de solteiro; com três ou quatro moradores, quem
+  ficar sem cama espera vagar ou acaba desmaiando de sono (compre outra).
+- Os vizinhos usam os mesmos cinco tipos de rosto e cabelo, com cores
+  diferentes; só existe um tipo de corpo.
+
+### Ainda valem da fatia 2
 
 - O dia de trabalho ainda é uma caixa-preta: o folk some e volta. Eventos com
   escolhas no meio do turno, chefe e colegas de verdade, pedido de aumento,
@@ -226,8 +309,7 @@ Decisões principais do núcleo:
   compras de mercado.
 - As habilidades não têm efeito visual (o quadro do cavalete não melhora com a
   criatividade) e não dão dinheiro direto (vender quadros, por exemplo).
-- Um único folk e uma única casa; sem construção ainda.
-- "Social" só se recupera pelo telefone, já que não há outros folks.
+- Uma única casa; sem construção ainda.
 - "Ambiente" é calculado por proximidade de objetos (raio em tiles), não por cômodo.
 - Sem morte: fome no zero só derruba o humor. Energia no zero causa desmaio e
   bexiga no zero causa um acidente.

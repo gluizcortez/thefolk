@@ -1014,9 +1014,58 @@ const zzz: Painter = (c, w, h) => {
   c.fillText('Z', w / 2, h / 2);
 };
 
+/** Plaquinha que flutua sobre quem puxa conversa, com o símbolo do tipo de conversa. */
+function socialIcon(kind: string): Painter {
+  return (c, w, h) => {
+    c.clearRect(0, 0, w, h);
+    const r = 7;
+    c.beginPath();
+    c.moveTo(3 + r, 3);
+    c.arcTo(w - 3, 3, w - 3, h - 3, r);
+    c.arcTo(w - 3, h - 3, 3, h - 3, r);
+    c.arcTo(3, h - 3, 3, 3, r);
+    c.arcTo(3, 3, w - 3, 3, r);
+    c.closePath();
+    c.fillStyle = css(0xf4ead8);
+    c.fill();
+    c.lineWidth = 2.5;
+    c.strokeStyle = css(0x2a2320);
+    c.stroke();
+    const cx = w / 2;
+    const cy = h / 2;
+    if (kind === 'romantic') {
+      c.fillStyle = css(0xc8463c);
+      c.beginPath();
+      c.moveTo(cx, cy + 8);
+      c.bezierCurveTo(cx - 12, cy - 1, cx - 6, cy - 11, cx, cy - 4);
+      c.bezierCurveTo(cx + 6, cy - 11, cx + 12, cy - 1, cx, cy + 8);
+      c.fill();
+    } else if (kind === 'professional') {
+      fill(c, 0x7a4e2a, cx - 9, cy - 3, 18, 12);
+      fill(c, 0x2a2320, cx - 4, cy - 7, 8, 2);
+      fill(c, 0x2a2320, cx - 4, cy - 7, 2, 4);
+      fill(c, 0x2a2320, cx + 2, cy - 7, 2, 4);
+      fill(c, 0xe0a83a, cx - 2, cy + 1, 4, 3);
+    } else if (kind === 'mean') {
+      c.fillStyle = css(0xd2582e);
+      c.beginPath();
+      c.moveTo(cx + 3, cy - 11);
+      c.lineTo(cx - 7, cy + 2);
+      c.lineTo(cx - 1, cy + 2);
+      c.lineTo(cx - 4, cy + 11);
+      c.lineTo(cx + 7, cy - 3);
+      c.lineTo(cx + 1, cy - 3);
+      c.closePath();
+      c.fill();
+    } else {
+      for (const dx of [-7, 0, 7]) disc(c, cx + dx, cy, 2.6, 0x2f6f73);
+    }
+  };
+}
+
 // ---------- folks ----------
 
-export type Expression = 'happy' | 'neutral' | 'sad';
+export type Expression = 'happy' | 'neutral' | 'sad' | 'talk' | 'angry';
 
 /**
  * Pele da cabeça, que dá a volta inteira (u = 0.5 é o centro do rosto).
@@ -1060,7 +1109,7 @@ function face(skinIdx: number, hairIdx: number, expr: Expression, eyesClosed: bo
         fill(c, 0xffffff, Math.round(ex - 1), Math.round(ey - 1.3), 1, 1, 0.9);
         line(c, ex - 3.6, ey - 2.2, ex + 3.6, ey - 2.2, 0x2a1d16, 0.85, 1);
       }
-      const tilt = expr === 'sad' ? -1.5 : expr === 'happy' ? 0.5 : 0;
+      const tilt = expr === 'sad' ? -1.5 : expr === 'happy' ? 0.5 : expr === 'angry' ? 2.2 : 0;
       line(c, ex - 4.2, ey - 5.5 + s * tilt, ex + 4.2, ey - 5.5 - s * tilt, shade(hair, 0.85), 1, 1.8);
     }
     // sombra sob o nariz (o nariz mesmo é modelado) e narinas
@@ -1076,8 +1125,12 @@ function face(skinIdx: number, hairIdx: number, expr: Expression, eyesClosed: bo
     c.lineCap = 'round';
     c.beginPath();
     if (expr === 'happy') c.arc(cx, my - 5, 6, 0.2 * Math.PI, 0.8 * Math.PI);
-    else if (expr === 'sad') c.arc(cx, my + 5, 5.5, 1.22 * Math.PI, 1.78 * Math.PI);
-    else {
+    else if (expr === 'sad' || expr === 'angry') c.arc(cx, my + 5, 5.5, 1.22 * Math.PI, 1.78 * Math.PI);
+    else if (expr === 'talk') {
+      c.stroke();
+      oval(c, cx, my + 0.5, 3, 2.2, 0x5a2420);
+      c.beginPath();
+    } else {
       c.moveTo(cx - 4, my);
       c.lineTo(cx + 4, my);
     }
@@ -1360,6 +1413,8 @@ function specFor(name: string): Spec | undefined {
       return { w: 32, h: 32, paint: hairTex(n), grain: 8 };
     case 'skin':
       return { w: 16, h: 16, paint: skinTex(n), grain: 3 };
+    case 'soc':
+      return { w: 32, h: 32, paint: socialIcon(parts[1]), grain: 0, smooth: true };
     default:
       return undefined;
   }

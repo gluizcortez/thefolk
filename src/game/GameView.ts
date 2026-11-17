@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { t } from '../i18n';
 import { NEED_IDS, TICKS_PER_SECOND, checkPlacement, clockOf, moodOf, objectSize } from '../sim';
-import type { Folk, InteractionDef, NeedId, ObjectDef, Speed, WorldObject } from '../sim';
+import type { Action, Folk, InteractionDef, NeedId, ObjectDef, RelDelta, SocialDef, Speed, WorldObject } from '../sim';
+import type { Expression } from './art/textures';
 import type { Hud } from '../ui/hud';
 import { FolkModel } from './art/folk';
 import type { FolkAnim } from './art/folk';
@@ -44,6 +45,25 @@ interface ObjectEntry {
 interface FolkEntry {
   model: FolkModel;
   zzz: THREE.Sprite[];
+  /** plaquinha do tipo de conversa, sobre quem puxou */
+  icon: THREE.Sprite;
+  iconKey: string;
+}
+
+interface Hover {
+  entry?: ObjectEntry;
+  tile?: { x: number; y: number };
+  folk?: Folk;
+}
+
+/** O que a conversa em andamento pede de animação para este folk. */
+interface SocialLook {
+  anim: FolkAnim;
+  expr?: Expression;
+  /** com quem (para chegar mais perto no abraço e no beijo) */
+  other: Folk;
+  /** plaquinha a mostrar, se for quem puxou */
+  icon?: string;
 }
 
 interface Ping {
@@ -91,7 +111,7 @@ export class GameView {
   private hudClock = 0;
   private last = 0;
   private lastSpeed: Speed = 1;
-  private hover: { entry?: ObjectEntry; tile?: { x: number; y: number } } = {};
+  private hover: Hover = {};
   private pointer = { down: false, x: 0, y: 0, startX: 0, startY: 0, dragged: false };
   private raycaster = new THREE.Raycaster();
   private tmp = new THREE.Vector3();
@@ -190,18 +210,7 @@ export class GameView {
     this.worldRoot.add(this.objectsRoot);
     this.rebuildObjects();
 
-    for (const folk of world.folks) {
-      const model = new FolkModel(folk.look);
-      const zzz: THREE.Sprite[] = [];
-      for (let i = 0; i < 3; i++) {
-        const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: getTexture('zzz'), transparent: true, depthTest: false }));
-        s.visible = false;
-        zzz.push(s);
-        this.worldRoot.add(s);
-      }
-      this.worldRoot.add(model.group);
-      this.folks.set(folk.id, { model, zzz });
-    }
+    this.syncFolks();
 
     this.target.set(grid.w / 2 + 0.3, 0, grid.h / 2 - 0.8);
     this.sun.target.position.set(grid.w / 2, 0, grid.h / 2);
@@ -210,6 +219,39 @@ export class GameView {
     this.acc = 0;
     this.hover = {};
     this.hud.closeMenu();
+  }
+
+  /** Cria o modelo de quem chegou e tira o de quem foi embora. */
+  private syncFolks(): void {
+    const world = this.ctrl.world;
+    for (const folk of world.folks) {
+      if (this.folks.has(folk.id)) continue;
+      const model = new FolkModel(folk.look);
+      model.group.userData.folkId = folk.id;
+      const zzz: THREE.Sprite[] = [];
+      for (let i = 0; i < 3; i++) {
+        const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: getTexture('zzz'), transparent: true, depthTest: false }));
+        s.visible = false;
+        zzz.push(s);
+        this.worldRoot.add(s);
+      }
+      const icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: getTexture('soc:friendly'), transparent: true, depthTest: false }));
+      icon.visible = false;
+      icon.scale.setScalar(0.42);
+      icon.renderOrder = 5;
+      this.worldRoot.add(model.group, icon);
+      this.folks.set(folk.id, { model, zzz, icon, iconKey: 'soc:friendly' });
+    }
+    if (this.folks.size === world.folks.length) return;
+    for (const [id, entry] of this.folks) {
+      if (world.folks.some((f) => f.id === id)) continue;
+      this.worldRoot.remove(entry.model.group, entry.icon, ...entry.zzz);
+      entry.model.group.traverse((o) => {
+        if (o instanceof THREE.Mesh) o.geometry.dispose();
+      });
+      this.folks.delete(id);
+      if (this.hover.folk?.id === id) this.hover = {};
+    }
   }
 
   /** Refaz só os móveis (depois de comprar, vender ou mover). */
@@ -323,8 +365,13 @@ export class GameView {
       } else {
         this.hover = this.pick(e.clientX, e.clientY);
         if (this.ctrl.mode === 'buy') this.hover.tile = undefined;
-        el.style.cursor = this.hover.entry ? 'pointer' : 'default';
-        this.hud.setTooltip(e.clientX, e.clientY, this.hover.entry ? t(this.hover.entry.def.name) : null);
+        el.style.cursor = this.hover.entry || this.hover.folk ? 'pointer' : 'default';
+        const tip = this.hover.folk
+          ? this.hud.folkTooltip(this.hover.folk)
+          : this.hover.entry
+            ? t(this.hover.entry.def.name)
+            : null;
+        this.hud.setTooltip(e.clientX, e.clientY, tip);
       }
       p.x = e.clientX;
       p.y = e.clientY;
@@ -378,6 +425,10 @@ export class GameView {
         case 'KeyB':
           this.hud.toggleBuyMode();
           break;
+        case 'Tab':
+          e.preventDefault();
+          this.ctrl.selectNext();
+          break;
         case 'Escape':
           if (this.hud.isMenuOpen()) this.hud.closeMenu();
           else if (this.ctrl.placing) this.ctrl.placing = null;
@@ -412,10 +463,19 @@ export class GameView {
     this.target.z = THREE.MathUtils.clamp(this.target.z, -6, h + 8);
   }
 
-  private pick(clientX: number, clientY: number): { entry?: ObjectEntry; tile?: { x: number; y: number } } {
+  private pick(clientX: number, clientY: number): Hover {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
+    // gente na frente dos móveis: o clique num folk ganha
+    const people = [...this.folks.values()].filter((e) => e.model.group.visible).map((e) => e.model.group);
+    const who = this.raycaster.intersectObjects(people, true)[0];
+    if (who && this.ctrl.mode === 'live') {
+      let o: THREE.Object3D | null = who.object;
+      while (o && o.userData.folkId === undefined) o = o.parent;
+      const folk = o ? this.ctrl.sim.findFolk(o.userData.folkId as number) : undefined;
+      if (folk) return { folk };
+    }
     const groups = [...this.objects.values()].map((e) => e.model.group);
     const hit = this.raycaster.intersectObjects(groups, true)[0];
     if (hit) {
@@ -460,6 +520,11 @@ export class GameView {
     }
     const hit = this.pick(clientX, clientY);
     const folk = this.ctrl.folk;
+    if (hit.folk) {
+      this.hud.setTooltip(0, 0, null);
+      if (hit.folk.id !== folk.id) this.hud.openSocialMenu(clientX, clientY, hit.folk);
+      return;
+    }
     if (hit.entry) {
       this.hud.setTooltip(0, 0, null);
       this.hud.openMenu(clientX, clientY, hit.entry.obj);
@@ -518,7 +583,9 @@ export class GameView {
       entry.model.group.scale.lerp(this.tmp.set(s, s, s), 0.3);
     }
 
+    this.syncFolks();
     for (const folk of world.folks) this.updateFolk(folk, alpha, dt);
+    this.showOutcomes();
     this.updateMarkers(dt);
     this.updateGhost();
 
@@ -576,7 +643,9 @@ export class GameView {
     const fz = folk.py + (folk.y - folk.py) * alpha + 0.5;
     let place = { x: fx, y: 0, z: fz, heading: Math.atan2(folk.facing.x, folk.facing.y) };
     let anim: FolkAnim = 'idle';
+    let expr: Expression | undefined;
     let onObject = false;
+    const social = it ? undefined : this.socialLook(folk);
 
     if (folk.collapsed > 0) {
       anim = 'collapsed';
@@ -588,7 +657,9 @@ export class GameView {
       if (it.onObject) {
         let anchor: Anchor | undefined;
         if (anim === 'sleep') anchor = entry.spec.lie;
-        else if (anim === 'sit' && entry.spec.sit) {
+        else if (anim === 'sit' && entry.spec.sit && action?.slot !== undefined && entry.spec.sit[action.slot]) {
+          anchor = entry.spec.sit[action.slot];
+        } else if (anim === 'sit' && entry.spec.sit) {
           // senta no lugar mais perto de onde chegou
           let best = Infinity;
           for (const a of entry.spec.sit) {
@@ -607,10 +678,34 @@ export class GameView {
       }
     } else if (folk.px !== folk.x || folk.py !== folk.y) {
       anim = 'walk';
+    } else if (social) {
+      anim = social.anim;
+      expr = social.expr;
+      if (anim === 'talk' && Math.sin(this.animTime * 7 + folk.id) > 0.2) expr = 'talk';
+      // abraço e beijo: os dois chegam mais perto do meio
+      if (anim === 'hug' || anim === 'kiss') {
+        const dx = social.other.x - folk.x;
+        const dz = social.other.y - folk.y;
+        place.x += dx * 0.3;
+        place.z += dz * 0.3;
+        place.heading = Math.atan2(dx, dz);
+      }
     }
 
     const mood = moodOf(sim.catalog, folk.needs);
-    view.model.update({ anim, ...place, mood, time: this.animTime, dt });
+    view.model.update({ anim, ...place, mood, time: this.animTime, dt, expr });
+
+    const iconKey = social?.icon;
+    view.icon.visible = !!iconKey;
+    if (iconKey) {
+      if (iconKey !== view.iconKey) {
+        view.iconKey = iconKey;
+        view.icon.material.map = getTexture(iconKey);
+        view.icon.material.needsUpdate = true;
+      }
+      const top = view.model.headTop(this.tmp);
+      view.icon.position.set(top.x, top.y + 0.32 + Math.sin(this.animTime * 3) * 0.04, top.z);
+    }
 
     if (selected) {
       this.ring.visible = !onObject && folk.collapsed === 0;
@@ -637,6 +732,60 @@ export class GameView {
       const sx = (v.x * 0.5 + 0.5) * el.clientWidth;
       const sy = (-v.y * 0.5 + 0.5) * el.clientHeight;
       this.hud.setBubble(sx, sy - 6, bubbleIcon(folk, it?.effects));
+    }
+  }
+
+  /** Animação e expressão que uma conversa pede (quem puxa e quem ouve). */
+  private socialLook(folk: Folk): SocialLook | undefined {
+    const sim = this.ctrl.sim;
+    const a: Action | undefined = folk.queue[0];
+    if (!a || a.otherId === undefined) return undefined;
+    const other = sim.findFolk(a.otherId);
+    if (!other) return undefined;
+    if (a.kind === 'social' && a.phase === 'using') {
+      const def: SocialDef | undefined = sim.catalog.socials[a.socialId ?? ''];
+      if (!def) return undefined;
+      const rejected = a.accepted === false && a.elapsed > 1;
+      return {
+        anim: def.anim,
+        expr: rejected ? 'sad' : def.anim === 'argue' ? 'angry' : def.anim === 'talk' ? undefined : 'happy',
+        other,
+        icon: `soc:${def.category}`,
+      };
+    }
+    if (a.kind === 'listen') {
+      const theirs = other.queue[0];
+      if (theirs?.kind !== 'social' || theirs.phase !== 'using') return { anim: 'idle', other };
+      const def = sim.catalog.socials[theirs.socialId ?? ''];
+      if (!def) return undefined;
+      if (theirs.accepted === false) return { anim: 'listen', expr: def.category === 'mean' ? 'angry' : 'neutral', other };
+      const anim = def.targetAnim ?? 'listen';
+      return { anim, expr: anim === 'argue' ? 'angry' : anim === 'listen' ? undefined : 'happy', other };
+    }
+    return undefined;
+  }
+
+  /** Mostra sobre as cabeças o que cada conversa mudou na relação. */
+  private showOutcomes(): void {
+    const el = this.renderer.domElement;
+    const screen = (id: number) => {
+      const view = this.folks.get(id);
+      if (!view || !view.model.group.visible) return null;
+      const v = view.model.headTop(this.tmp).clone();
+      v.y += 0.55;
+      v.project(this.camera);
+      return { x: (v.x * 0.5 + 0.5) * el.clientWidth, y: (-v.y * 0.5 + 0.5) * el.clientHeight };
+    };
+    for (const o of this.ctrl.sim.drainOutcomes()) {
+      const target = screen(o.toId);
+      if (target) {
+        const text = deltaText(o.toTarget);
+        if (!o.accepted) this.hud.floatChip(target.x, target.y, t('social.rejected'), 'bad');
+        else if (text) this.hud.floatChip(target.x, target.y, text, toneOf(o.toTarget));
+      }
+      const self = screen(o.fromId);
+      const mine = deltaText(o.toSelf);
+      if (self && mine) this.hud.floatChip(self.x, self.y - (o.accepted ? 0 : 0), mine, toneOf(o.toSelf));
     }
   }
 
@@ -826,6 +975,22 @@ function retroPass(scene: THREE.Texture): THREE.ShaderMaterial {
       }
     `,
   });
+}
+
+/** "amizade +4 · romance +6", arredondado; vazio se nada mudou de verdade. */
+function deltaText(d: RelDelta): string {
+  const parts: string[] = [];
+  for (const axis of ['friendship', 'romance', 'respect'] as const) {
+    const v = Math.round(d[axis] ?? 0);
+    if (v !== 0) parts.push(`${t(`rel.${axis}`)} ${v > 0 ? '+' : '−'}${Math.abs(v)}`);
+  }
+  return parts.join(' · ');
+}
+
+function toneOf(d: RelDelta): 'good' | 'bad' | 'love' {
+  const sum = (d.friendship ?? 0) + (d.romance ?? 0) + (d.respect ?? 0);
+  if (sum < 0) return 'bad';
+  return (d.romance ?? 0) > 0 ? 'love' : 'good';
 }
 
 /** Ícone do balão: a necessidade que a ação mais recupera. */

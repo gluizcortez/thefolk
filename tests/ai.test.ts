@@ -6,7 +6,7 @@ import { openField, run, starterSim } from './helpers';
 function bestDef(sim: ReturnType<typeof starterSim>) {
   const folk = sim.world.folks[0];
   const best = scoreOptions(sim.world, CATALOG, folk, sim.getNav())[0];
-  return sim.findObject(best.objectId)!.defId;
+  return sim.findObject(best.objectId!)!.defId;
 }
 
 describe('IA por utilidade', () => {
@@ -52,7 +52,7 @@ describe('IA por utilidade', () => {
       { x: 2, y: 2, needs: { ...fullNeeds(90), hunger: 5, energy: 30 } },
     );
     const options = scoreOptions(sim.world, CATALOG, sim.world.folks[0], sim.getNav());
-    expect(options.some((o) => sim.findObject(o.objectId)!.defId === 'fridge')).toBe(false);
+    expect(options.some((o) => sim.findObject(o.objectId!)!.defId === 'fridge')).toBe(false);
     expect(options.some((o) => o.interactionId === 'nap')).toBe(false);
     expect(options.some((o) => o.interactionId === 'sleep')).toBe(true);
   });

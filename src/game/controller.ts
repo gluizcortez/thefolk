@@ -1,5 +1,6 @@
 import { CATALOG } from '../data/catalog';
 import { starterHouse } from '../data/house';
+import { NEIGHBORS } from '../data/neighbors';
 import { hasText, t } from '../i18n';
 import { readSave, writeSave } from '../platform/saveStore';
 import { Sim, createWorld, deserialize, serialize } from '../sim';
@@ -48,8 +49,28 @@ export class GameController {
     return this.sim.world;
   }
 
+  /** O morador selecionado (visitas nunca são selecionadas). */
   get folk(): Folk {
-    return this.sim.findFolk(this.selectedFolkId) ?? this.world.folks[0];
+    const f = this.sim.findFolk(this.selectedFolkId);
+    if (f && !f.visit) return f;
+    const first = this.sim.residents()[0] ?? this.world.folks[0];
+    this.selectedFolkId = first.id;
+    return first;
+  }
+
+  selectFolk(id: number): boolean {
+    const f = this.sim.findFolk(id);
+    if (!f || f.visit) return false;
+    this.selectedFolkId = id;
+    return true;
+  }
+
+  /** Passa a seleção para o próximo morador (tecla Tab). */
+  selectNext(): void {
+    const list = this.sim.residents();
+    if (list.length < 2) return;
+    const i = list.findIndex((f) => f.id === this.selectedFolkId);
+    this.selectedFolkId = list[(i + 1) % list.length].id;
   }
 
   command(cmd: Command): boolean {
@@ -71,6 +92,7 @@ export class GameController {
     if (p === 'away') return t('toast.away', { name });
     if (p === 'collapsed') return t('toast.collapsed', { name });
     if (p === 'queueFull') return t('toast.queueFull');
+    if (p === 'visitor') return t('problem.visitor');
     return t(`problem.${p}`);
   }
 
@@ -176,7 +198,7 @@ export class GameController {
       return false;
     }
     try {
-      this.replaceWorld(deserialize(raw).world);
+      this.replaceWorld(deserialize(raw, { neighbors: NEIGHBORS }).world);
       this.toast(t('toast.loaded'));
       return true;
     } catch {

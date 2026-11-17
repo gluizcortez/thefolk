@@ -48,6 +48,7 @@ const list: ObjectDef[] = [
         until: 'energy',
         autoBelow: 35,
         decayScale: 0.5,
+        residentOnly: true,
         pose: 'lie',
         onObject: true,
       },
@@ -59,6 +60,7 @@ const list: ObjectDef[] = [
         until: 'energy',
         decayScale: 0.5,
         autonomous: false,
+        residentOnly: true,
         pose: 'lie',
         onObject: true,
       },
@@ -79,6 +81,7 @@ const list: ObjectDef[] = [
         duration: 25,
         effects: { hygiene: 4.5, comfort: 0.3 },
         until: 'hygiene',
+        residentOnly: true,
         onObject: true,
       },
     ],
@@ -126,6 +129,7 @@ const list: ObjectDef[] = [
     useSides: ['S'],
     size: { w: 2, h: 1 },
     ambience: 5,
+    slots: 2,
     interactions: [
       {
         id: 'rest',
@@ -197,6 +201,15 @@ const list: ObjectDef[] = [
         cost: 1,
         skill: { id: 'charisma', xpPerMinute: 0.3 },
       },
+      {
+        id: 'invite',
+        label: 'act.invite',
+        duration: 10,
+        effects: { social: 1.2 },
+        autonomous: false,
+        residentOnly: true,
+        special: 'invite',
+      },
     ],
   },
   {
@@ -208,6 +221,7 @@ const list: ObjectDef[] = [
     useSides: ['S', 'W'],
     size: { w: 1, h: 1 },
     ambience: 4,
+    slots: 2,
     interactions: [
       {
         id: 'dance',
@@ -282,6 +296,7 @@ const list: ObjectDef[] = [
     art: 'dinette',
     size: { w: 3, h: 1 },
     ambience: 4,
+    slots: 2,
     interactions: [
       {
         id: 'sit',

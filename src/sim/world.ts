@@ -1,5 +1,6 @@
 import { fullNeeds } from './needs';
-import type { EdgeKind, Folk, Grid, Needs, Rotation, Vec, World } from './types';
+import { ensureRelation } from './relations';
+import type { EdgeKind, Folk, Grid, Neighbor, Needs, Rotation, Vec, World } from './types';
 
 export interface RoomStyle {
   floor: string;
@@ -63,6 +64,18 @@ export interface ObjectSeed {
   rot?: Rotation;
 }
 
+/** Vizinho como dado: o id nasce quando o mundo é criado. */
+export type NeighborSeed = Omit<Neighbor, 'id'>;
+
+/** Relação inicial entre dois folks da casa, pelos nomes (vale para os dois lados). */
+export interface RelationSeed {
+  a: string;
+  b: string;
+  friendship?: number;
+  romance?: number;
+  respect?: number;
+}
+
 export interface WorldSeed {
   seed: number;
   startTick: number;
@@ -73,6 +86,8 @@ export interface WorldSeed {
   funds: number;
   /** tile na calçada de onde a condução sai */
   exit: Vec;
+  neighbors?: NeighborSeed[];
+  relations?: RelationSeed[];
 }
 
 /** De quanto em quanto tempo as contas chegam, em minutos. */
@@ -84,6 +99,18 @@ export const BILL_HOUR = 10;
 export function firstBillAfter(tick: number): number {
   const day = Math.floor(tick / 1440);
   return day * 1440 + BILL_HOUR * 60 + BILL_INTERVAL;
+}
+
+/** Vizinhos com ids novos a partir de `nextId`. */
+export function seedNeighbors(seeds: NeighborSeed[], nextId: number): Neighbor[] {
+  return seeds.map((n, i) => ({
+    ...n,
+    id: nextId + i,
+    traits: [...n.traits],
+    look: { ...n.look },
+    skills: { ...n.skills },
+    career: n.career ? { ...n.career } : null,
+  }));
 }
 
 export function createWorld(seed: WorldSeed): World {
@@ -108,8 +135,11 @@ export function createWorld(seed: WorldSeed): World {
     skills: { ...f.skills },
     job: null,
     away: null,
+    visit: null,
   }));
-  return {
+  const neighbors = seedNeighbors(seed.neighbors ?? [], nextId);
+  nextId += neighbors.length;
+  const world: World = {
     tick: seed.startTick,
     speed: 1,
     rngState: seed.seed | 0,
@@ -120,5 +150,26 @@ export function createWorld(seed: WorldSeed): World {
     household: { funds: seed.funds, nextBills: firstBillAfter(seed.startTick), lastBill: 0 },
     exit: { ...seed.exit },
     log: [],
+    neighbors,
+    relations: {},
+    pendingVisits: [],
+    lastDropIn: seed.startTick,
   };
+  for (const r of seed.relations ?? []) {
+    const a = folks.find((f) => f.name === r.a);
+    const b = folks.find((f) => f.name === r.b);
+    if (!a || !b) throw new Error(`relação inicial com folk desconhecido: ${r.a} / ${r.b}`);
+    for (const [x, y] of [
+      [a, b],
+      [b, a],
+    ]) {
+      const rel = ensureRelation(world, x.id, y.id);
+      rel.friendship = r.friendship ?? 0;
+      rel.romance = r.romance ?? 0;
+      rel.respect = r.respect ?? 0;
+      rel.last = world.tick - 60;
+      rel.memories.push({ tick: world.tick, kind: 'met' });
+    }
+  }
+  return world;
 }

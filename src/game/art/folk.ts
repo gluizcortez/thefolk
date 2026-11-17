@@ -22,7 +22,14 @@ export type FolkAnim =
   | 'phone'
   | 'read'
   | 'watch'
-  | 'scrub';
+  | 'scrub'
+  | 'talk'
+  | 'listen'
+  | 'laugh'
+  | 'wave'
+  | 'hug'
+  | 'kiss'
+  | 'argue';
 
 export interface FolkLook {
   skin: number;
@@ -43,6 +50,8 @@ export interface FolkFrame {
   time: number;
   /** segundos reais desde o último quadro */
   dt: number;
+  /** expressão forçada (conversa), no lugar da que vem do humor */
+  expr?: Expression;
 }
 
 export const FOLK_HEIGHT = 1.8;
@@ -228,6 +237,91 @@ function poseFor(anim: FolkAnim, t: number, mood: number): Pose {
       p.elbowR = -1.6 + 0.3 * s;
       p.torsoY = 0.2 * Math.sin(t * 3);
       p.headX = -0.1;
+      break;
+    }
+    case 'talk': {
+      // fala gesticulando com a mão direita
+      const s = Math.sin(t * 4);
+      p.armRX = -0.55 + 0.25 * s;
+      p.armROut = 0.18;
+      p.elbowR = -1.25 + 0.35 * Math.sin(t * 3.1);
+      p.armLX = -0.15;
+      p.elbowL = -0.55 - 0.2 * Math.max(0, Math.sin(t * 2.3));
+      p.headY = 0.1 * Math.sin(t * 1.7);
+      p.headX += 0.05 * Math.sin(t * 5);
+      p.torsoY = 0.05 * s;
+      break;
+    }
+    case 'listen': {
+      // braços cruzados, balança a cabeça concordando
+      p.armLX = -0.35;
+      p.armRX = -0.35;
+      p.armLOut = -0.28;
+      p.armROut = -0.28;
+      p.elbowL = -1.65;
+      p.elbowR = -1.55;
+      p.headX += 0.09 * Math.max(0, Math.sin(t * 2.4));
+      p.headZ = 0.06;
+      break;
+    }
+    case 'laugh': {
+      const k = Math.abs(Math.sin(t * 11));
+      p.torsoX += 0.05 + 0.08 * k;
+      p.headX = -0.28 + 0.1 * k;
+      p.armLX = -0.45;
+      p.armRX = -0.45;
+      p.armLOut = -0.1;
+      p.armROut = -0.1;
+      p.elbowL = -1.25;
+      p.elbowR = -1.25;
+      p.hipsY = HIPS_Y - 0.015 * k;
+      break;
+    }
+    case 'wave': {
+      p.armRX = -2.7;
+      p.armROut = 0.25 + 0.3 * Math.sin(t * 9);
+      p.elbowR = -0.35;
+      p.armLX = 0.05;
+      p.headZ = 0.08;
+      break;
+    }
+    case 'hug': {
+      p.torsoX += 0.12;
+      p.armLX = -1.35;
+      p.armRX = -1.35;
+      p.armLOut = -0.45;
+      p.armROut = -0.45;
+      p.elbowL = -0.75;
+      p.elbowR = -0.75;
+      p.headX += 0.12;
+      p.headZ = 0.18;
+      p.torsoZ = 0.03 * Math.sin(t * 1.5);
+      break;
+    }
+    case 'kiss': {
+      p.torsoX += 0.2;
+      p.headX += 0.14;
+      p.headZ = 0.22;
+      p.armLX = -0.85;
+      p.armRX = -0.85;
+      p.armLOut = -0.3;
+      p.armROut = -0.3;
+      p.elbowL = -0.65;
+      p.elbowR = -0.65;
+      break;
+    }
+    case 'argue': {
+      // aponta o dedo com uma mão, a outra na cintura
+      const s = Math.sin(t * 7);
+      p.armRX = -1.2 + 0.4 * s;
+      p.armROut = 0.1;
+      p.elbowR = -0.35 + 0.25 * s;
+      p.armLX = 0.25;
+      p.armLOut = 0.55;
+      p.elbowL = -1.7;
+      p.torsoX += 0.1;
+      p.headY = 0.12 * Math.sin(t * 5.3);
+      p.headX += 0.06;
       break;
     }
     default: {
@@ -539,7 +633,7 @@ export class FolkModel {
     // expressão: humor + piscadas
     if (this.clock > this.blinkAt + 0.13) this.blinkAt = this.clock + 2 + Math.random() * 3;
     const blinking = this.clock > this.blinkAt;
-    const expr: Expression = f.mood >= 62 ? 'happy' : f.mood >= 40 ? 'neutral' : 'sad';
+    const expr: Expression = f.expr ?? (f.mood >= 62 ? 'happy' : f.mood >= 40 ? 'neutral' : 'sad');
     this.setFace(lying ? 'neutral' : expr, lying || blinking);
   }
 }

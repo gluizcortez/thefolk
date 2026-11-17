@@ -1,8 +1,15 @@
 import type { World } from './types';
-import { firstBillAfter } from './world';
+import type { NeighborSeed } from './world';
+import { firstBillAfter, seedNeighbors } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
+
+/** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
+export interface MigrationContext {
+  /** vizinhos que passam a existir em saves antigos */
+  neighbors: NeighborSeed[];
+}
 
 /** Dinheiro e saída da casa para saves da fatia 1 (só existia a casa pronta). */
 export const V1_DEFAULTS = { funds: 1500, exit: { x: 7, y: 13 } };
@@ -13,7 +20,7 @@ export interface SaveFile {
   world: World;
 }
 
-type Migration = (data: Record<string, unknown>) => Record<string, unknown>;
+type Migration = (data: Record<string, unknown>, ctx: MigrationContext) => Record<string, unknown>;
 
 type Obj = Record<string, unknown>;
 
@@ -29,6 +36,20 @@ const migrations: Record<number, Migration> = {
     world.exit = { ...V1_DEFAULTS.exit };
     return { ...save, world };
   },
+  // fatia 3: visitas, vizinhança e relações. A casa continua com os moradores
+  // que tinha; os vizinhos chegam com ids novos.
+  2: (save, ctx) => {
+    const world = { ...(save.world as Obj) };
+    const tick = typeof world.tick === 'number' ? world.tick : 0;
+    const nextId = typeof world.nextId === 'number' ? world.nextId : 1000;
+    world.folks = ((world.folks as Obj[]) ?? []).map((f) => ({ visit: null, ...f }));
+    world.neighbors = seedNeighbors(ctx.neighbors, nextId);
+    world.nextId = nextId + ctx.neighbors.length;
+    world.relations = {};
+    world.pendingVisits = [];
+    world.lastDropIn = tick;
+    return { ...save, world };
+  },
 };
 
 export class SaveError extends Error {}
@@ -37,7 +58,7 @@ export function serialize(world: World, savedAt: number): SaveFile {
   return { version: SAVE_VERSION, savedAt, world: JSON.parse(JSON.stringify(world)) as World };
 }
 
-export function deserialize(raw: unknown): SaveFile {
+export function deserialize(raw: unknown, ctx: MigrationContext = { neighbors: [] }): SaveFile {
   if (typeof raw !== 'object' || raw === null) throw new SaveError('save inválido');
   let data = raw as Record<string, unknown>;
   let version = data.version;
@@ -48,7 +69,7 @@ export function deserialize(raw: unknown): SaveFile {
   while (version < SAVE_VERSION) {
     const migrate = migrations[version];
     if (!migrate) throw new SaveError(`sem migração a partir da versão ${version}`);
-    data = migrate(data);
+    data = migrate(data, ctx);
     version++;
     data.version = version;
   }

@@ -11,3 +11,5 @@ export * from './rng';
 export * from './skills';
 export * from './economy';
 export * from './career';
+export * from './relations';
+export * from './social';

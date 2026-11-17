@@ -1,6 +1,12 @@
+import { SHIRT, SKIN } from '../game/art/palette';
 import type { GameController } from '../game/controller';
 import { t } from '../i18n';
 import {
+  availableSocials,
+  friendshipLabel,
+  relationOf,
+  respectLabel,
+  romanceLabel,
   MAX_SKILL_LEVEL,
   NEED_IDS,
   PROMOTE_AT,
@@ -17,7 +23,19 @@ import {
   sellValue,
   skillLevel,
 } from '../sim';
-import type { Action, CareerDef, CareerLevel, NeedId, ObjectCategory, ObjectDef, Speed, WorldObject } from '../sim';
+import type {
+  Action,
+  CareerDef,
+  CareerLevel,
+  Folk,
+  NeedId,
+  ObjectCategory,
+  ObjectDef,
+  Relation,
+  SocialCategory,
+  Speed,
+  WorldObject,
+} from '../sim';
 import { iconSvg } from './icons';
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -46,7 +64,32 @@ const CATEGORIES: (ObjectCategory | 'all')[] = [
   'hobbies',
 ];
 
-type Panel = 'skills' | 'job' | null;
+type Panel = 'skills' | 'job' | 'relations' | null;
+
+const SOCIAL_ORDER: SocialCategory[] = ['friendly', 'professional', 'romantic', 'mean'];
+
+function hex(n: number): string {
+  return `#${n.toString(16).padStart(6, '0')}`;
+}
+
+/** Rostinho do folk em SVG, na cor de pele e com a camisa dele. */
+function faceSvg(look: Folk['look'], size: number, mood = 60): string {
+  const skin = hex(SKIN[look.skin % SKIN.length]);
+  const shirt = hex(SHIRT[look.shirt % SHIRT.length]);
+  const curve = (11 + (mood / 100) * 8).toFixed(1);
+  return (
+    `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">` +
+    `<path d="M3 24 Q3 17 12 17 Q21 17 21 24Z" fill="${shirt}" stroke="#2a2320" stroke-width="1.2"/>` +
+    `<circle cx="12" cy="10" r="7" fill="${skin}" stroke="#2a2320" stroke-width="1.2"/>` +
+    `<circle cx="9.5" cy="9.5" r="0.9" fill="#2a2320"/><circle cx="14.5" cy="9.5" r="0.9" fill="#2a2320"/>` +
+    `<path d="M9.3 12.6 Q12 ${(Number(curve) - 2.4).toFixed(1)} 14.7 12.6" fill="none" stroke="#2a2320" stroke-width="1.1" stroke-linecap="round"/></svg>`
+  );
+}
+
+/** Primeiro nome, para textos curtos. */
+function first(name: string): string {
+  return name.split(' ')[0];
+}
 
 /** "Seg a Sex", "Qua a Dom" ou a lista, quando os dias não são seguidos. */
 function daysText(days: number[]): string {
@@ -89,7 +132,6 @@ export class Hud {
   private traitsEl = el('div', 'folk-traits');
   private moodWord = el('span', 'mood-word');
   private moodFill = el('div', 'mood-fill');
-  private moodMouth: SVGPathElement | null = null;
   private autonomyInput = el('input');
   private queueEl = el('div', 'queue-list');
   private queueSig = '';
@@ -106,6 +148,12 @@ export class Hud {
   private panel: Panel = null;
   private panelSig = '';
   private panelButtons = new Map<Exclude<Panel, null>, HTMLButtonElement>();
+  private faceEl = el('div', 'folk-face');
+  private householdEl = el('div', 'household');
+  private householdSig = '';
+  private floatsEl = el('div', 'floats');
+  /** quem está aberto ou fechado no painel de relações (o jogador escolhe) */
+  private relOpen = new Map<number, boolean>();
   private catalogEl = el('div', 'card catalog');
   private catalogTabs = el('div', 'catalog-tabs');
   private catalogItems = el('div', 'catalog-items');
@@ -122,11 +170,12 @@ export class Hud {
     this.buildSystem();
     this.buildViewBar();
     this.buildFolkCard();
+    this.root.append(this.householdEl);
     this.buildNeeds();
     this.buildQueue();
     this.buildPanel();
     this.buildCatalog();
-    this.root.append(this.toastsEl, this.menuEl, this.bubbleEl, this.tooltipEl);
+    this.root.append(this.floatsEl, this.toastsEl, this.menuEl, this.bubbleEl, this.tooltipEl);
     this.tooltipEl.hidden = true;
     this.menuEl.hidden = true;
     this.bubbleEl.hidden = true;
@@ -224,13 +273,7 @@ export class Hud {
 
   private buildFolkCard(): void {
     const card = el('div', 'card folk');
-    const face = el('div', 'folk-face');
-    face.innerHTML =
-      '<svg viewBox="0 0 24 24" width="44" height="44" aria-hidden="true">' +
-      '<circle cx="12" cy="12" r="10.500" fill="currentColor"/>' +
-      '<circle cx="8.500" cy="10" r="1.300" fill="#2a2320"/><circle cx="15.500" cy="10" r="1.300" fill="#2a2320"/>' +
-      '<path class="mouth" d="M8 15 Q12 18 16 15" fill="none" stroke="#2a2320" stroke-width="1.600" stroke-linecap="round"/></svg>';
-    this.moodMouth = face.querySelector('.mouth');
+    const face = this.faceEl;
     const body = el('div', 'folk-body');
     const mood = el('div', 'mood');
     const moodLabel = el('span', 'mood-label', `${t('mood.label')}: `);
@@ -251,7 +294,7 @@ export class Hud {
     });
     auto.append(this.autonomyInput, el('span', 'switch'), el('span', '', t('hud.autonomy')));
     const tabs = el('div', 'folk-tabs');
-    for (const id of ['skills', 'job'] as const) {
+    for (const id of ['skills', 'job', 'relations'] as const) {
       const b = el('button', 'btn btn-small', t(`hud.${id}`));
       b.addEventListener('click', () => this.togglePanel(id));
       this.panelButtons.set(id, b);
@@ -324,7 +367,12 @@ export class Hud {
     this.moodWord.textContent = t(`mood.${level}`);
     this.moodFill.style.width = `${Math.round(mood)}%`;
     this.moodFill.dataset.level = String(level);
-    this.moodMouth?.setAttribute('d', `M8 15 Q12 ${(11 + (mood / 100) * 8).toFixed(1)} 16 15`);
+    const faceKey = `${folk.id}|${level}`;
+    if (this.faceEl.dataset.key !== faceKey) {
+      this.faceEl.dataset.key = faceKey;
+      this.faceEl.innerHTML = faceSvg(folk.look, 46, mood);
+    }
+    this.renderHousehold();
 
     for (const id of NEED_IDS) {
       const row = this.needRows.get(id);
@@ -344,6 +392,18 @@ export class Hud {
   private actionLabel(action: Action): string {
     if (action.kind === 'goto') return t('act.goto');
     if (action.kind === 'work') return t('act.work');
+    if (action.kind === 'leave') return t('act.leave');
+    if (action.kind === 'social' || action.kind === 'listen') {
+      const other = action.otherId !== undefined ? this.ctrl.sim.findFolk(action.otherId) : undefined;
+      const name = other ? first(other.name) : '…';
+      if (action.kind === 'listen') return t('act.listen', { name });
+      const def = this.ctrl.sim.catalog.socials[action.socialId ?? ''];
+      return t('act.social', { social: def ? t(def.label) : '…', name });
+    }
+    if (action.interactionId === 'invite' && action.otherId !== undefined) {
+      const n = this.ctrl.world.neighbors.find((x) => x.id === action.otherId);
+      if (n) return `${t('act.invite')}: ${first(n.name)}`;
+    }
     const obj = action.objectId !== undefined ? this.ctrl.sim.findObject(action.objectId) : undefined;
     const def = obj && this.ctrl.sim.defOf(obj);
     const it = this.ctrl.sim.interactionOf(action);
@@ -430,6 +490,10 @@ export class Hud {
       if (it.skill) extras.push(t(`skill.${it.skill.id}`));
       if (extras.length) b.append(el('span', 'menu-extra', extras.join(' · ')));
       b.addEventListener('click', () => {
+        if (it.special === 'invite') {
+          this.openInviteMenu(x, y);
+          return;
+        }
         this.ctrl.commandOrExplain({
           type: 'queueUse',
           folkId: folk.id,
@@ -439,9 +503,149 @@ export class Hud {
         this.closeMenu();
         this.update();
       });
+      if (it.special === 'invite') b.append(el('span', 'menu-extra', '›'));
       this.menuEl.append(b);
     }
     this.showMenuAt(x, y);
+  }
+
+  /** Lista de vizinhos conhecidos para convidar por telefone. */
+  openInviteMenu(x: number, y: number): void {
+    const folk = this.ctrl.folk;
+    const world = this.ctrl.world;
+    this.menuEl.replaceChildren(el('div', 'menu-title', t('invite.title')));
+    const known = world.neighbors.filter((n) => relationOf(world, folk.id, n.id));
+    if (known.length === 0) this.menuEl.append(el('div', 'menu-note', t('invite.none')));
+    for (const n of known) {
+      const rel = relationOf(world, folk.id, n.id);
+      const here = !!this.ctrl.sim.findFolk(n.id) || world.pendingVisits.some((v) => v.neighborId === n.id);
+      const b = el('button', 'menu-item');
+      const face = el('span', 'menu-face');
+      face.innerHTML = faceSvg(n.look, 18);
+      b.append(face, el('span', '', n.name), el('span', 'menu-extra', here ? t('rel.coming') : t(friendshipLabel(rel))));
+      b.disabled = here;
+      b.addEventListener('click', () => {
+        this.ctrl.commandOrExplain({ type: 'invite', folkId: folk.id, neighborId: n.id });
+        this.closeMenu();
+        this.update();
+      });
+      this.menuEl.append(b);
+    }
+    this.showMenuAt(x, y);
+  }
+
+  /** Texto do balão de dica ao passar o mouse sobre alguém. */
+  folkTooltip(other: Folk): string {
+    const folk = this.ctrl.folk;
+    const parts = [other.name];
+    if (other.visit) parts.push(t('social.visitor'));
+    if (other.id !== folk.id) {
+      const rel = relationOf(this.ctrl.world, folk.id, other.id);
+      parts.push(this.relSummary(rel));
+    }
+    return parts.join(' · ');
+  }
+
+  private relSummary(rel: Relation | undefined): string {
+    const bits = [t(friendshipLabel(rel))];
+    const r = romanceLabel(rel);
+    if (r) bits.push(t(r));
+    const p = respectLabel(rel);
+    if (p) bits.push(t(p));
+    return bits.join(', ');
+  }
+
+  /** Menu ao clicar em outra pessoa: conversas possíveis, por tipo. */
+  openSocialMenu(x: number, y: number, other: Folk): void {
+    const folk = this.ctrl.folk;
+    const world = this.ctrl.world;
+    const rel = relationOf(world, folk.id, other.id);
+    const title = el('div', 'menu-title');
+    const face = el('span', 'menu-face big');
+    face.innerHTML = faceSvg(other.look, 26);
+    const names = el('div', 'menu-names');
+    names.append(
+      el('div', '', other.name),
+      el('div', 'menu-sub', `${other.visit ? `${t('social.visitor')} · ` : ''}${this.relSummary(rel)}`),
+    );
+    title.append(face, names);
+    this.menuEl.replaceChildren(title);
+    if (!other.visit) {
+      const b = el('button', 'menu-item');
+      b.append(el('span', '', t('social.control', { name: first(other.name) })));
+      b.addEventListener('click', () => {
+        this.ctrl.selectFolk(other.id);
+        this.closeMenu();
+        this.update();
+      });
+      this.menuEl.append(b);
+    }
+    const list = availableSocials(world, this.ctrl.sim.catalog, folk, other);
+    if (list.length === 0 || folk.away) this.menuEl.append(el('div', 'menu-note', t('social.nothing')));
+    else {
+      for (const cat of SOCIAL_ORDER) {
+        const defs = list.filter((d) => d.category === cat);
+        if (!defs.length) continue;
+        this.menuEl.append(el('div', `menu-group cat-${cat}`, t(`socCat.${cat}`)));
+        for (const def of defs) {
+          const b = el('button', `menu-item soc cat-${cat}`);
+          b.append(el('span', 'menu-dot'), el('span', '', t(def.label)));
+          b.addEventListener('click', () => {
+            this.ctrl.commandOrExplain({ type: 'queueSocial', folkId: folk.id, otherId: other.id, socialId: def.id });
+            this.closeMenu();
+            this.update();
+          });
+          this.menuEl.append(b);
+        }
+      }
+    }
+    this.showMenuAt(x, y);
+  }
+
+  // ---------- moradores ----------
+
+  private renderHousehold(): void {
+    const sim = this.ctrl.sim;
+    const residents = sim.residents();
+    const sel = this.ctrl.folk.id;
+    const sig = residents
+      .map((f) => {
+        const m = moodOf(sim.catalog, f.needs);
+        return `${f.id}:${f.id === sel}:${!!f.away}:${m >= 62 ? 2 : m >= 40 ? 1 : 0}`;
+      })
+      .join('|');
+    if (sig === this.householdSig) return;
+    this.householdSig = sig;
+    this.householdEl.replaceChildren();
+    this.householdEl.hidden = residents.length < 2;
+    for (const f of residents) {
+      const m = moodOf(sim.catalog, f.needs);
+      const b = el('button', 'member');
+      b.classList.toggle('on', f.id === sel);
+      b.classList.toggle('away', !!f.away);
+      b.title = `${f.name}${f.away ? ` · ${t('rel.away')}` : ''}`;
+      const face = el('span', 'member-face');
+      face.innerHTML = faceSvg(f.look, 30, m);
+      const dot = el('span', `member-mood m${m >= 62 ? 2 : m >= 40 ? 1 : 0}`);
+      b.append(face, el('span', 'member-name', first(f.name)), dot);
+      b.addEventListener('click', () => {
+        this.ctrl.selectFolk(f.id);
+        this.panelSig = '';
+        this.queueSig = '';
+        this.update();
+      });
+      this.householdEl.append(b);
+    }
+  }
+
+  /** Mostra uma etiqueta que sobe e some (o que uma conversa mudou). */
+  floatChip(x: number, y: number, text: string, tone: 'good' | 'bad' | 'love'): void {
+    const chip = el('div', `float-chip ${tone}`, text);
+    chip.style.left = `${Math.round(x)}px`;
+    chip.style.top = `${Math.round(y)}px`;
+    this.floatsEl.append(chip);
+    while (this.floatsEl.children.length > 8) this.floatsEl.firstElementChild?.remove();
+    window.setTimeout(() => chip.remove(), 2600);
   }
 
   private showMenuAt(x: number, y: number): void {
@@ -481,7 +685,9 @@ export class Hud {
         ? `s|${folk.id}|${Object.entries(folk.skills)
             .map(([k, v]) => `${k}:${Math.floor(v)}`)
             .join(',')}`
-        : `j|${folk.id}|${JSON.stringify(folk.job)}|${folk.away?.until ?? ''}|${Math.floor(world.tick / 60)}`;
+        : this.panel === 'relations'
+          ? `r|${folk.id}|${Math.floor(world.tick / 10)}|${world.folks.map((f) => f.id).join(',')}|${world.pendingVisits.length}`
+          : `j|${folk.id}|${JSON.stringify(folk.job)}|${folk.away?.until ?? ''}|${Math.floor(world.tick / 60)}`;
     if (sig === this.panelSig) return;
     this.panelSig = sig;
     this.panelEl.hidden = false;
@@ -497,7 +703,102 @@ export class Hud {
     head.append(el('div', 'panel-title', t(`hud.${this.panel}`)), close);
     this.panelEl.append(head);
     if (this.panel === 'skills') this.renderSkills();
+    else if (this.panel === 'relations') this.renderRelations();
     else this.renderJob();
+  }
+
+  private renderRelations(): void {
+    const folk = this.ctrl.folk;
+    const world = this.ctrl.world;
+    const sim = this.ctrl.sim;
+    // todo mundo que o folk conhece: moradores, visitas e vizinhos
+    const people: { id: number; name: string; look: Folk['look']; traits: string[]; where: string }[] = [];
+    for (const f of world.folks) {
+      if (f.id === folk.id || !relationOf(world, folk.id, f.id)) continue;
+      people.push({ id: f.id, name: f.name, look: f.look, traits: f.traits, where: f.visit ? 'rel.visiting' : f.away ? 'rel.away' : 'rel.home' });
+    }
+    for (const n of world.neighbors) {
+      if (sim.findFolk(n.id) || !relationOf(world, folk.id, n.id)) continue;
+      const coming = world.pendingVisits.some((v) => v.neighborId === n.id);
+      people.push({ id: n.id, name: n.name, look: n.look, traits: n.traits, where: coming ? 'rel.coming' : 'rel.outside' });
+    }
+    const score = (id: number) => {
+      const r = relationOf(world, folk.id, id)!;
+      return r.friendship + r.romance + r.respect * 0.5;
+    };
+    people.sort((a, b) => score(b.id) - score(a.id) || a.id - b.id);
+    if (people.length === 0) {
+      this.panelEl.append(el('div', 'panel-note', t('rel.none', { name: first(folk.name) })));
+      return;
+    }
+    const list = el('div', 'rel-list');
+    for (const p of people) {
+      const mine = relationOf(world, folk.id, p.id)!;
+      const theirs = relationOf(world, p.id, folk.id);
+      const row = el('details', 'rel');
+      // quem está em casa já vem aberto; o resto, como o jogador deixou
+      row.open = this.relOpen.get(p.id) ?? p.where !== 'rel.outside';
+      row.addEventListener('toggle', () => this.relOpen.set(p.id, row.open));
+      const head = el('summary', 'rel-head');
+      const face = el('span', 'rel-face');
+      face.innerHTML = faceSvg(p.look, 30);
+      const names = el('div', 'rel-names');
+      names.append(
+        el('div', 'rel-name', p.name),
+        el('div', 'rel-sub', `${t(p.where)} · ${p.traits.map((id) => t(`trait.${id}`)).join(', ')}`),
+      );
+      head.append(face, names);
+      if (p.where === 'rel.outside') {
+        const inv = el('button', 'btn btn-small', t('rel.invite'));
+        inv.title = t('rel.inviteTip');
+        inv.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.ctrl.commandOrExplain({ type: 'invite', folkId: folk.id, neighborId: p.id });
+          this.panelSig = '';
+          this.update();
+        });
+        head.append(inv);
+      }
+      row.append(head);
+      const bars = el('div', 'rel-bars');
+      for (const axis of ['friendship', 'romance', 'respect'] as const) bars.append(this.relBar(axis, mine[axis]));
+      row.append(bars);
+      const tags = [t(friendshipLabel(mine))];
+      const rom = romanceLabel(mine);
+      if (rom) tags.push(t(rom));
+      const res = respectLabel(mine);
+      if (res) tags.push(t(res));
+      const tagLine = el('div', 'rel-tags', tags.join(' · '));
+      row.append(tagLine);
+      if (theirs) row.append(el('div', 'rel-theirs', t('rel.theyFeel', { name: first(p.name), label: this.relSummary(theirs) })));
+      if (mine.memories.length) {
+        const mem = el('div', 'rel-mems');
+        mem.append(el('div', 'rel-mem-title', t('rel.memories')));
+        for (const m of [...mine.memories].reverse()) {
+          const def = sim.catalog.memories[m.kind];
+          const c = clockOf(m.tick);
+          const line = el('div', `rel-mem ${def && def.weight < 0 ? 'neg' : def && def.weight > 0 ? 'pos' : ''}`);
+          line.append(el('span', 'rel-mem-day', t('hud.day', { day: c.day, weekday: t(`weekday.${(c.day - 1) % 7}`) })), el('span', '', t(def?.label ?? m.kind)));
+          mem.append(line);
+        }
+        row.append(mem);
+      }
+      list.append(row);
+    }
+    this.panelEl.append(list, el('div', 'panel-note', t('rel.howTo')));
+  }
+
+  /** Barra de -100 a 100 com o zero no meio. */
+  private relBar(axis: 'friendship' | 'romance' | 'respect', v: number): HTMLElement {
+    const wrap = el('div', `perf rel-bar ${axis}`);
+    const track = el('div', 'perf-track');
+    const fill = el('div', 'perf-fill');
+    fill.style.left = v >= 0 ? '50%' : `${50 + v / 2}%`;
+    fill.style.width = `${Math.abs(v) / 2}%`;
+    fill.classList.toggle('neg', v < 0);
+    track.append(fill);
+    wrap.append(el('span', 'perf-label', t(`rel.${axis}`)), track, el('span', 'rel-num', String(Math.round(v))));
+    return wrap;
   }
 
   private renderSkills(): void {

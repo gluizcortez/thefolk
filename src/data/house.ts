@@ -1,4 +1,5 @@
 import type { RoomStyle, WorldSeed } from '../sim/world';
+import { NEIGHBORS } from './neighbors';
 import { gridFromMap } from '../sim/world';
 
 // A casa pronta da fatia 1. Cada letra é um cômodo; paredes nascem sozinhas
@@ -43,6 +44,7 @@ export function starterHouse(seed = 20001): WorldSeed {
     grid: gridFromMap(MAP, ROOMS, DOORS),
     objects: [
       { defId: 'bed', x: 3, y: 2 },
+      { defId: 'bed', x: 5, y: 2 },
       { defId: 'bookshelf', x: 6, y: 2 },
       { defId: 'lamp', x: 3, y: 5 },
       { defId: 'toilet', x: 8, y: 2 },
@@ -71,6 +73,17 @@ export function starterHouse(seed = 20001): WorldSeed {
         needs: { hunger: 55, energy: 80, bladder: 60, fun: 50, social: 45, hygiene: 65 },
         look: { skin: 1, hair: 2, shirt: 0, pants: 1 },
       },
+      {
+        name: 'Lia Sacada',
+        traits: ['agitado', 'gentil'],
+        x: 10,
+        y: 9,
+        needs: { hunger: 70, energy: 65, bladder: 75, fun: 40, social: 55, hygiene: 80 },
+        look: { skin: 3, hair: 1, shirt: 4, pants: 2 },
+      },
     ],
+    // dividem a casa há pouco tempo: já se conhecem, mas ainda sem intimidade
+    relations: [{ a: 'Tomé Varanda', b: 'Lia Sacada', friendship: 22, respect: 5 }],
+    neighbors: NEIGHBORS,
   };
 }
