@@ -202,6 +202,34 @@ npm run preview  # serve o dist/ localmente
   e relógio penduram na parede atrás do tile (o fantasma gira sozinho para a
   parede), tapete vai rente ao chão e não fecha passagem, luminária de teto
   só dentro de cômodo. Parede com quadro pendurado não pode ser derrubada.
+- **Catálogo em faixas (bloco 4)**: cada função (cama, sofá, poltrona,
+  cadeira, mesa, chuveiro, privada, geladeira, fogão, TV, som, abajur,
+  estante) tem versão **barata**, **média** e **cara** (⟡, ⟡⟡, ⟡⟡⟡ no
+  catálogo, com filtro por faixa). A cara enche mais rápido, dá conforto
+  junto, melhora o cômodo e gasta menos; a barata quebra mais e enfeia. A IA
+  prefere a melhor quando pode escolher. São 70 objetos em 10 categorias.
+- **Cores**: sofás, poltronas, cadeiras e camas têm cores para escolher no
+  rodapé do catálogo antes de pôr no chão.
+- **Depreciação e desfazer**: no dia da compra o objeto vale o que custou (e
+  vender devolve tudo); na virada do dia perde 15% e depois vai perdendo com
+  o uso, até 30% do preço. O menu do objeto mostra quanto vale hoje. O botão
+  **Desfazer** (ou Ctrl+Z) no modo compra desfaz compras (devolve tudo),
+  vendas e mudanças de lugar até você sair do modo.
+- **Mesa e cadeiras separadas**: cadeira virada para uma mesa vira lugar à
+  mesa. Quem pega refeição, lanche ou comida pronta leva o prato até o lugar
+  livre mais perto e come sentado, com conforto a mais; comendo junto com
+  alguém, ganha social e amizade. Sem mesa, come de pé como antes.
+- **Atividades a dois**: mesa de xadrez, mesa de carteado, videogame, ofurô,
+  piano (a quatro mãos), luneta (só de noite), saco de pancada, vitrola e
+  TV de projeção. Sozinho dá para usar; com outro folk na mesma atividade,
+  os dois ganham diversão e social a mais, a amizade sobe e fica a lembrança
+  "nos divertimos juntos". Quem está à toa tem vontade de entrar no jogo que
+  alguém começou.
+- **Objeto querido**: depois de umas 20 horas de uso, o objeto vira o
+  querido de quem mais usou: usar dá um pouco mais de diversão e conforto, e
+  vender (ou perder para a penhora) deixa a pessoa triste.
+- **Na parede**: prateleira com enfeites e espelho de corpo inteiro (ensaiar
+  discurso treina Lábia).
 - **Despensa (bloco 2)**: a geladeira guarda porções (até 24 por geladeira;
   o menu mostra quantas sobram). Refeição e cozinhar no fogão gastam uma
   porção; sem estoque só sobra o lanche ou pedir comida. A casa começa com 16.
@@ -272,6 +300,7 @@ src/
     economy.ts      tostões, contas, preço de revenda e regras de onde um objeto cabe
     services.ts     bloco 2: despensa, cartas de conta, penhora, jornal, pedidos e campainha
     rooms.ts        bloco 3: cômodos, nota de ambiente, luz do dia e das luminárias, nome do cômodo
+    furnish.ts      bloco 4: faixas, depreciação, objeto querido, lugar à mesa, atividades a dois
     build.ts        modo construção: planos de obra, custo, validação, desfazer
   data/       conteúdo como dados: objetos (com preço e categoria), pisos,
               revestimentos e preço de parede, porta e janela (build.ts), traços,
@@ -390,6 +419,16 @@ Decisões principais do núcleo:
   `FloorDef.ambience/cover`, `CoveringDef.ambience`; `TraitDef.roomTaste` e
   `saver`; `household.lightMinutes`. `nightAmount`/`daylightAt` em
   `sim/clock.ts` servem à simulação e à tela.
+- **Catálogo e atividades a dois (bloco 4)** moram em `sim/furnish.ts`.
+  `ObjectDef` ganhou `tier` (0, 1, 2), `line` (a função que agrupa as faixas;
+  frilas e negócios aceitam qualquer objeto da mesma `line`), `colors` e
+  `dining` ('table' | 'seat' | 'both'). `InteractionDef` ganhou `duo` (efeitos
+  e amizade por minuto com parceiro na mesma interação), `atTable` e `night`.
+  `WorldObject` ganhou `color`, `bought`, `used`, `uses` e `beloved`;
+  `Action.eatAt` é o lugar à mesa (-1 = come onde está). Valor de hoje em
+  `currentValue`/`resaleValue` (`sellValue` e a conta usam). Comandos
+  `undoBuy` e `closeBuy`. Modelos novos em `game/art/furniture4.ts`; cada
+  `build(seed, paint)` recebe a cor da compra (`PAINT` em `palette.ts`).
 - **Despensa, correio e serviços (bloco 2)** moram em `sim/services.ts`.
   `household` ganhou `pantry`, `takeout`, `bills`, `orders`, `maid`,
   `paperDay` e `readDay`. Interações novas: `portions` e `takeout` (consomem
@@ -504,7 +543,27 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
   serviços, jornal com classificados, campainha e feira de sábado (save v7).
 - **Bloco 3 (feito)**: ambiente por cômodo, dia e noite, luminárias que a IA
   acende e apaga, quadros, tapetes e luz de teto de compra (save v8).
-- Próximo: bloco 4, catálogo em faixas de preço e atividades a dois.
+- **Bloco 4 (feito)**: catálogo de 70 objetos em faixas barato, médio e caro,
+  cores, depreciação, desfazer no modo compra, mesa e cadeiras separadas,
+  atividades a dois e objeto querido (save v9).
+- Próximo: bloco 5, criar família com temperamento, corpo e roupa.
+
+## Limitações conhecidas do bloco 4
+
+- Só sofás, poltronas, cadeiras e camas têm cores; quadros, tapetes e o
+  resto saem na cor de fábrica. A miniatura do catálogo mostra a cor padrão.
+- Atividade a dois só conta com os dois na mesma interação do mesmo objeto;
+  ninguém convida o outro para jogar (quem está à toa entra sozinho, pela
+  vontade da IA).
+- Comer à mesa só vale para cadeira virada de frente para uma mesa (ou a
+  mesa com cadeiras antiga). O folk não carrega o prato na mão no caminho.
+- A cama de casal estofada dá lugar para dois e sobe a amizade de quem
+  dorme junto, mas ainda não existe casamento nem "dormir de conchinha".
+- O apego conta minutos de uso por objeto, não por modelo: vender e comprar
+  outro igual começa do zero. A tristeza de perder o objeto querido é um
+  golpe só na diversão e no conforto, sem lembrança duradoura.
+- Saves antigos ficam com tudo o que tinham, sem data de compra (valem como
+  usados) e com as cores padrão.
 
 ## Limitações conhecidas do bloco 3
 
@@ -513,8 +572,7 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
   luminária, sem sombra própria.
 - Não há interruptor na parede: acender e apagar é na própria luminária, e o
   folk apaga ao sair sem dar a volta.
-- Quadros, relógio e tapete não têm cor ou modelo para escolher (vem no
-  bloco 4). Ninguém rouba nem estraga quadro.
+- Ninguém rouba nem estraga quadro.
 - Cercado de paredes sem piso conta como cômodo; o quintal (o que encosta na
   divisa do lote) segue com o raio em volta do folk.
 - Saves antigos ganham os quadros e o relógio nos lugares onde a tela os

@@ -1,4 +1,4 @@
-import { MINUTES_PER_DAY, clockOf } from './clock';
+import { MINUTES_PER_DAY, clockOf, nightAmount } from './clock';
 import { formatMoney, objectBusy, sellValue } from './economy';
 import type { Nav } from './grid';
 import { floorAt, inBounds, useTiles } from './grid';
@@ -104,8 +104,13 @@ export function interactionReady(world: World, it: InteractionDef): boolean {
   if (it.takeout && house.takeout <= 0) return false;
   if (it.special === 'payBills') return unpaidBills(world).length > 0;
   if (it.special === 'fair') return fairOpen(world.tick);
+  // bloco 4: luneta só com o céu escuro
+  if (it.night) return nightAmount((world.tick % MINUTES_PER_DAY) / MINUTES_PER_DAY) >= NIGHT_SKY;
   return true;
 }
+
+/** quão escuro o céu precisa estar para dar de ver as estrelas */
+export const NIGHT_SKY = 0.5;
 
 /** Dá para usar esta interação agora: objeto inteiro (ou cuidado com o que fazer) e a casa tem o que precisa. */
 export function canUse(world: World, obj: WorldObject, it: InteractionDef): boolean {
@@ -238,7 +243,7 @@ export function seizeTarget(world: World, catalog: Catalog, nav: Nav, from: Vec)
   for (const obj of world.objects) {
     const def = catalog.objects[obj.defId];
     if (!def || def.fixture || objectBusy(world, obj.id)) continue;
-    const v = sellValue(obj, def);
+    const v = sellValue(world, obj, def);
     if (v <= bestV) continue;
     if (!findPathToAny(nav, from, besideTiles(world, catalog, nav, obj))) continue;
     best = obj;

@@ -331,7 +331,7 @@ describe('save v8 (bloco 3)', () => {
   }
 
   it('migra da v7: quadros onde a tela pendurava, tapete do sofá e luz nos cômodos sem luminária', () => {
-    expect(SAVE_VERSION).toBe(8);
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(8);
     const { world } = deserialize(v7Save(), { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES, catalog: CATALOG });
     expect(world.household.lightMinutes).toBe(0);
     const ids = world.objects.map((o) => o.defId);

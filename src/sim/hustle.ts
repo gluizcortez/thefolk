@@ -50,12 +50,15 @@ export function refreshBoard(world: World, catalog: Catalog): void {
 
 /** O objeto serve para o frila ou negócio do folk? */
 export function taskFits(catalog: Catalog, folk: Folk, task: 'gig' | 'business', objectDefId: string): boolean {
+  // bloco 4: qualquer faixa da mesma função serve (fogareiro, fogão, fogão de seis bocas)
+  const line = catalog.objects[objectDefId]?.line;
+  const fits = (objects: string[]) => objects.includes(objectDefId) || (!!line && objects.includes(line));
   if (task === 'gig') {
     const def = folk.gig && catalog.gigs[folk.gig.defId];
-    return !!def && def.objects.includes(objectDefId);
+    return !!def && fits(def.objects);
   }
   const def = folk.business && catalog.businesses[folk.business.defId];
-  return !!def && def.objects.includes(objectDefId);
+  return !!def && fits(def.objects);
 }
 
 /** Um minuto de trabalho no frila. Devolve true quando entregou. */

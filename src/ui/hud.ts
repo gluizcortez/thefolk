@@ -1,4 +1,4 @@
-import { SHIRT, SKIN } from '../game/art/palette';
+import { PAINT, SHIRT, SKIN, css } from '../game/art/palette';
 import { COVER_ART, FLOOR_ART } from '../game/art/house';
 import type { BuildTool, GameController } from '../game/controller';
 import { t } from '../i18n';
@@ -28,6 +28,8 @@ import {
   moodOf,
   nextShift,
   sellValue,
+  stillNew,
+  tierOf,
   skillLevel,
   RAISE_COOLDOWN,
   bossBlocks,
@@ -100,7 +102,11 @@ const CATEGORIES: (ObjectCategory | 'all')[] = [
   'lighting',
   'decor',
   'hobbies',
+  'games',
 ];
+
+/** Bloco 4: filtro de faixa de preço no catálogo. */
+const TIERS: ('all' | 0 | 1 | 2)[] = ['all', 0, 1, 2];
 
 type Panel = 'skills' | 'job' | 'relations' | null;
 type JobTab = 'job' | 'gigs' | 'business';
@@ -218,6 +224,10 @@ export class Hud {
   private catalogItems = el('div', 'catalog-items');
   private catalogHint = el('div', 'catalog-hint');
   private category: ObjectCategory | 'all' = 'all';
+  private tierFilter: 'all' | 0 | 1 | 2 = 'all';
+  private catalogTiers = el('div', 'catalog-tabs tier-tabs');
+  private buyUndoButton = el('button', 'btn btn-undo');
+  private colorRow = el('div', 'color-row');
   private catalogSig = '';
   private thumbnail: ((art: string) => string) | null = null;
   private swatch: ((texture: string, tall?: boolean) => string) | null = null;
@@ -1674,7 +1684,26 @@ export class Hud {
       });
       this.catalogTabs.append(b);
     }
-    this.catalogEl.append(head, this.catalogItems, this.catalogHint);
+    // bloco 4: faixa de preço e desfazer
+    for (const tier of TIERS) {
+      const b = el('button', 'tab', tier === 'all' ? t('tier.all') : `${'⟡'.repeat(tier + 1)} ${t(`tier.${tier}`)}`);
+      b.dataset.tier = String(tier);
+      b.addEventListener('click', () => {
+        this.tierFilter = tier;
+        this.catalogSig = '';
+        this.renderCatalog();
+      });
+      this.catalogTiers.append(b);
+    }
+    this.buyUndoButton.title = t('buy.undoTip');
+    this.buyUndoButton.addEventListener('click', () => {
+      this.ctrl.undoBuy();
+      this.update();
+    });
+    head.append(this.catalogTiers, this.buyUndoButton);
+    const foot = el('div', 'catalog-foot');
+    foot.append(this.catalogHint, this.colorRow);
+    this.catalogEl.append(head, this.catalogItems, foot);
     this.catalogEl.hidden = true;
     this.root.append(this.catalogEl);
   }
@@ -1685,19 +1714,53 @@ export class Hud {
     if (!buying) return;
     const funds = this.ctrl.world.household.funds;
     const placing = this.ctrl.placing;
-    const sig = `${this.category}|${funds}|${placing?.defId ?? ''}|${placing?.moveId ?? ''}`;
+    const depth = this.ctrl.sim.buyUndoDepth;
+    const sig = `${this.category}|${this.tierFilter}|${funds}|${placing?.defId ?? ''}|${placing?.moveId ?? ''}|${placing?.color ?? ''}|${depth}`;
     if (sig === this.catalogSig) return;
     this.catalogSig = sig;
     for (const b of this.catalogTabs.children) {
       (b as HTMLElement).classList.toggle('on', (b as HTMLElement).dataset.cat === this.category);
     }
+    for (const b of this.catalogTiers.children) {
+      (b as HTMLElement).classList.toggle('on', (b as HTMLElement).dataset.tier === String(this.tierFilter));
+    }
+    this.buyUndoButton.textContent = depth > 0 ? t('buy.undoN', { n: depth }) : t('buy.undo');
+    this.buyUndoButton.disabled = depth === 0;
     this.catalogHint.textContent = placing ? t('buy.place') : '';
     this.catalogHint.hidden = !placing;
+    this.renderColors();
     this.catalogItems.replaceChildren();
     const defs = Object.values(this.ctrl.sim.catalog.objects)
-      .filter((d) => d.buyable !== false && (this.category === 'all' || d.category === this.category))
+      .filter(
+        (d) =>
+          d.buyable !== false &&
+          (this.category === 'all' || d.category === this.category) &&
+          (this.tierFilter === 'all' || tierOf(d) === this.tierFilter),
+      )
       .sort((a, b) => a.price - b.price);
     for (const def of defs) this.catalogItems.append(this.catalogItem(def, funds));
+  }
+
+  /** Bloco 4: amostras de cor do objeto que vai ser posto. */
+  private renderColors(): void {
+    const placing = this.ctrl.placing;
+    const def = placing && placing.moveId === undefined ? this.ctrl.sim.catalog.objects[placing.defId] : undefined;
+    this.colorRow.replaceChildren();
+    this.colorRow.hidden = !def?.colors?.length;
+    if (!def?.colors?.length || !placing) return;
+    this.colorRow.append(el('span', 'color-label', t('buy.color')));
+    const current = placing.color ?? def.colors[0];
+    for (const c of def.colors) {
+      const b = el('button', 'swatch');
+      b.style.background = css(PAINT[c] ?? 0x888888);
+      b.title = t(`color.${c}`);
+      b.classList.toggle('on', c === current);
+      b.addEventListener('click', () => {
+        this.ctrl.setPlacingColor(c);
+        this.renderCatalog();
+      });
+      this.colorRow.append(b);
+    }
   }
 
   private catalogItem(def: ObjectDef, funds: number): HTMLElement {
@@ -1712,14 +1775,18 @@ export class Hud {
     if (this.thumbnail) img.src = this.thumbnail(def.art);
     const trains = [...new Set(def.interactions.filter((i) => i.skill).map((i) => t(`skill.${i.skill!.id}`)))];
     const needs = [...new Set(def.interactions.flatMap((i) => Object.entries(i.effects).filter(([, v]) => (v ?? 0) > 0.3).map(([k]) => t(`need.${k}`))))];
-    const tip = [t(def.name), formatMoney(def.price)];
+    const tier = tierOf(def);
+    const tip = [t(def.name), `${formatMoney(def.price)} (${t(`tier.${tier}`)})`];
     if (needs.length) tip.push(needs.join(', '));
     if (trains.length) tip.push(t('buy.trains', { skill: trains.join(', ') }));
     if (def.ambience > 0) tip.push(`${t('need.ambience')} +${def.ambience}`);
     if (def.light) tip.push(`${t('tip.light')} ${Math.round(def.light * 100)}%`);
+    if (def.interactions.some((i) => i.duo)) tip.push(t('buy.duo'));
+    if (def.dining) tip.push(t('buy.table'));
     if (!affordable) tip.push(t('buy.cantAfford'));
     item.title = tip.join(' · ');
-    item.append(img, el('span', 'item-name', t(def.name)), el('span', 'item-price', formatMoney(def.price)));
+    const badge = el('span', `item-tier tier-${tier}`, '⟡'.repeat(tier + 1));
+    item.append(badge, img, el('span', 'item-name', t(def.name)), el('span', 'item-price', formatMoney(def.price)));
     item.addEventListener('click', () => {
       if (!affordable) {
         this.ctrl.toast(t('problem.funds'));
@@ -1736,6 +1803,12 @@ export class Hud {
     const def = this.ctrl.sim.defOf(obj);
     if (!def) return;
     this.menuEl.replaceChildren(el('div', 'menu-title', t(def.name)));
+    // bloco 4: quanto vale hoje e de quem é o objeto querido
+    const world = this.ctrl.world;
+    const worth = formatMoney(sellValue(world, obj, def));
+    this.menuEl.append(el('div', 'menu-note', stillNew(world, obj) ? `${t('buy.worth', { price: worth })} · ${t('buy.new')}` : t('buy.worth', { price: worth })));
+    const fan = obj.beloved !== undefined ? world.folks.find((f) => f.id === obj.beloved && !f.visit) : undefined;
+    if (fan) this.menuEl.append(el('div', 'menu-note beloved', `♥ ${t('buy.beloved', { name: fan.name })}`));
     const add = (label: string, run: () => void) => {
       const b = el('button', 'menu-item');
       b.append(el('span', '', label));
@@ -1750,7 +1823,7 @@ export class Hud {
     add(t('buy.rotate'), () => {
       this.ctrl.commandOrExplain({ type: 'move', objectId: obj.id, x: obj.x, y: obj.y, rot: ((obj.rot + 1) % 4) as WorldObject['rot'] });
     });
-    const price = formatMoney(sellValue(obj, def));
+    const price = formatMoney(sellValue(this.ctrl.world, obj, def));
     add(t('buy.sell', { price }), () => {
       if (this.ctrl.commandOrExplain({ type: 'sell', objectId: obj.id })) {
         this.ctrl.toast(t('buy.sold', { name: t(def.name), price }));

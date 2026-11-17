@@ -56,6 +56,16 @@ export const PAL = {
   shoe: 0x241f1c,
 } as const;
 
+/** Bloco 4: cores que o jogador escolhe na compra (chaves de ObjectDef.colors). */
+export const PAINT: Record<string, number> = {
+  red: 0xb8352b,
+  blue: 0x2c55a6,
+  green: 0x3f7a4a,
+  mustard: 0xd9a22e,
+  plum: 0x6b3a6e,
+  brown: 0x7a4a2c,
+};
+
 export const SKIN = [0xf0c49c, 0xd9a273, 0xa87148, 0x74482c];
 export const HAIR = [0x231c18, 0x5e3a20, 0xa1461f, 0xd6ab4c, 0xbdb6aa];
 export const SHIRT = [0x2f7fc4, 0xc9382f, 0xe8b830, 0x3f9455, 0x7d55ad, 0xe9e4d6];

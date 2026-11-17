@@ -181,7 +181,7 @@ lâmpada acesa. Nome do cômodo pelo uso (`ObjectDef.room`), mostrado no quadro
 de necessidades. Migração v8 recoloca quadros, tapete e luz de teto nos
 saves antigos.
 
-## Bloco 4 — Catálogo em faixas de preço e atividades a dois (save v9)
+## Bloco 4 — Catálogo em faixas de preço e atividades a dois (save v9) — feito em 17/11/2026
 
 **Lacuna**: 21 objetos, um modelo por função. No gênero cada função tem
 versões barata, média e cara com efeitos muito diferentes.
@@ -206,6 +206,24 @@ versões barata, média e cara com efeitos muito diferentes.
 **Pronto quando**: catálogo com ~65 itens em categorias e faixas; IA prefere
 o objeto melhor quando dá; dois folks jogam juntos ganhando relação; testes de
 faixas, depreciação e atividade a dois.
+
+**Como ficou**: módulo `sim/furnish.ts`. 37 objetos novos (70 no total, 10
+categorias com a nova "Jogos"): barato e caro para cama, sofá, poltrona,
+chuveiro, privada, geladeira, fogão, TV, som, abajur e estante; cadeiras e
+mesas separadas em três faixas; xadrez, carteado, videogame, ofurô, teclado,
+piano, luneta (só de noite) e saco de pancada; prateleira e espelho de
+parede. `ObjectDef.tier/line/colors/dining`; a IA multiplica a nota pela
+faixa (0,85 / 1 / 1,2). Cores escolhidas no catálogo para sofás, poltronas,
+cadeiras e camas. Depreciação: valor cheio no dia da compra sem uso, -15% na
+virada e mais com o uso, piso de 30%; venda devolve o valor de hoje.
+Desfazer compra/venda/mover no modo compra. Comida com `atTable`: depois de
+servir, o folk leva o prato até o lugar à mesa livre mais perto (até 14
+passos) e come sentado com conforto, e social e amizade se houver alguém
+comendo junto. `InteractionDef.duo` dá efeitos e amizade a quem faz a mesma
+atividade no mesmo objeto, guarda a lembrança `playedTogether`, e a IA ganha
+vontade de entrar no jogo de alguém. Objeto querido depois de 1200 minutos de
+uso de quem mais usou; vender ou perder na penhora dói. Save v9 dá contagem
+de uso aos objetos antigos.
 
 ## Bloco 5 — Criar família: temperamento, corpo e roupa (save v10)
 

@@ -9,7 +9,7 @@ import { freshState } from './upkeep';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -146,6 +146,14 @@ const migrations: Record<number, Migration> = {
       laySofaRugs(world, ctx.catalog);
       lightDarkRooms(world, ctx.catalog);
     }
+    return { ...save, world: world as unknown as Obj };
+  },
+  // bloco 4: depreciação e objetos queridos. O que já estava na casa conta
+  // como usado (sem data de compra) e começa sem histórico de uso; cores
+  // ficam na padrão de cada objeto.
+  8: (save) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    world.objects = (world.objects ?? []).map((o) => ({ used: 0, uses: {}, ...o }));
     return { ...save, world: world as unknown as Obj };
   },
 };

@@ -17,6 +17,8 @@ export interface Placing {
   rot: Rotation;
   /** quando é um objeto que já existe sendo movido */
   moveId?: number;
+  /** bloco 4: cor escolhida no catálogo */
+  color?: string;
 }
 import type { WallMode } from './art/house';
 
@@ -86,7 +88,7 @@ export class GameController {
 
   command(cmd: Command): boolean {
     const ok = this.sim.dispatch(cmd);
-    if (ok && (cmd.type === 'buy' || cmd.type === 'sell' || cmd.type === 'move')) this.objectsVersion++;
+    if (ok && (cmd.type === 'buy' || cmd.type === 'sell' || cmd.type === 'move' || cmd.type === 'undoBuy')) this.objectsVersion++;
     if (ok && (isBuildCommand(cmd) || cmd.type === 'undoBuild')) this.gridVersion++;
     return ok;
   }
@@ -113,6 +115,8 @@ export class GameController {
   setMode(mode: Mode): void {
     if (mode === this.mode) return;
     const wasLive = this.mode === 'live';
+    // bloco 4: saindo do modo compra, o que foi feito lá não se desfaz mais
+    if (this.mode === 'buy') this.command({ type: 'closeBuy' });
     this.mode = mode;
     this.placing = null;
     if (mode !== 'live') {
@@ -126,7 +130,8 @@ export class GameController {
 
   startPlacing(defId: string, moveId?: number): void {
     const obj = moveId !== undefined ? this.sim.findObject(moveId) : undefined;
-    this.placing = { defId, rot: obj?.rot ?? 0, moveId };
+    const color = moveId === undefined && this.placing?.defId === defId ? this.placing.color : undefined;
+    this.placing = { defId, rot: obj?.rot ?? 0, moveId, color };
   }
 
   rotatePlacing(): void {
@@ -141,7 +146,7 @@ export class GameController {
     const ok =
       p.moveId !== undefined
         ? this.commandOrExplain({ type: 'move', objectId: p.moveId, x, y, rot: p.rot })
-        : this.commandOrExplain({ type: 'buy', defId: p.defId, x, y, rot: p.rot });
+        : this.commandOrExplain({ type: 'buy', defId: p.defId, x, y, rot: p.rot, color: p.color });
     if (ok) {
       if (p.moveId === undefined && def) this.toast(t('buy.bought', { name: t(def.name) }));
       // depois de mover, larga; depois de comprar, segue com outro igual se der
@@ -154,6 +159,18 @@ export class GameController {
 
   setBuildTool(tool: BuildTool): void {
     this.buildTool = tool;
+  }
+
+  /** Bloco 4: desfaz a última compra, venda ou mudança no modo compra. */
+  undoBuy(): boolean {
+    const ok = this.commandOrExplain({ type: 'undoBuy' });
+    if (ok) this.toast(t('buy.undone'));
+    return ok;
+  }
+
+  /** Escolhe a cor do objeto que vai ser comprado. */
+  setPlacingColor(color: string): void {
+    if (this.placing && this.placing.moveId === undefined) this.placing.color = color;
   }
 
   /** Desfaz a última obra (Ctrl+Z ou botão), explicando se não der. */

@@ -11,6 +11,20 @@ import { grudge, pickGossip } from './gossip';
 import { committedElsewhere, guessAccept, onLot, socialAllowed, socialTaste, talkTiles, talkingWith } from './social';
 import type { Catalog, Folk, InteractionDef, Needs, ServiceOrder, SocialDef, World } from './types';
 import { NEED_IDS } from './types';
+import { JOIN_BONUS, TIER_PULL, duoPartners, occupiedId, tierOf } from './furnish';
+
+/** Bloco 4: vontade de entrar na atividade a dois que alguém já começou. */
+export function joinUtility(world: World, catalog: Catalog, folk: Folk, objectId: number, it: InteractionDef): number {
+  const partners = duoPartners(world, folk, objectId, it);
+  if (partners.length === 0 || !it.duo) return 0;
+  let best = 0;
+  for (const p of partners) {
+    const f = relationOf(world, folk.id, p.id)?.friendship ?? 0;
+    if (f <= -30) continue;
+    best = Math.max(best, JOIN_BONUS * (1 + Math.max(0, f) / 100));
+  }
+  return best + effectsUtility(catalog, folk, it.duo.effects, expectedDuration(folk, it));
+}
 
 /** Uma opção da IA: usar um objeto ou puxar conversa com alguém. */
 export interface Option {
@@ -82,7 +96,7 @@ export function objectUsers(world: World, objectId: number, except?: Folk): numb
   for (const f of world.folks) {
     if (f === except) continue;
     const a = f.queue[0];
-    if (a?.kind === 'use' && a.objectId === objectId && a.phase !== 'queued') n++;
+    if (a?.kind === 'use' && occupiedId(a) === objectId && (a.phase !== 'queued' || a.eatAt !== undefined)) n++;
   }
   return n;
 }
@@ -184,7 +198,9 @@ export function scoreOptions(world: World, catalog: Catalog, folk: Folk, nav: Na
     const path = findPathToAny(nav, folk, useTiles(world, nav, obj, def));
     if (!path) continue;
     for (const it of auto) {
-      const utility = interactionUtility(catalog, folk, it);
+      // bloco 4: o objeto melhor puxa mais; atividade a dois com alguém já jogando também
+      let utility = interactionUtility(catalog, folk, it) * TIER_PULL[tierOf(def)];
+      if (it.duo) utility += joinUtility(world, catalog, folk, obj.id, it);
       const score = utility / (1 + DISTANCE_COST * path.length);
       options.push({ objectId: obj.id, interactionId: it.id, score, distance: path.length });
     }

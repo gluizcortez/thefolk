@@ -2,12 +2,11 @@ import type { Nav } from './grid';
 import { buildNav, edgeKey, footprint, inBounds, objectSize, useTiles, wallBehind } from './grid';
 import { roomAt, roomsOf } from './rooms';
 import { freshState } from './upkeep';
+import { currentValue, resaleValue } from './furnish';
 import type { Catalog, ObjectDef, Rotation, Vec, World, WorldObject } from './types';
 
 /** símbolo da moeda (tostões) */
 export const CURRENCY = '⟡';
-/** fração do preço devolvida na venda */
-export const RESALE = 0.7;
 /** parte fixa das contas */
 export const BILL_BASE = 25;
 /** parte das contas que depende do valor dos móveis da casa */
@@ -21,16 +20,14 @@ export function formatMoney(value: number): string {
   return `${n < 0 ? '−' : ''}${CURRENCY} ${abs}`;
 }
 
-/** Quanto o objeto vale hoje (o que foi pago, ou o preço de tabela se veio com a casa). */
-export function objectValue(obj: WorldObject, def: ObjectDef): number {
-  return obj.paid > 0 ? obj.paid : def.price;
+/** Quanto o objeto vale hoje (bloco 4: perde no primeiro dia e com o uso). */
+export function objectValue(world: World, obj: WorldObject, def: ObjectDef): number {
+  return currentValue(world, obj, def);
 }
 
-/** Quebrado vale menos na revenda. */
-export const BROKEN_RESALE = 0.5;
-
-export function sellValue(obj: WorldObject, def: ObjectDef): number {
-  return Math.round(objectValue(obj, def) * RESALE * (obj.state?.broken ? BROKEN_RESALE : 1));
+/** O que a venda devolve (o valor de hoje; quebrado vale metade). */
+export function sellValue(world: World, obj: WorldObject, def: ObjectDef): number {
+  return resaleValue(world, obj, def);
 }
 
 /** Valor da conta: uma parte fixa mais uma fração do valor dos móveis. */
@@ -38,7 +35,7 @@ export function billAmount(world: World, catalog: Catalog): number {
   let value = 0;
   for (const obj of world.objects) {
     const def = catalog.objects[obj.defId];
-    if (def) value += objectValue(obj, def);
+    if (def) value += objectValue(world, obj, def);
   }
   return Math.round(BILL_BASE + value * BILL_RATE);
 }
@@ -88,7 +85,10 @@ export function reachable(nav: Nav, from: Vec): Set<number> {
 
 /** Algum objeto está sendo usado ou é o destino da ação atual de alguém? */
 export function objectBusy(world: World, objectId: number): boolean {
-  return world.folks.some((f) => f.queue[0]?.objectId === objectId && f.queue[0].phase === 'using');
+  return world.folks.some((f) => {
+    const a = f.queue[0];
+    return a?.phase === 'using' && (a.objectId === objectId || a.eatAt === objectId);
+  });
 }
 
 /**

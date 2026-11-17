@@ -1430,6 +1430,48 @@ function skinTex(idx: number): Painter {
 
 // ---------- registro ----------
 
+// ---------- bloco 4: mármore, teclas e feltro ----------
+
+function marble(c: Ctx, w: number, h: number, rnd: () => number): void {
+  fill(c, 0xe8e4da);
+  mottle(c, w, h, rnd, 70, 0xe8e4da, 0.35);
+  for (let i = 0; i < 7; i++) {
+    let x = rnd() * w;
+    let y = 0;
+    while (y < h) {
+      const nx = x + (rnd() - 0.5) * 9;
+      const ny = y + 3 + rnd() * 6;
+      line(c, x, y, nx, ny, 0x8d8a83, 0.35 + rnd() * 0.3);
+      x = nx;
+      y = ny;
+    }
+  }
+}
+
+function keys(c: Ctx, w: number, h: number): void {
+  fill(c, 0xf3efe2);
+  const n = 14;
+  const kw = w / n;
+  for (let i = 1; i < n; i++) line(c, i * kw, 0, i * kw, h, 0x6d6a62, 0.8);
+  for (let i = 0; i < n - 1; i++) {
+    if (i % 7 === 2 || i % 7 === 6) continue;
+    fill(c, 0x1b1a1c, (i + 1) * kw - kw * 0.3, 0, kw * 0.6, h * 0.6);
+  }
+}
+
+function felt(c: Ctx, w: number, h: number, rnd: () => number): void {
+  fill(c, 0x2f7a4a);
+  speckle(c, w, h, rnd, 260, [0x29704a, 0x388a55, 0x23603e], 0.7);
+}
+
+function checkerboard(c: Ctx, w: number): void {
+  const n = 8;
+  const k = w / n;
+  fill(c, 0x5b3920);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) fill(c, (x + y) % 2 ? 0x3a2414 : 0xe6d2a6, x * k, y * k, k, k);
+  line(c, 0, 0, w, 0, 0x2a180c, 1, 2);
+}
+
 const SPECS: Record<string, Spec> = {
   grass: { w: 128, h: 128, paint: grass, repeat: true, grain: 9 },
   wood: { w: 128, h: 128, paint: wood, repeat: true, grain: 6 },
@@ -1498,6 +1540,10 @@ const SPECS: Record<string, Spec> = {
   carGlass: { w: 32, h: 16, paint: carGlass, grain: 2 },
   blob: { w: 32, h: 32, paint: blob, grain: 0, smooth: true },
   zzz: { w: 32, h: 32, paint: zzz, grain: 0, smooth: true },
+  marble: { w: 64, h: 64, paint: marble, grain: 3 },
+  keys: { w: 112, h: 16, paint: keys, grain: 2 },
+  felt: { w: 32, h: 32, paint: felt, repeat: true, grain: 6 },
+  chessboard: { w: 64, h: 64, paint: checkerboard, grain: 3 },
 };
 
 function specFor(name: string): Spec | undefined {

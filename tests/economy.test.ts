@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG } from '../src/data/catalog';
-import { BILL_INTERVAL, billAmount, checkPlacement, footprint, formatMoney, sellValue, useTiles } from '../src/sim';
+import { BILL_INTERVAL, MINUTES_PER_DAY, billAmount, checkPlacement, footprint, formatMoney, sellValue, useTiles } from '../src/sim';
 import { openField, run, starterSim } from './helpers';
 
 describe('dinheiro e modo compra', () => {
@@ -57,14 +57,15 @@ describe('dinheiro e modo compra', () => {
     expect(tiles).toHaveLength(2);
   });
 
-  it('vender devolve parte do valor e tira o objeto da fila de quem ia usar', () => {
+  it('vender devolve o valor de hoje e tira o objeto da fila de quem ia usar', () => {
     const sim = openField(8, 8, [], { x: 0, y: 0 }, 1, 1000);
     sim.dispatch({ type: 'buy', defId: 'easel', x: 5, y: 5, rot: 0 });
     const obj = sim.world.objects[0];
     const folk = sim.world.folks[0];
+    run(sim, MINUTES_PER_DAY); // passou da virada do dia: já desvalorizou
     sim.dispatch({ type: 'queueUse', folkId: folk.id, objectId: obj.id, interactionId: 'paint' });
     const funds = sim.world.household.funds;
-    const value = sellValue(obj, CATALOG.objects.easel);
+    const value = sellValue(sim.world, obj, CATALOG.objects.easel);
     expect(sim.dispatch({ type: 'sell', objectId: obj.id })).toBe(true);
     expect(sim.world.household.funds).toBe(funds + value);
     expect(value).toBeLessThan(CATALOG.objects.easel.price);

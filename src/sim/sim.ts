@@ -130,6 +130,19 @@ import {
   stockPantry,
 } from './services';
 import type { ServiceKind, ServiceOrder, ServiceVisit } from './types';
+import {
+  SEAT_REACH,
+  TABLE_BONUS,
+  TABLE_COMPANY,
+  TABLE_FRIENDSHIP,
+  belovedBonus,
+  countUse,
+  duoPartners,
+  findSeat,
+  missBeloved,
+  occupiedId,
+  tableCompany,
+} from './furnish';
 
 /** Por que o último comando foi recusado (para a interface explicar). */
 export type CommandProblem =
@@ -162,7 +175,10 @@ export type CommandProblem =
   | 'closed'
   | 'already'
   | 'atDoor'
-  | 'notAtDoor';
+  | 'notAtDoor'
+  | 'undoBuyEmpty'
+  | 'daytime'
+  | 'undoBuyBlocked';
 
 /** Resultado de uma conversa, para a tela mostrar o que mudou (não vai no save). */
 export interface SocialOutcome {
@@ -239,6 +255,12 @@ const MAX_SEIZE = 8;
 /** quanto tempo um prestador de serviço pode ficar no lote */
 const SERVICE_STAY = 8 * 60;
 
+/** Bloco 4: uma mexida do modo compra, guardada para desfazer. */
+type BuyUndo =
+  | { kind: 'buy'; objectId: number; cost: number }
+  | { kind: 'sell'; obj: WorldObject; got: number }
+  | { kind: 'move'; objectId: number; x: number; y: number; rot: WorldObject['rot'] };
+
 /** treino de Capricho enquanto recolhe bagunça */
 const TIDY_GAIN = { skill: { id: TIDINESS, xpPerMinute: 0.8 } } as InteractionDef;
 
@@ -259,6 +281,8 @@ export class Sim {
   private departed: number[] = [];
   /** obras que dá para desfazer, da mais antiga para a mais nova (não vai no save) */
   private undoStack: { back: GridChange; cost: number }[] = [];
+  /** bloco 4: compras, vendas e mudanças do modo compra que dá para desfazer */
+  private buyStack: BuyUndo[] = [];
 
   constructor(catalog: Catalog, world: World) {
     this.catalog = catalog;
@@ -270,6 +294,7 @@ export class Sim {
   load(world: World): void {
     this.world = world;
     this.undoStack = [];
+    this.buyStack = [];
     this.invalidateNav();
   }
 
@@ -349,7 +374,7 @@ export class Sim {
         if (folk.visit && (it.residentOnly || (it.cost ?? 0) > 0 || it.care)) return this.fail('visitor');
         if (!interactionOpen(obj, it)) return this.fail(it.care || it.light ? 'nothingToDo' : 'broken');
         if (!interactionReady(this.world, it)) {
-          return this.fail(it.special === 'payBills' ? 'noBills' : it.special === 'fair' ? 'closed' : 'noFood');
+          return this.fail(it.special === 'payBills' ? 'noBills' : it.special === 'fair' ? 'closed' : it.night ? 'daytime' : 'noFood');
         }
         if (it.task && !taskFits(this.catalog, folk, it.task, def.id)) {
           return this.fail(it.task === 'gig' ? 'noGig' : 'noBusiness');
@@ -402,7 +427,12 @@ export class Sim {
       case 'invite':
         return this.invite(cmd.folkId, cmd.neighborId);
       case 'buy':
-        return this.buy(cmd.defId, cmd.x, cmd.y, cmd.rot);
+        return this.buy(cmd.defId, cmd.x, cmd.y, cmd.rot, cmd.color);
+      case 'undoBuy':
+        return this.undoBuy();
+      case 'closeBuy':
+        this.buyStack = [];
+        return true;
       case 'sell':
         return this.sell(cmd.objectId);
       case 'move': {
@@ -411,6 +441,7 @@ export class Sim {
         if (objectBusy(this.world, obj.id)) return this.fail('inUse');
         const check = checkPlacement(this.world, this.catalog, obj.defId, cmd.x, cmd.y, cmd.rot, obj.id);
         if (!check.ok) return this.fail(check.problem ?? 'invalid');
+        this.pushBuyUndo({ kind: 'move', objectId: obj.id, x: obj.x, y: obj.y, rot: obj.rot });
         obj.x = cmd.x;
         obj.y = cmd.y;
         obj.rot = cmd.rot;
@@ -542,14 +573,17 @@ export class Sim {
 
   // ---------- compra e venda ----------
 
-  private buy(defId: string, x: number, y: number, rot: WorldObject['rot']): boolean {
+  private buy(defId: string, x: number, y: number, rot: WorldObject['rot'], color?: string): boolean {
     const def = this.catalog.objects[defId];
     if (!def || def.buyable === false) return false;
     if (this.world.household.funds < def.price) return this.fail('funds');
     const check = checkPlacement(this.world, this.catalog, defId, x, y, rot);
     if (!check.ok) return this.fail(check.problem ?? 'invalid');
-    this.world.objects.push({ id: this.world.nextId++, defId, x, y, rot, paid: def.price, state: freshState() });
+    const obj: WorldObject = { id: this.world.nextId++, defId, x, y, rot, paid: def.price, state: freshState(), bought: this.world.tick, used: 0, uses: {} };
+    if (color && def.colors?.includes(color)) obj.color = color;
+    this.world.objects.push(obj);
     this.world.household.funds -= def.price;
+    this.pushBuyUndo({ kind: 'buy', objectId: obj.id, cost: def.price });
     this.replanAll();
     return true;
   }
@@ -559,19 +593,82 @@ export class Sim {
     const def = obj && this.defOf(obj);
     if (!obj || !def) return false;
     if (objectBusy(this.world, objectId)) return this.fail('inUse');
-    this.world.household.funds += sellValue(obj, def);
+    const value = sellValue(this.world, obj, def);
+    this.world.household.funds += value;
+    this.pushBuyUndo({ kind: 'sell', obj: JSON.parse(JSON.stringify(obj)) as WorldObject, got: value });
     this.removeObject(objectId);
     return true;
   }
 
+  private pushBuyUndo(entry: BuyUndo): void {
+    this.buyStack.push(entry);
+    if (this.buyStack.length > UNDO_LIMIT) this.buyStack.shift();
+  }
+
+  /** Quantas mexidas do modo compra dá para desfazer. */
+  get buyUndoDepth(): number {
+    return this.buyStack.length;
+  }
+
+  /**
+   * Bloco 4: desfaz a última compra (devolve tudo o que custou), venda (o
+   * objeto volta e o dinheiro sai) ou mudança de lugar.
+   */
+  private undoBuy(): boolean {
+    const last = this.buyStack[this.buyStack.length - 1];
+    if (!last) return this.fail('undoBuyEmpty');
+    if (last.kind === 'buy') {
+      const obj = this.findObject(last.objectId);
+      if (obj && objectBusy(this.world, obj.id)) return this.fail('inUse');
+      this.buyStack.pop();
+      if (!obj) return this.undoBuy();
+      this.world.household.funds += last.cost;
+      this.removeObject(obj.id, true);
+      return true;
+    }
+    if (last.kind === 'sell') {
+      const o = last.obj;
+      if (this.findObject(o.id)) {
+        this.buyStack.pop();
+        return this.undoBuy();
+      }
+      if (!checkPlacement(this.world, this.catalog, o.defId, o.x, o.y, o.rot).ok) return this.fail('undoBuyBlocked');
+      this.buyStack.pop();
+      this.world.objects.push(o);
+      this.world.household.funds -= last.got;
+      this.replanAll();
+      return true;
+    }
+    const obj = this.findObject(last.objectId);
+    if (!obj) {
+      this.buyStack.pop();
+      return this.undoBuy();
+    }
+    if (objectBusy(this.world, obj.id)) return this.fail('inUse');
+    if (!checkPlacement(this.world, this.catalog, obj.defId, last.x, last.y, last.rot, obj.id).ok) return this.fail('undoBuyBlocked');
+    this.buyStack.pop();
+    obj.x = last.x;
+    obj.y = last.y;
+    obj.rot = last.rot;
+    this.replanAll();
+    return true;
+  }
+
   /** Tira o objeto do lote (venda ou penhora) e de todas as filas. */
-  private removeObject(objectId: number): void {
+  private removeObject(objectId: number, quiet = false): void {
+    const gone = this.findObject(objectId);
     this.world.objects = this.world.objects.filter((o) => o.id !== objectId);
     for (const folk of this.world.folks) {
       const idx = folk.queue.findIndex((a) => a.objectId === objectId);
       folk.queue = folk.queue.filter((a) => a.objectId !== objectId);
       if (idx === 0) folk.path = [];
+      // quem ia comer sentado ali come de pé onde estiver
+      for (const a of folk.queue) if (a.eatAt === objectId) a.eatAt = -1;
     }
+    // bloco 4: o objeto querido foi embora
+    const def = gone && this.defOf(gone);
+    const sad = gone && !quiet ? missBeloved(this.world, gone) : null;
+    if (sad && def) this.log('log.missesBeloved', { name: sad.name, object: def.name });
     this.replanAll();
   }
 
@@ -1161,6 +1258,27 @@ export class Sim {
         this.departed.push(folk.id);
         return;
       }
+      if (action.eatAt !== undefined) {
+        // bloco 4: chegou à mesa com a comida; acende a luz se estiver escuro
+        if (!action.lightChecked) {
+          action.lightChecked = true;
+          if (this.lightUp(folk)) {
+            action.phase = 'queued';
+            return;
+          }
+        }
+        action.phase = 'using';
+        const seat = action.eatAt >= 0 ? this.findObject(action.eatAt) : undefined;
+        if (seat) {
+          action.slot = this.freeSlot(seat.id, folk);
+          const d = this.defOf(seat);
+          if (d) {
+            const t = nearestFootprintTile(seat, d, folk);
+            if (t.x !== folk.x || t.y !== folk.y) folk.facing = { x: Math.sign(t.x - folk.x), y: Math.sign(t.y - folk.y) };
+          }
+        }
+        return; // senta e começa a comer no próximo minuto
+      }
       const obj = action.objectId !== undefined ? this.findObject(action.objectId) : undefined;
       const odef = obj && this.defOf(obj);
       if (obj && odef && this.usingCount(obj.id, folk) >= (odef.slots ?? 1)) {
@@ -1203,11 +1321,24 @@ export class Sim {
         this.world.household.funds -= cost;
       }
       if (it) consumeFor(this.world, it);
+      if (it?.atTable) {
+        // bloco 4: com o prato pronto, procura um lugar à mesa
+        const spot = findSeat(this.world, this.catalog, this.nav, folk);
+        if (spot && spot.steps > 0 && spot.steps <= SEAT_REACH) {
+          action.eatAt = spot.seat.id;
+          action.lightChecked = false;
+          action.phase = 'queued';
+          folk.path = [];
+          return;
+        }
+      }
       if (obj && it?.light) this.switchLight(obj, it.light === 'on');
       if (it && isSleep(it)) this.lightsOutForSleep(folk);
-      action.phase = 'using';
-      if (obj) action.slot = this.freeSlot(obj.id, folk);
-      this.faceObject(folk, action);
+      if (action.eatAt === undefined) {
+        action.phase = 'using';
+        if (obj) action.slot = this.freeSlot(obj.id, folk);
+        this.faceObject(folk, action);
+      }
     }
 
     if (action.phase === 'using') {
@@ -1219,6 +1350,7 @@ export class Sim {
       applyEffects(folk, it);
       const used = this.findObject(action.objectId!);
       const usedDef = used && this.defOf(used);
+      if (used && usedDef && !it.care) this.furnishTick(folk, action, used, usedDef, it);
       if (used && usedDef) {
         if (!it.care) wearTick(this.catalog, folk, used, usedDef);
         else if (careTick(this.world, this.catalog, this.logger, folk, used, usedDef, it)) {
@@ -1258,6 +1390,35 @@ export class Sim {
       }
       if (action.source === 'auto' && action.elapsed % AUTO_RECHECK === 0) {
         this.maybeAbandon(folk, it);
+      }
+    }
+  }
+
+  /**
+   * Bloco 4: um minuto de uso conta para a depreciação e o apego; comer
+   * sentado à mesa e jogar junto dão um pouco a mais.
+   */
+  private furnishTick(folk: Folk, action: Action, obj: WorldObject, def: ObjectDef, it: InteractionDef): void {
+    if (countUse(folk, obj, def)) this.log('log.beloved', { name: folk.name, object: def.name });
+    belovedBonus(folk, obj);
+    if (action.eatAt !== undefined && action.eatAt >= 0) {
+      applyEffects(folk, { effects: TABLE_BONUS } as InteractionDef);
+      for (const other of tableCompany(this.world, folk)) {
+        applyEffects(folk, { effects: TABLE_COMPANY } as InteractionDef);
+        applyDelta(this.world, this.catalog, folk, other, { friendship: TABLE_FRIENDSHIP });
+        if (action.elapsed % 30 === 0) touch(this.world, folk.id, other.id);
+        break;
+      }
+    }
+    if (!it.duo) return;
+    const partners = duoPartners(this.world, folk, obj.id, it);
+    if (partners.length === 0) return;
+    applyEffects(folk, { effects: it.duo.effects } as InteractionDef);
+    for (const p of partners) {
+      applyDelta(this.world, this.catalog, folk, p, { friendship: it.duo.friendship / partners.length });
+      if (action.elapsed % 30 === 0) touch(this.world, folk.id, p.id);
+      if (addMemory(this.world, this.catalog, folk.id, p.id, 'playedTogether') && folk.id < p.id) {
+        this.log('log.playedTogether', { name: folk.name, other: p.name, object: def.name });
       }
     }
   }
@@ -1357,6 +1518,13 @@ export class Sim {
     if (action.kind === 'goto') {
       return action.target ? findPath(this.nav, folk, action.target) : null;
     }
+    if (action.eatAt !== undefined) {
+      // bloco 4: levando o prato até o lugar à mesa (-1 = come onde está)
+      const seat = action.eatAt >= 0 ? this.findObject(action.eatAt) : undefined;
+      const sdef = seat && this.defOf(seat);
+      if (!seat || !sdef) return [];
+      return findPathToAny(this.nav, folk, useTiles(this.world, this.nav, seat, sdef)) ?? [];
+    }
     const obj = action.objectId !== undefined ? this.findObject(action.objectId) : undefined;
     const def = obj && this.defOf(obj);
     if (!obj || !def) return null;
@@ -1373,7 +1541,7 @@ export class Sim {
     let n = 0;
     for (const f of this.world.folks) {
       const a = f.queue[0];
-      if (f !== except && a?.kind === 'use' && a.objectId === objectId && a.phase === 'using') n++;
+      if (f !== except && a?.kind === 'use' && occupiedId(a) === objectId && a.phase === 'using') n++;
     }
     return n;
   }
@@ -1382,7 +1550,7 @@ export class Sim {
     const taken = new Set<number>();
     for (const f of this.world.folks) {
       const a = f.queue[0];
-      if (f !== except && a?.kind === 'use' && a.objectId === objectId && a.phase === 'using') taken.add(a.slot ?? 0);
+      if (f !== except && a?.kind === 'use' && occupiedId(a) === objectId && a.phase === 'using') taken.add(a.slot ?? 0);
     }
     let slot = 0;
     while (taken.has(slot)) slot++;
@@ -1820,7 +1988,7 @@ export class Sim {
       const def = obj && this.defOf(obj);
       sv.target = 0;
       if (obj && def && !objectBusy(world, obj.id)) {
-        const value = sellValue(obj, def);
+        const value = sellValue(this.world, obj, def);
         this.removeObject(obj.id);
         creditSeizure(world, value);
         sv.done++;

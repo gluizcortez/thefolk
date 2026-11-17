@@ -171,7 +171,8 @@ describe('bloco 1: quebrar e consertar', () => {
     tv.state.broken = true;
     const before = sim.world.household.funds;
     sim.dispatch({ type: 'sell', objectId: tv.id });
-    expect(sim.world.household.funds - before).toBe(Math.round(CATALOG.objects.tv.price * 0.7 * 0.5));
+    // veio com a casa: já perdeu a parte do primeiro dia (bloco 4)
+    expect(sim.world.household.funds - before).toBe(Math.round(Math.round(CATALOG.objects.tv.price * 0.85) * 0.5));
   });
 });
 

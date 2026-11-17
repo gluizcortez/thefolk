@@ -39,7 +39,8 @@ import { buildFurniture, furnitureSpec } from './art/furniture';
 import type { Anchor, FurnitureModel, FurnitureSpec } from './art/furniture';
 import { COVER_ART, FLOOR_ART, House, LOW_H, TH, WALL_H } from './art/house';
 import { texMat } from './art/build';
-import { PAL } from './art/palette';
+import { PAINT, PAL } from './art/palette';
+import { colorOf } from '../sim/furnish';
 import { buildScenery } from './art/scenery';
 import { getTexture } from './art/textures';
 import { WearFx, buildMess } from './art/upkeep';
@@ -62,6 +63,16 @@ const ANIMS: Record<string, FolkAnim> = {
   'bookshelf:read': 'read',
   'tv:watch': 'watch',
   'shower:shower': 'scrub',
+  // bloco 4
+  'bookcrate:read': 'read',
+  'bookcase:read': 'read',
+  'tvcheap:watch': 'watch',
+  'tvbig:watch': 'watch',
+  'showercheap:shower': 'scrub',
+  'showerluxe:shower': 'scrub',
+  'mirror:practice': 'talk',
+  'telescope:stargaze': 'reach',
+  'punchbag:punch': 'argue',
 };
 
 /** Cuidados com a casa: a mesma animação em qualquer objeto. */
@@ -75,7 +86,15 @@ const CARE_ANIMS: Record<string, FolkAnim> = {
 };
 
 /** Altura do tampo das superfícies, para o prato ficar em cima (o resto vai no chão). */
-const SURFACE_TOP: Record<string, number> = { dinette: 0.77, desk: 0.77, counter: 0.92, kitchensink: 0.92 };
+const SURFACE_TOP: Record<string, number> = {
+  dinette: 0.77,
+  desk: 0.77,
+  counter: 0.92,
+  kitchensink: 0.92,
+  tablefold: 0.76,
+  table: 0.76,
+  tablemarble: 0.78,
+};
 
 interface ObjectEntry {
   obj: WorldObject;
@@ -355,7 +374,8 @@ export class GameView {
       const def = this.ctrl.sim.defOf(obj);
       if (!def) continue;
       const spec = furnitureSpec(def.art);
-      const model = buildFurniture(def.art, obj.id);
+      const paint = colorOf(obj, def);
+      const model = buildFurniture(def.art, obj.id, paint ? PAINT[paint] : undefined);
       const size = objectSize(def, obj.rot);
       const center = new THREE.Vector3(obj.x + size.w / 2, 0, obj.y + size.h / 2);
       const turn = (spec.facing === 'E' ? Math.PI / 2 : 0) + obj.rot * (Math.PI / 2);
@@ -525,6 +545,7 @@ export class GameView {
       if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         if (this.ctrl.mode === 'build') this.ctrl.undoBuild();
+        else if (this.ctrl.mode === 'buy') this.ctrl.undoBuy();
         return;
       }
       switch (e.code) {
@@ -821,7 +842,9 @@ export class GameView {
     const sim = this.ctrl.sim;
     const action = folk.queue[0];
     const it: InteractionDef | undefined = action?.phase === 'using' ? sim.interactionOf(action) : undefined;
-    const entry = it && action?.objectId !== undefined ? this.objects.get(action.objectId) : undefined;
+    // bloco 4: comendo sentado à mesa, o folk fica no lugar, não na geladeira
+    const seatId = action?.eatAt !== undefined && action.eatAt >= 0 ? action.eatAt : undefined;
+    const entry = it && action?.objectId !== undefined ? this.objects.get(seatId ?? action.objectId) : undefined;
 
     const fx = folk.px + (folk.x - folk.px) * alpha + 0.5;
     const fz = folk.py + (folk.y - folk.py) * alpha + 0.5;
@@ -836,12 +859,13 @@ export class GameView {
       place = { x: fx, y: 0.12, z: fz + 0.8, heading: 0 };
     } else if (it && entry) {
       anim =
+        (seatId !== undefined ? 'sit' : undefined) ??
         ANIMS[`${entry.def.art}:${it.id}`] ??
         (it.care ? CARE_ANIMS[it.care] : undefined) ??
         (it.pose === 'sit' ? 'sit' : it.pose === 'lie' ? 'sleep' : it.pose === 'dance' ? 'dance' : 'reach');
-      if (it.onObject) {
+      if (it.onObject || seatId !== undefined) {
         let anchor: Anchor | undefined;
-        if (anim === 'sleep') anchor = entry.spec.lie;
+        if (anim === 'sleep') anchor = (action?.slot !== undefined ? entry.spec.lies?.[action.slot] : undefined) ?? entry.spec.lie;
         else if (anim === 'sit' && entry.spec.sit && action?.slot !== undefined && entry.spec.sit[action.slot]) {
           anchor = entry.spec.sit[action.slot];
         } else if (anim === 'sit' && entry.spec.sit) {
@@ -1030,10 +1054,12 @@ export class GameView {
       for (const e of this.objects.values()) e.model.group.visible = this.shown(e);
       return;
     }
-    const key = `${placing.defId}|${placing.moveId ?? ''}`;
+    const moving = placing.moveId !== undefined ? this.ctrl.sim.findObject(placing.moveId) : undefined;
+    const paint = moving ? colorOf(moving, def) : (placing.color ?? def.colors?.[0]);
+    const key = `${placing.defId}|${placing.moveId ?? ''}|${paint ?? ''}`;
     if (this.ghost?.key !== key) {
       this.clearGhost();
-      const group = buildFurniture(def.art, placing.moveId ?? 1).group;
+      const group = buildFurniture(def.art, placing.moveId ?? 1, paint ? PAINT[paint] : undefined).group;
       group.traverse((o) => {
         if (!(o instanceof THREE.Mesh)) return;
         const mats = Array.isArray(o.material) ? o.material : [o.material];

@@ -1,57 +1,7 @@
-import type { InteractionDef, ObjectDef } from '../sim/types';
+import type { ObjectDef } from '../sim/types';
 
-// ---------- bloco 3: interruptor e quadros ----------
-// Acender e apagar só aparecem quando fazem sentido (veja sim/upkeep.ts).
-const lightOn = (): InteractionDef => ({ id: 'lightOn', label: 'act.lightOn', duration: 1, effects: {}, light: 'on', autonomous: false });
-const lightOff = (): InteractionDef => ({ id: 'lightOff', label: 'act.lightOff', duration: 1, effects: {}, light: 'off', autonomous: false });
-/** parar um pouco diante do quadro: diverte pouco, mas quem é criativo aprende */
-const admire = (fun: number): InteractionDef => ({
-  id: 'admire',
-  label: 'act.admire',
-  duration: 15,
-  effects: { fun },
-  until: 'fun',
-  autoBelow: 60,
-  skill: { id: 'creativity', xpPerMinute: 0.2 },
-});
-
-// ---------- bloco 1: cuidados com a casa ----------
-// Interações de cuidado só aparecem quando há o que fazer (sujeira, objeto
-// quebrado, desgaste, lixeira com lixo). Veja sim/upkeep.ts.
-const clean = (): InteractionDef => ({
-  id: 'clean',
-  label: 'act.clean',
-  duration: 60,
-  effects: { hygiene: -0.06, fun: -0.03 },
-  care: 'clean',
-  skill: { id: 'tidiness', xpPerMinute: 0.8 },
-});
-const repair = (): InteractionDef => ({
-  id: 'repair',
-  label: 'act.repair',
-  duration: 180,
-  effects: { hygiene: -0.05, fun: -0.02 },
-  care: 'repair',
-  skill: { id: 'handiness', xpPerMinute: 1 },
-});
-const service = (): InteractionDef => ({
-  id: 'service',
-  label: 'act.service',
-  duration: 60,
-  effects: { fun: 0.05 },
-  care: 'service',
-  autonomous: false,
-  skill: { id: 'handiness', xpPerMinute: 0.8 },
-});
-const dishes = (): InteractionDef => ({
-  id: 'dishes',
-  label: 'act.dishes',
-  duration: 4,
-  effects: { hygiene: -0.1 },
-  care: 'dishes',
-  hidden: true,
-  skill: { id: 'tidiness', xpPerMinute: 0.6 },
-});
+import { admire, clean, dishes, lightOff, lightOn, repair, service } from './interactions';
+import { FURNITURE } from './furniture';
 
 // Catálogo de objetos. Tudo aqui é dado: para criar um objeto novo, adicione
 // uma entrada, os textos em i18n e (opcional) um modelo em game/art/furniture.ts
@@ -64,6 +14,7 @@ const dishes = (): InteractionDef => ({
 const list: ObjectDef[] = [
   {
     id: 'fridge',
+    tier: 1, line: 'fridge',
     room: 'kitchen',
     name: 'obj.fridge',
     price: 600,
@@ -75,6 +26,7 @@ const list: ObjectDef[] = [
     interactions: [
       {
         id: 'meal',
+        atTable: true,
         label: 'act.meal',
         duration: 50,
         effects: { hunger: 2.0, energy: -0.02 },
@@ -88,6 +40,7 @@ const list: ObjectDef[] = [
       },
       {
         id: 'takeout',
+        atTable: true,
         label: 'act.takeout',
         duration: 25,
         effects: { hunger: 2.4, fun: 0.1 },
@@ -96,7 +49,7 @@ const list: ObjectDef[] = [
         leaves: { kind: 'plate', chance: 0.7 },
         trash: 8,
       },
-      { id: 'snack', label: 'act.snack', duration: 12, effects: { hunger: 2.2 }, until: 'hunger', cost: 2, trash: 3 },
+      { id: 'snack', label: 'act.snack', duration: 12, effects: { hunger: 2.2 }, until: 'hunger', cost: 2, trash: 3, atTable: true },
       clean(),
     ],
     upkeep: { dirt: 0.08 },
@@ -104,6 +57,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'bed',
+    tier: 1, line: 'bed', colors: ['mustard', 'red', 'blue', 'green', 'plum'],
     room: 'bedroom',
     name: 'obj.bed',
     price: 450,
@@ -140,6 +94,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'shower',
+    tier: 1, line: 'shower',
     room: 'bath',
     name: 'obj.shower',
     price: 650,
@@ -166,6 +121,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'toilet',
+    tier: 1, line: 'toilet',
     room: 'bath',
     name: 'obj.toilet',
     price: 300,
@@ -210,6 +166,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'sofa',
+    tier: 1, line: 'sofa', colors: ['blue', 'red', 'green', 'mustard', 'plum', 'brown'],
     room: 'living',
     name: 'obj.sofa',
     price: 520,
@@ -233,6 +190,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'tv',
+    tier: 1, line: 'tv',
     room: 'living',
     name: 'obj.tv',
     price: 700,
@@ -250,6 +208,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'bookshelf',
+    tier: 1, line: 'bookshelf',
     room: 'office',
     name: 'obj.bookshelf',
     price: 280,
@@ -326,6 +285,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'speaker',
+    tier: 1, line: 'stereo',
     room: 'living',
     name: 'obj.speaker',
     price: 380,
@@ -341,6 +301,7 @@ const list: ObjectDef[] = [
         label: 'act.dance',
         duration: 45,
         effects: { fun: 2.0, energy: -0.25 },
+        duo: { effects: { social: 0.5, fun: 0.2 }, friendship: 0.04 },
         until: 'fun',
         pose: 'dance',
         skill: { id: 'fitness', xpPerMinute: 0.2 },
@@ -364,6 +325,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'lamp',
+    tier: 1, line: 'lamp',
     name: 'obj.lamp',
     price: 120,
     category: 'lighting',
@@ -444,6 +406,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'stove',
+    tier: 1, line: 'stove',
     room: 'kitchen',
     name: 'obj.stove',
     price: 520,
@@ -455,6 +418,7 @@ const list: ObjectDef[] = [
     interactions: [
       {
         id: 'cook',
+        atTable: true,
         label: 'act.cook',
         duration: 45,
         effects: { hunger: 2.6, fun: 0.1 },
@@ -503,6 +467,7 @@ const list: ObjectDef[] = [
   },
   {
     id: 'dinette',
+    tier: 1, line: 'table', dining: 'both',
     room: 'dining',
     name: 'obj.dinette',
     price: 340,
@@ -526,6 +491,7 @@ const list: ObjectDef[] = [
   // ---------- comprados no catálogo (fatia 2) ----------
   {
     id: 'armchair',
+    tier: 1, line: 'armchair', colors: ['red', 'blue', 'green', 'mustard', 'plum', 'brown'],
     room: 'living',
     name: 'obj.armchair',
     price: 260,
@@ -804,4 +770,4 @@ const list: ObjectDef[] = [
   },
 ];
 
-export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries(list.map((o) => [o.id, o]));
+export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries([...list, ...FURNITURE].map((o) => [o.id, o]));

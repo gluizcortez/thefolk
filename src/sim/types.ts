@@ -79,9 +79,27 @@ export interface InteractionDef {
   trash?: number;
   /** bloco 3: interruptor da luminária ('on' acende, 'off' apaga) */
   light?: 'on' | 'off';
+  /**
+   * bloco 4: atividade a dois. Com outro folk usando a mesma interação no
+   * mesmo objeto ao mesmo tempo, cada um ganha estes efeitos a mais por minuto
+   * e a amizade sobe (por minuto) entre os dois.
+   */
+  duo?: DuoDef;
+  /** bloco 4: comida que se come sentado à mesa, se houver lugar livre */
+  atTable?: boolean;
+  /** bloco 4: só dá com o céu escuro (luneta) */
+  night?: boolean;
   /** dicas só para a renderização */
   pose?: Pose;
   onObject?: boolean;
+}
+
+/** Bloco 4: o que uma atividade a dois dá a mais quando tem parceiro. */
+export interface DuoDef {
+  /** efeitos extras por minuto, para cada um */
+  effects: Partial<Needs>;
+  /** amizade por minuto entre os dois (antes da afinidade e do cansaço) */
+  friendship: number;
 }
 
 export type CareKind = 'clean' | 'repair' | 'service' | 'empty' | 'dishes' | 'dump';
@@ -121,7 +139,14 @@ export type ObjectCategory =
   | 'electronics'
   | 'decor'
   | 'lighting'
-  | 'hobbies';
+  | 'hobbies'
+  | 'games';
+
+/** Bloco 4: faixa de preço (0 = barato, 1 = médio, 2 = caro). */
+export type Tier = 0 | 1 | 2;
+
+/** Bloco 4: papel do objeto numa refeição à mesa. */
+export type Dining = 'table' | 'seat' | 'both';
 
 export interface ObjectDef {
   id: string;
@@ -158,6 +183,14 @@ export interface ObjectDef {
   light?: number;
   /** bloco 3: que cômodo este objeto sugere (dá nome ao cômodo: 'kitchen', 'bath'...) */
   room?: string;
+  /** bloco 4: faixa de preço (padrão 1, médio) */
+  tier?: Tier;
+  /** bloco 4: função que agrupa as faixas (cama, sofá, geladeira...) */
+  line?: string;
+  /** bloco 4: cores que dá para escolher na compra (a primeira é a padrão) */
+  colors?: string[];
+  /** bloco 4: mesa, lugar para sentar à mesa, ou os dois (mesa com cadeiras) */
+  dining?: Dining;
 }
 
 export type ObjectLayer = 'wall' | 'floor' | 'ceiling';
@@ -622,6 +655,16 @@ export interface WorldObject {
   state: ObjectState;
   /** bloco 3: luminária acesa */
   lit?: boolean;
+  /** bloco 4: cor escolhida na compra (padrão: a primeira de `colors`) */
+  color?: string;
+  /** bloco 4: tick da compra (sem isso, veio com a casa) */
+  bought?: number;
+  /** bloco 4: minutos de uso desde que chegou (desvaloriza) */
+  used?: number;
+  /** bloco 4: minutos de uso por morador (id) */
+  uses?: Record<string, number>;
+  /** bloco 4: de quem é o objeto querido (id do morador) */
+  beloved?: number;
 }
 
 export interface ObjectState {
@@ -682,6 +725,8 @@ export interface Action {
   slot?: number;
   /** bloco 3: já viu se precisava acender a luz antes de começar */
   lightChecked?: boolean;
+  /** bloco 4: comida já servida, levada para comer neste lugar à mesa */
+  eatAt?: number;
   phase: ActionPhase;
   elapsed: number;
 }
@@ -876,7 +921,9 @@ export type Command =
   | { type: 'cancel'; folkId: number; actionId: number }
   | { type: 'setAutonomy'; folkId: number; on: boolean }
   | { type: 'setSpeed'; speed: Speed }
-  | { type: 'buy'; defId: string; x: number; y: number; rot: Rotation }
+  | { type: 'buy'; defId: string; x: number; y: number; rot: Rotation; color?: string }
+  | { type: 'undoBuy' }
+  | { type: 'closeBuy' }
   | { type: 'sell'; objectId: number }
   | { type: 'move'; objectId: number; x: number; y: number; rot: Rotation }
   | { type: 'queueSocial'; folkId: number; otherId: number; socialId: string }

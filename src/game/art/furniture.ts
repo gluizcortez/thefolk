@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ball, box, colorMat, cyl, fronted, lathe, rbox, rod, setShadows, texMat, tileUV } from './build';
-import { PAL, seeded, shade } from './palette';
+import { PAL, mix, seeded, shade } from './palette';
+import { FURNITURE4 } from './furniture4';
 import { getTexture } from './textures';
 
 // Modelos 3D dos objetos. As formas são arredondadas, com esmalte, vinil e
@@ -32,25 +33,28 @@ export interface FurnitureModel {
 }
 
 export interface FurnitureSpec {
-  build(seed: number): FurnitureModel;
+  /** `paint` = cor escolhida na compra (bloco 4), quando o objeto tem cores */
+  build(seed: number, paint?: number): FurnitureModel;
   facing?: 'S' | 'E';
   /** onde o folk senta, deita ou fica quando está "em cima" do objeto */
   sit?: Anchor[];
   lie?: Anchor;
+  /** bloco 4: cama de dois lugares (um lugar por vaga) */
+  lies?: Anchor[];
   stand?: Anchor;
 }
 
-const chrome = () => texMat('chrome', { gloss: 1 });
-const porcelain = () => colorMat(PAL.porcelain, { gloss: 0.8 });
-const enamelMat = () => texMat('enamel', { gloss: 0.6 });
+export const chrome = () => texMat('chrome', { gloss: 1 });
+export const porcelain = () => colorMat(PAL.porcelain, { gloss: 0.8 });
+export const enamelMat = () => texMat('enamel', { gloss: 0.6 });
 
-function group(...parts: THREE.Object3D[]): THREE.Group {
+export function group(...parts: THREE.Object3D[]): THREE.Group {
   const g = new THREE.Group();
-  g.add(...parts);
+  if (parts.length) g.add(...parts);
   return g;
 }
 
-function feet(w: number, d: number, h: number, mat: THREE.Material, r = 0.03): THREE.Mesh[] {
+export function feet(w: number, d: number, h: number, mat: THREE.Material, r = 0.03): THREE.Mesh[] {
   const out: THREE.Mesh[] = [];
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) out.push(cyl(r, r * 0.8, h, 8, mat, (sx * (w - r * 2)) / 2, 0, (sz * (d - r * 2)) / 2));
   return out;
@@ -58,7 +62,7 @@ function feet(w: number, d: number, h: number, mat: THREE.Material, r = 0.03): T
 
 // ---------- cozinha ----------
 
-const fridge: FurnitureSpec = {
+export const fridge: FurnitureSpec = {
   build() {
     const g = group(
       rbox(0.8, 1.78, 0.68, 0.05, colorMat(PAL.enamel, { gloss: 0.6 }), 0, 0.02, -0.06),
@@ -72,7 +76,7 @@ const fridge: FurnitureSpec = {
   },
 };
 
-const stove: FurnitureSpec = {
+export const stove: FurnitureSpec = {
   build() {
     const side = enamelMat();
     const steel = colorMat(0x3a3d42, { gloss: 0.7 });
@@ -135,7 +139,7 @@ const counter: FurnitureSpec = {
 };
 
 /** Cadeira de cozinha de tubo cromado e assento de vinil, com a frente para +z. */
-function chair(vinyl: THREE.Material): THREE.Group {
+export function chair(vinyl: THREE.Material): THREE.Group {
   const m = chrome();
   const g = group(
     rbox(0.4, 0.07, 0.4, 0.03, vinyl, 0, 0.4, 0),
@@ -221,10 +225,10 @@ const MATTRESS_TOP = 0.5;
 
 const bed: FurnitureSpec = {
   lie: { x: 0, y: MATTRESS_TOP + 0.11, z: 0.9, heading: 0 },
-  build() {
+  build(_seed, paint) {
     const wood = texMat('walnut', { gloss: 0.3 });
     const white = colorMat(0xf4f1e6);
-    const duvet = tileUV(box(0.9, 0.08, 1.24, texMat('duvet'), 0, MATTRESS_TOP, 0.3), 1.5, 2);
+    const duvet = tileUV(box(0.9, 0.08, 1.24, texMat('duvet', paint ? { color: mix(0xffffff, paint, 0.7) } : {}), 0, MATTRESS_TOP, 0.3), 1.5, 2);
     const g = group(
       ...feet(0.9, 1.9, 0.14, wood, 0.04),
       box(0.92, 0.16, 1.92, wood, 0, 0.12, 0),
@@ -252,7 +256,7 @@ const bed: FurnitureSpec = {
 
 // ---------- banheiro ----------
 
-const shower: FurnitureSpec = {
+export const shower: FurnitureSpec = {
   stand: { x: 0, y: 0.06, z: 0, heading: 0 },
   build(seed) {
     const glass = colorMat(PAL.glass, { opacity: 0.25, unique: true, gloss: 0.8 });
@@ -302,7 +306,7 @@ const shower: FurnitureSpec = {
   },
 };
 
-const toilet: FurnitureSpec = {
+export const toilet: FurnitureSpec = {
   sit: [{ x: 0, y: 0.45, z: 0.02, heading: 0 }],
   build() {
     const p = porcelain();
@@ -389,9 +393,9 @@ const sofa: FurnitureSpec = {
     { x: -0.4, y: 0.43, z: 0.06, heading: 0 },
     { x: 0.4, y: 0.43, z: 0.06, heading: 0 },
   ],
-  build() {
-    const fab = texMat('fabric', { color: PAL.sofa });
-    const light = texMat('fabric', { color: shade(PAL.sofa, 1.2) });
+  build(_seed, paint) {
+    const fab = texMat('fabric', { color: paint ?? PAL.sofa });
+    const light = texMat('fabric', { color: shade(paint ?? PAL.sofa, 1.2) });
     const wood = texMat('walnut');
     const g = group(
       ...feet(1.8, 0.78, 0.1, wood, 0.035),
@@ -412,7 +416,7 @@ const sofa: FurnitureSpec = {
   },
 };
 
-const tv: FurnitureSpec = {
+export const tv: FurnitureSpec = {
   facing: 'E',
   build() {
     const oak = texMat('oak', { gloss: 0.3 });
@@ -607,9 +611,9 @@ const lamp: FurnitureSpec = {
 
 const armchair: FurnitureSpec = {
   sit: [{ x: 0, y: 0.43, z: 0.05, heading: 0 }],
-  build() {
-    const fab = texMat('fabric', { color: 0x9c3b2c });
-    const light = texMat('fabric', { color: 0xbb5640 });
+  build(_seed, paint) {
+    const fab = texMat('fabric', { color: paint ? shade(paint, 0.85) : 0x9c3b2c });
+    const light = texMat('fabric', { color: paint ?? 0xbb5640 });
     const wood = texMat('walnut', { gloss: 0.3 });
     const g = group(
       ...feet(0.7, 0.66, 0.12, wood, 0.03),
@@ -1204,7 +1208,7 @@ const DETAILS: Record<string, (g: THREE.Group, seed: number) => void> = {
 // com rot 0); a luminária de teto pende do forro; o tapete é rente ao chão.
 
 /** z da face da parede de trás, vista do centro do tile */
-const WALL_FACE = -0.5 + 0.09;
+export const WALL_FACE = -0.5 + 0.09;
 
 const ceilinglamp: FurnitureSpec = {
   build() {
@@ -1240,7 +1244,7 @@ const ceilinglamp: FurnitureSpec = {
   },
 };
 
-function framed(w: number, h: number, y: number, art: THREE.Material, frameCol: number, depth = 0.05): THREE.Group {
+export function framed(w: number, h: number, y: number, art: THREE.Material, frameCol: number, depth = 0.05): THREE.Group {
   const wood = colorMat(frameCol, { gloss: 0.5 });
   const g = group(
     box(w, h, depth, [wood, wood, wood, wood, art, wood], 0, y, WALL_FACE + depth / 2),
@@ -1336,11 +1340,11 @@ const SPECS: Record<string, FurnitureSpec> = {
 };
 
 export function furnitureSpec(art: string): FurnitureSpec {
-  return SPECS[art] ?? fallback;
+  return SPECS[art] ?? FURNITURE4[art] ?? fallback;
 }
 
-export function buildFurniture(art: string, seed: number): FurnitureModel {
-  const model = furnitureSpec(art).build(seed);
+export function buildFurniture(art: string, seed: number, paint?: number): FurnitureModel {
+  const model = furnitureSpec(art).build(seed, paint);
   DETAILS[art]?.(model.group, seed);
   setShadows(model.group);
   model.group.traverse((o) => {

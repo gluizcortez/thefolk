@@ -21,3 +21,4 @@ export * from './hustle';
 export * from './upkeep';
 export * from './services';
 export * from './rooms';
+export * from './furnish';
