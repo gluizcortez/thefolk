@@ -13,3 +13,4 @@ export * from './economy';
 export * from './career';
 export * from './relations';
 export * from './social';
+export * from './build';

@@ -1,3 +1,4 @@
+import { windowAmbience } from './build';
 import { skillBoost } from './skills';
 import type { Catalog, Folk, InteractionDef, NeedId, Needs, World } from './types';
 import { NEED_IDS } from './types';
@@ -34,7 +35,7 @@ export function needWeight(catalog: Catalog, folk: Folk, need: NeedId): number {
 
 /** Valor para onde a necessidade "ambiente" tende, dado o que há por perto. */
 export function ambienceTarget(world: World, catalog: Catalog, folk: Folk): number {
-  let sum = AMBIENCE_BASE;
+  let sum = AMBIENCE_BASE + windowAmbience(world, catalog, folk);
   for (const obj of world.objects) {
     const def = catalog.objects[obj.defId];
     if (!def || def.ambience === 0) continue;

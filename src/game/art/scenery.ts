@@ -250,7 +250,11 @@ function neighbor(x: number, z: number, w: number, d: number, variant: number, t
   return g;
 }
 
-export function buildScenery(grid: Grid): THREE.Group {
+/**
+ * `free(x, y)`: o tile do terreno está livre (grama e sem móvel)?
+ * Enfeites do quintal só aparecem onde o jogador não construiu nada.
+ */
+export function buildScenery(grid: Grid, free: (x: number, y: number) => boolean = () => true): THREE.Group {
   const g = new THREE.Group();
   const rnd = seeded(77);
   const { w, h } = grid;
@@ -315,24 +319,15 @@ export function buildScenery(grid: Grid): THREE.Group {
     neighbor(13, front + 14.5, 7, 5.5, 2, Math.PI),
   );
 
-  // canteiros de flores encostados na frente e na lateral da casa
-  let x0 = -1;
-  let x1 = -1;
-  let frontRow = -1;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (grid.floor[y * w + x] === 'grass') continue;
-      if (x0 < 0 || x < x0) x0 = x;
-      if (x > x1) x1 = x;
-      if (y > frontRow) frontRow = y;
-    }
-  }
-  if (frontRow >= 0) {
-    const z = frontRow + 1.45;
-    for (let x = x0; x <= x1; x++) {
-      if (grid.edges[`${x},${frontRow + 1},N`] === 'door') continue;
-      g.add(flowerBed(x + 0.5, z, 0.96, true));
-    }
+  // canteiros de flores encostados nas paredes de fora viradas para a rua
+  for (const [key, kind] of Object.entries(grid.edges)) {
+    if (kind === 'door') continue;
+    const [xs, ys, side] = key.split(',');
+    const x = Number(xs);
+    const y = Number(ys);
+    if (side !== 'N' || !free(x, y)) continue;
+    if (grid.floor[(y - 1) * w + x] === 'grass') continue;
+    g.add(flowerBed(x + 0.5, y + 0.45, 0.96, true));
   }
 
   // rua e calçada: carros, postes, lixeira e hidrante
@@ -345,7 +340,19 @@ export function buildScenery(grid: Grid): THREE.Group {
     hydrant(w / 2 - 3.5, front + 0.7),
   );
   // quintal: banco e bebedouro de passarinho na frente, varal na lateral
-  g.add(bench(4.6, front - 1.25, 0), birdbath(11.2, front - 1.3), clothesline(w - 0.5, 3, 7.5));
+  const yard = (x0: number, y0: number, x1: number, y1: number) => {
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        if (!free(x, y)) return false;
+        const sides = [`${x},${y},N`, `${x},${y + 1},N`, `${x},${y},W`, `${x + 1},${y},W`];
+        if (sides.some((k) => grid.edges[k])) return false;
+      }
+    }
+    return true;
+  };
+  if (yard(3, h - 2, 5, h - 1)) g.add(bench(4.6, front - 1.25, 0));
+  if (yard(10, h - 2, 12, h - 1)) g.add(birdbath(11.2, front - 1.3));
+  if (yard(w - 1, 2, w - 1, 8)) g.add(clothesline(w - 0.5, 3, 7.5));
 
   setShadows(g, true, true);
   ground.castShadow = false;

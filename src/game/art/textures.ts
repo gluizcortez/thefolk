@@ -253,6 +253,71 @@ const kitchen: Painter = (c, w, h, rnd) => {
   }
 };
 
+/** Taco em espinha de peixe, mel escuro. */
+const parquet: Painter = (c, w, h, rnd) => {
+  const base = 0x9a5a2a;
+  fill(c, shade(base, 0.45));
+  const s = 16;
+  for (let j = -1; j < h / s + 1; j++) {
+    for (let i = -1; i < w / s + 1; i++) {
+      const x = i * s;
+      const y = j * s;
+      const horiz = (i + j) % 2 === 0;
+      const tone = shade(base, 0.82 + rnd() * 0.34);
+      if (horiz) {
+        fill(c, tone, x + 1, y + 1, s * 2 - 2, s / 2 - 1);
+        fill(c, shade(tone, 0.92), x + 1, y + s / 2 + 1, s * 2 - 2, s / 2 - 2);
+      } else {
+        fill(c, tone, x + 1, y + 1, s / 2 - 1, s * 2 - 2);
+        fill(c, shade(tone, 1.08), x + s / 2 + 1, y + 1, s / 2 - 2, s * 2 - 2);
+      }
+      for (let k = 0; k < 3; k++) {
+        const gx = x + 2 + rnd() * (s - 4);
+        const gy = y + 2 + rnd() * (s - 4);
+        fill(c, shade(tone, rnd() > 0.5 ? 0.8 : 1.15), gx, gy, horiz ? 5 : 1, horiz ? 1 : 5, 0.5);
+      }
+    }
+  }
+  fill(c, 0xffffff, 0, 0, w, h, 0.04);
+};
+
+/** Linóleo xadrez, preto e creme, encerado. */
+const checker: Painter = (c, w, _h, rnd) => {
+  const n = 2;
+  const s = w / n;
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const col = (i + j) % 2 === 0 ? 0xeee4c8 : 0x2f3236;
+      fill(c, shade(col, 0.95 + rnd() * 0.08), i * s, j * s, s, s);
+      speckle(c, s, s, rnd, 40, [shade(col, 0.85), shade(col, 1.12)], 0.4);
+      fill(c, 0xffffff, i * s + 3, j * s + 3, s - 10, 2, 0.18);
+    }
+  }
+  line(c, 0, 0.5, w, 0.5, 0x000000, 0.25);
+  line(c, 0.5, 0, 0.5, w, 0x000000, 0.25);
+};
+
+/** Ardósia: placas cinza-esverdeadas de tamanhos diferentes. */
+const slate: Painter = (c, w, _h, rnd) => {
+  fill(c, 0x35383a);
+  const rows = [0, 22, 46, 64];
+  for (let r = 0; r < rows.length - 1; r++) {
+    let x = -rnd() * 20;
+    while (x < w) {
+      const len = 20 + rnd() * 26;
+      const base = [0x5d6a68, 0x4f5a5c, 0x6b6f63, 0x56605a][Math.floor(rnd() * 4)];
+      const y = rows[r] + 1;
+      const hh = rows[r + 1] - rows[r] - 2;
+      fill(c, base, x + 1, y, len - 2, hh);
+      for (let k = 0; k < 6; k++) {
+        fill(c, shade(base, rnd() > 0.5 ? 0.82 : 1.18), x + 2 + rnd() * (len - 8), y + 1 + rnd() * (hh - 3), 3 + rnd() * 5, 1, 0.55);
+      }
+      fill(c, 0xffffff, x + 1, y, len - 2, 1, 0.16);
+      x += len;
+    }
+  }
+};
+
 const road: Painter = (c, w, h, rnd) => {
   fill(c, PAL.road);
   speckle(c, w, h, rnd, 700, [0x5d5f66, 0x3e4046, 0x6a6c73, 0x34363b], 0.65);
@@ -396,6 +461,40 @@ const wallExterior = wall(PAL.brick, (c, w, h, by, rnd) => {
   for (let x = 0; x < w; x += 21) fill(c, 0x000000, x, by(10), 1, 10, 0.3);
   fill(c, 0xffffff, 0, by(10), w, 1, 0.35);
   crown(c, w, PAL.white);
+});
+
+/** Reboco caiado, liso, com rodapé de madeira clara. */
+const wallPlaster = wall(0xe7dcc2, (c, w, h, by, rnd) => {
+  mottle(c, w, h, rnd, 40, 0xe7dcc2, 0.35);
+  baseboard(c, w, by, PAL.pine);
+  crown(c, w, PAL.white);
+});
+
+/** Papel de listas largas, vinho e rosa-velho. */
+const wallStripes = wall(0xd9a7a0, (c, w, h, by) => {
+  for (let x = 0; x < w; x += 16) {
+    fill(c, 0x9c3f45, x, 0, 6, h, 0.85);
+    fill(c, 0xf3e3c8, x + 7, 0, 1, h, 0.7);
+    fill(c, 0xf3e3c8, x + 14, 0, 1, h, 0.7);
+  }
+  baseboard(c, w, by, 0x5b3920);
+  crown(c, w, PAL.trim);
+});
+
+/** Lambri de madeira até o teto, em tábuas verticais. */
+const wallPanel = wall(PAL.pine, (c, w, h, by, rnd) => {
+  for (let x = 0; x < w; x += 8) {
+    const tone = shade(PAL.pine, 0.78 + rnd() * 0.3);
+    fill(c, tone, x, 0, 8, h);
+    for (let k = 0; k < 3; k++) {
+      const gx = x + 1 + rnd() * 6;
+      line(c, gx, 0, gx + rnd() * 2 - 1, h, shade(tone, rnd() > 0.5 ? 0.82 : 1.12), 0.4);
+    }
+    fill(c, 0x000000, x, 0, 1, h, 0.4);
+    fill(c, 0xffffff, x + 1, 0, 1, h, 0.15);
+  }
+  baseboard(c, w, by, 0x6e4427, 10);
+  crown(c, w, 0x8f5d33);
 });
 
 function windowTex(inside: boolean, curtain: number): Painter {
@@ -1337,6 +1436,9 @@ const SPECS: Record<string, Spec> = {
   carpet: { w: 64, h: 64, paint: carpet, repeat: true, grain: 10 },
   tile: { w: 64, h: 64, paint: tile, repeat: true, grain: 4 },
   kitchen: { w: 128, h: 128, paint: kitchen, repeat: true, grain: 8 },
+  parquet: { w: 64, h: 64, paint: parquet, repeat: true, grain: 6 },
+  checker: { w: 64, h: 64, paint: checker, repeat: true, grain: 4 },
+  slate: { w: 64, h: 64, paint: slate, repeat: true, grain: 8 },
   road: { w: 64, h: 64, paint: road, repeat: true, grain: 8 },
   sidewalk: { w: 64, h: 64, paint: sidewalk, repeat: true, grain: 7 },
   wallLiving: { w: 64, h: 160, paint: wallLiving, grain: 5 },
@@ -1344,11 +1446,15 @@ const SPECS: Record<string, Spec> = {
   wallBath: { w: 64, h: 160, paint: wallBath, grain: 4 },
   wallKitchen: { w: 64, h: 160, paint: wallKitchen, grain: 5 },
   wallExterior: { w: 64, h: 160, paint: wallExterior, grain: 9 },
+  wallPlaster: { w: 64, h: 160, paint: wallPlaster, grain: 6 },
+  wallStripes: { w: 64, h: 160, paint: wallStripes, grain: 5 },
+  wallPanel: { w: 64, h: 160, paint: wallPanel, grain: 5 },
   windowOut: { w: 64, h: 96, paint: windowTex(false, 0), grain: 3 },
   'windowIn:wood': { w: 64, h: 96, paint: windowTex(true, 0xb5322c), grain: 3 },
   'windowIn:carpet': { w: 64, h: 96, paint: windowTex(true, 0xd8b04a), grain: 3 },
   'windowIn:tile': { w: 64, h: 96, paint: windowTex(true, 0xeef0ea), grain: 3 },
   'windowIn:kitchen': { w: 64, h: 96, paint: windowTex(true, 0x2f8a86), grain: 3 },
+  'windowIn:lace': { w: 64, h: 96, paint: windowTex(true, 0xf1e6c6), grain: 3 },
   enamel: { w: 32, h: 32, paint: enamel, grain: 2 },
   fridgeFront: { w: 64, h: 128, paint: fridgeFront, grain: 2 },
   stoveFront: { w: 64, h: 64, paint: stoveFront, grain: 2 },

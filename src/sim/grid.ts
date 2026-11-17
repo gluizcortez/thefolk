@@ -1,4 +1,9 @@
-import type { Catalog, Grid, ObjectDef, Rotation, Side, Vec, World, WorldObject } from './types';
+import type { Catalog, EdgeKind, Grid, ObjectDef, Rotation, Side, Vec, World, WorldObject } from './types';
+
+/** Parede e janela fecham a passagem; porta (ou borda vazia) deixa passar. */
+export function blocksStep(kind: EdgeKind | undefined): boolean {
+  return kind !== undefined && kind !== 'door';
+}
 
 /** Ordem em que um quarto de volta leva cada lado ao seguinte. */
 const SIDE_ORDER: Side[] = ['S', 'E', 'N', 'W'];
@@ -74,7 +79,7 @@ export function buildNav(world: World, catalog: Catalog): Nav {
     isFree,
     canStep(ax, ay, bx, by) {
       if (!isFree(bx, by)) return false;
-      return grid.edges[edgeKey(ax, ay, bx, by)] !== 'wall';
+      return !blocksStep(grid.edges[edgeKey(ax, ay, bx, by)]);
     },
   };
 }

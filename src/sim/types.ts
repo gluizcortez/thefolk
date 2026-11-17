@@ -266,8 +266,43 @@ export interface NeedDef {
   moodWeight: number;
 }
 
+// ---------- Construção ----------
+
+/** Piso que dá para pôr num tile pelo modo construção. */
+export interface FloorDef {
+  id: string;
+  /** chave de texto */
+  name: string;
+  /** tostões por tile */
+  price: number;
+  /** piso de fora (grama): o tile conta como quintal, não como cômodo */
+  outdoor?: boolean;
+}
+
+/** Revestimento de uma face de parede (papel, azulejo, tijolo...). */
+export interface CoveringDef {
+  id: string;
+  name: string;
+  /** tostões por face de parede (um lado de um trecho de 1 m) */
+  price: number;
+}
+
+/** Peças de parede: preço por trecho de parede, porta e janela. */
+export interface BuildParts {
+  wall: { price: number };
+  door: { price: number };
+  window: {
+    price: number;
+    /** quanto cada janela por perto soma ao ambiente */
+    ambience: number;
+  };
+}
+
 export interface Catalog {
   needs: Record<NeedId, NeedDef>;
+  floors: Record<string, FloorDef>;
+  coverings: Record<string, CoveringDef>;
+  parts: BuildParts;
   objects: Record<string, ObjectDef>;
   traits: Record<string, TraitDef>;
   socials: Record<string, SocialDef>;
@@ -278,7 +313,8 @@ export interface Catalog {
 
 // ---------- Estado ----------
 
-export type EdgeKind = 'wall' | 'door';
+/** Janela fecha a passagem como parede; porta deixa passar. */
+export type EdgeKind = 'wall' | 'door' | 'window';
 
 export interface Grid {
   w: number;
@@ -290,6 +326,12 @@ export interface Grid {
    * "x,y,N" = borda norte do tile (x,y); "x,y,W" = borda oeste.
    */
   edges: Record<string, EdgeKind>;
+  /**
+   * Revestimento de cada face de parede, por tile e lado: "x,y,S" é a face
+   * da parede ao sul do tile (x,y), vista de dentro dele. Face sem entrada
+   * usa o acabamento padrão (pelo piso do tile, ou tijolo do lado de fora).
+   */
+  coverings: Record<string, string>;
 }
 
 /** 0 = frente para o sul; cada passo gira um quarto de volta (S → E → N → W). */
@@ -439,4 +481,11 @@ export type Command =
   | { type: 'queueSocial'; folkId: number; otherId: number; socialId: string }
   | { type: 'invite'; folkId: number; neighborId: number }
   | { type: 'takeJob'; folkId: number; careerId: string }
-  | { type: 'quitJob'; folkId: number };
+  | { type: 'quitJob'; folkId: number }
+  // modo construção: linhas de paredes vão de vértice a vértice do grid
+  | { type: 'buildWalls'; x0: number; y0: number; x1: number; y1: number }
+  | { type: 'eraseWalls'; x0: number; y0: number; x1: number; y1: number }
+  | { type: 'placeOpening'; edge: string; kind: 'door' | 'window' }
+  | { type: 'paintFloor'; x0: number; y0: number; x1: number; y1: number; floorId: string }
+  | { type: 'paintWalls'; faces: string[]; coveringId: string }
+  | { type: 'undoBuild' };

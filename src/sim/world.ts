@@ -18,6 +18,7 @@ export function gridFromMap(
   rows: string[],
   styles: Record<string, RoomStyle>,
   doors: string[],
+  windows: string[] = [],
 ): Grid {
   const h = rows.length;
   const w = rows[0].length;
@@ -44,7 +45,11 @@ export function gridFromMap(
     if (edges[key] !== 'wall') throw new Error(`porta fora de uma parede: ${key}`);
     edges[key] = 'door';
   }
-  return { w, h, floor, edges };
+  for (const key of windows) {
+    if (edges[key] !== 'wall') throw new Error(`janela fora de uma parede: ${key}`);
+    edges[key] = 'window';
+  }
+  return { w, h, floor, edges, coverings: {} };
 }
 
 export interface FolkSeed {

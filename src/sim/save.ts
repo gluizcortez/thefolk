@@ -1,9 +1,9 @@
-import type { World } from './types';
+import type { Grid, World } from './types';
 import type { NeighborSeed } from './world';
 import { firstBillAfter, seedNeighbors } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -50,7 +50,39 @@ const migrations: Record<number, Migration> = {
     world.lastDropIn = tick;
     return { ...save, world };
   },
+  // fatia 4: modo construção. Janelas passam a ser bordas de verdade (antes
+  // eram só enfeite, desenhadas pela tela em parte das paredes de fora) e as
+  // faces de parede ganham revestimento próprio.
+  3: (save) => {
+    const world = { ...(save.world as Obj) };
+    const grid = { ...(world.grid as Obj) } as unknown as Grid;
+    grid.edges = { ...grid.edges };
+    for (const key of legacyWindows(grid)) grid.edges[key] = 'window';
+    grid.coverings = {};
+    world.grid = grid;
+    return { ...save, world };
+  },
 };
+
+/**
+ * Onde a tela da fatia 3 desenhava janelas: paredes entre dentro e fora em
+ * que (2x + y) é múltiplo de 3. A migração vira essas paredes em janelas para
+ * a casa continuar com a mesma cara.
+ */
+export function legacyWindows(grid: Grid): string[] {
+  const indoor = (x: number, y: number) =>
+    x >= 0 && y >= 0 && x < grid.w && y < grid.h && grid.floor[y * grid.w + x] !== 'grass';
+  const out: string[] = [];
+  for (const [key, kind] of Object.entries(grid.edges)) {
+    if (kind !== 'wall') continue;
+    const [xs, ys, side] = key.split(',');
+    const x = Number(xs);
+    const y = Number(ys);
+    const back = side === 'N' ? indoor(x, y - 1) : indoor(x - 1, y);
+    if (indoor(x, y) !== back && (x * 2 + y) % 3 === 0) out.push(key);
+  }
+  return out;
+}
 
 export class SaveError extends Error {}
 

@@ -7,6 +7,7 @@ import {
   applyDelta,
   availableSocials,
   coolRelations,
+  SAVE_VERSION,
   deserialize,
   friendshipLabel,
   relationOf,
@@ -378,7 +379,7 @@ describe('determinismo e save com várias pessoas', () => {
     delete v2.world.pendingVisits;
     delete v2.world.lastDropIn;
     const loaded = deserialize(v2, { neighbors: NEIGHBORS });
-    expect(loaded.version).toBe(3);
+    expect(loaded.version).toBe(SAVE_VERSION);
     expect(loaded.world.folks.every((f) => f.visit === null)).toBe(true);
     expect(loaded.world.neighbors).toHaveLength(NEIGHBORS.length);
     const ids = new Set([...loaded.world.folks.map((f) => f.id), ...loaded.world.objects.map((o) => o.id)]);

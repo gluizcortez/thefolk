@@ -1,5 +1,5 @@
 import type { Nav } from './grid';
-import { edgeKey } from './grid';
+import { blocksStep, edgeKey } from './grid';
 import { moodOf } from './needs';
 import { affinity, knows, memoryWeight, relationOf } from './relations';
 import type { Catalog, Folk, SocialCategory, SocialDef, Vec, World } from './types';
@@ -88,7 +88,7 @@ const ORTHO: Vec[] = [
 export function adjacent(world: World, a: Vec, b: Vec): boolean {
   const d = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
   if (d !== 1) return false;
-  return world.grid.edges[edgeKey(a.x, a.y, b.x, b.y)] !== 'wall';
+  return !blocksStep(world.grid.edges[edgeKey(a.x, a.y, b.x, b.y)]);
 }
 
 /**
@@ -101,7 +101,7 @@ export function talkTiles(world: World, nav: Nav, b: Folk, a: Folk): Vec[] {
     const x = b.x + d.x;
     const y = b.y + d.y;
     if (!nav.isFree(x, y)) continue;
-    if (world.grid.edges[edgeKey(b.x, b.y, x, y)] === 'wall') continue;
+    if (blocksStep(world.grid.edges[edgeKey(b.x, b.y, x, y)])) continue;
     const taken = world.folks.some((f) => f !== a && f !== b && !f.away && f.x === x && f.y === y);
     if (!taken) out.push({ x, y });
   }

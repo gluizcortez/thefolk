@@ -3,7 +3,8 @@ import { NEIGHBORS } from './neighbors';
 import { gridFromMap } from '../sim/world';
 
 // A casa pronta da fatia 1. Cada letra é um cômodo; paredes nascem sozinhas
-// entre letras diferentes. Portas são bordas: "x,y,N" = borda norte do tile.
+// entre letras diferentes. Portas e janelas são bordas: "x,y,N" = borda norte
+// do tile, "x,y,W" = borda oeste.
 const MAP = [
   '.................',
   '.................',
@@ -31,6 +32,7 @@ const ROOMS: Record<string, RoomStyle> = {
 };
 
 const DOORS = ['4,6,N', '9,6,N', '7,11,N'];
+const WINDOWS = ['5,2,N', '8,2,N', '11,2,N', '14,2,W', '3,3,W', '14,5,W', '3,6,W', '14,8,W', '3,9,W', '5,11,N', '8,11,N', '11,11,N'];
 
 /** tostões com que a casa começa */
 export const STARTING_FUNDS = 1500;
@@ -41,7 +43,7 @@ export function starterHouse(seed = 20001): WorldSeed {
   return {
     seed,
     startTick: 7 * 60, // dia 1, 07:00
-    grid: gridFromMap(MAP, ROOMS, DOORS),
+    grid: gridFromMap(MAP, ROOMS, DOORS, WINDOWS),
     objects: [
       { defId: 'bed', x: 3, y: 2 },
       { defId: 'bed', x: 5, y: 2 },

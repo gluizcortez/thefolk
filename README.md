@@ -12,13 +12,14 @@ paredes cheios de textura, móveis arredondados com esmalte e cromados, e gente
 de proporção adulta realista. Tudo é modelado em 3D e pintado por código, sem
 assets externos e sem copiar nenhum jogo.
 
-**Estado atual: fatia 3** (fatias 1 e 2 mais outros folks, conversas e
-relações). A moeda do jogo é o **tostão** (⟡).
+**Estado atual: fatia 4** (fatias 1 a 3 mais o modo construção: paredes,
+portas, janelas, pisos e revestimentos). A moeda do jogo é o **tostão** (⟡).
 
 > Saves antigos são convertidos sozinhos ao abrir. Da fatia 1: a casa ganha
 > ⟡ 1.500, o folk começa sem emprego e com as habilidades no zero. Da fatia 2:
 > a casa continua com quem morava nela, a vizinhança passa a existir e
-> ninguém conhece ninguém ainda.
+> ninguém conhece ninguém ainda. Da fatia 3: as janelas que eram só desenho
+> viram janelas de verdade, nos mesmos lugares, e a casa fica com a mesma cara.
 
 ## Rodando
 
@@ -61,6 +62,27 @@ npm run preview  # serve o dist/ localmente
   no catálogo e clique no chão; o chão fica verde onde cabe e vermelho onde não
   cabe. `R` gira, clique direito ou `Esc` desiste. Clicar em um objeto da casa
   abre Mover, Girar e Vender (a venda devolve 70% do valor).
+- **Modo construção**: botão **Construir** ou tecla `C`. O tempo para. Quatro
+  abas:
+  - **Paredes**: arraste de um canto do chão a outro para levantar uma linha
+    de parede (⟡ 14 o metro; trecho que já existe não é cobrado). "Derrubar"
+    apaga paredes, portas e janelas pelo mesmo arraste, de graça e sem
+    reembolso.
+  - **Portas e janelas**: clique numa parede (⟡ 90 a porta, ⟡ 70 a janela).
+    Porta deixa passar; janela não, mas clareia o **ambiente** de quem está
+    a até três tiles (até três janelas contam).
+  - **Pisos**: clique num tile ou arraste um retângulo; oito pisos, de ⟡ 8 a
+    ⟡ 15 o tile. Grama tira o piso (de graça) e o tile volta a ser quintal.
+  - **Revestimentos**: clique numa face de parede para revestir só aquele
+    lado; com `Shift`, o cômodo inteiro. Oito acabamentos, de ⟡ 3 a ⟡ 9.
+  Antes de soltar, a prévia mostra a obra em verde (dá) ou vermelho (não dá),
+  com o custo e o motivo ao lado do mouse. No modo construção o **botão
+  direito** arrasta a câmera. **Desfazer** (`Ctrl+Z`) volta a última obra e
+  devolve o que ela custou, até 40 passos.
+  O jogo recusa obra que prenda alguém sem saída para a rua, que deixe um
+  objeto sem lado para usar ou que passe parede no meio de um móvel. Cômodo
+  vazio pode ficar fechado (a porta vem depois). Paredes podem ir até a divisa
+  do lote.
 - **Moradores**: o jogo novo começa com dois, Tomé Varanda e Lia Sacada, que
   dividem a casa há pouco tempo. Troque quem você controla pelas fichas acima
   do cartão do folk, com `Tab` ou clicando no outro e escolhendo "Controlar".
@@ -119,7 +141,9 @@ src/
     relations.ts    relações dirigidas (amizade, romance, respeito), afinidade, lembranças
     social.ts       quem pode conversar com quem e a chance de o outro topar
     economy.ts      tostões, contas, preço de revenda e regras de onde um objeto cabe
-  data/       conteúdo como dados: objetos (com preço e categoria), traços,
+    build.ts        modo construção: planos de obra, custo, validação, desfazer
+  data/       conteúdo como dados: objetos (com preço e categoria), pisos,
+              revestimentos e preço de parede, porta e janela (build.ts), traços,
               necessidades, habilidades, carreiras, conversas (socials.ts),
               lembranças (memories.ts), vizinhos (neighbors.ts) e casa inicial
   game/       cena 3D (Three.js): só lê o estado e manda comandos
@@ -147,8 +171,23 @@ Decisões principais do núcleo:
   dão o mesmo futuro, e salvar e carregar não muda nada (há teste para isso).
 - **Estado puro**: `World` é JSON puro; o save é o próprio estado mais uma versão.
 - **Porta única**: o jogador só altera o mundo por `Sim.dispatch(comando)`.
-- **Paredes nas bordas** entre tiles (não ocupam tile); portas abrem a borda;
-  objetos bloqueiam os tiles que ocupam.
+- **Paredes nas bordas** entre tiles (não ocupam tile); portas abrem a borda,
+  paredes e janelas fecham; objetos bloqueiam os tiles que ocupam. Piso é por
+  tile, e revestimento é por face de parede (`grid.coverings["x,y,S"]` é a
+  face ao sul do tile x,y); face sem escolha segue o piso do cômodo.
+- **Obra como mudança**: todo comando de construção vira um `GridChange` (o
+  que muda e para quê). `planBuild` calcula custo e problema sem mexer em nada
+  (a prévia da tela usa a mesma função); `Sim.dispatch` aplica, cobra e guarda
+  a mudança inversa numa pilha de desfazer que não vai no save. Desfazer
+  passa pela mesma validação, porque um móvel pode ter sido posto onde a
+  parede estava.
+- **Validação de obra** (`checkGrid`): nenhuma parede dentro da área de um
+  objeto; todo folk que alcançava a calçada continua alcançando; todo objeto
+  que tinha um lado de uso alcançável continua tendo. A referência é sempre a
+  calçada, por onde as visitas chegam.
+- **Dentro e fora** vêm do piso (`FloorDef.outdoor`): grama é quintal; qualquer
+  outro piso é cômodo. Isso decide o corte de paredes da câmera e o lado de
+  fora (tijolo) das paredes.
 - **IA por utilidade**: cada interação anuncia efeitos por minuto. A nota é
   `ganho × urgência × peso do traço`, dividida por um custo de distância; o folk
   sorteia entre as melhores opções. A IA ignora o que a casa não pode pagar.
@@ -237,11 +276,15 @@ Decisões principais do núcleo:
 - **Carreira nova**: `src/data/careers.ts` (cargos com pagamento, horário, dias
   e exigências) e os nomes em i18n.
 - **Ritmo das necessidades**: `src/data/needs.ts`.
-- **Casa inicial**: `src/data/house.ts` (mapa em texto, portas e objetos). Duas
+- **Casa inicial**: `src/data/house.ts` (mapa em texto, portas, janelas e objetos). Duas
   letras com o mesmo `room` formam um cômodo só, sem parede entre elas: é assim
   que a cozinha fica aberta para a sala com outro piso.
-- **Piso ou parede novos**: a textura em `textures.ts` e o acabamento em
-  `FINISH` / `FLOORS`, em `src/game/art/house.ts`.
+- **Piso ou revestimento novo**: a entrada em `src/data/build.ts` (nome e
+  preço), o texto em i18n e a textura em `textures.ts`. Pisos usam a textura
+  com o mesmo id (registre o id em `FLOOR_ART`, em `src/game/art/house.ts`);
+  revestimentos são ligados à textura e à cortina da janela em `COVER_ART`, no
+  mesmo arquivo. Preço de parede, porta e janela e o ambiente da janela
+  também ficam em `data/build.ts`.
 - **Tradução**: copie `src/i18n/pt-BR.ts` e registre em `src/i18n/index.ts`.
 - **Arte definitiva**: troque o que `src/game/art/` devolve. `getTexture` pode
   passar a carregar imagens e `buildFurniture` / `FolkModel` podem carregar
@@ -254,10 +297,37 @@ Decisões principais do núcleo:
 1. **Fatia 1 (feita)**: um folk, casa pronta, necessidades, IA, fila, A*, relógio, save/load.
 2. **Fatia 2 (feita)**: emprego, dinheiro, habilidades e modo compra.
 3. **Fatia 3 (feita)**: outros folks, interações sociais e sistema de relações.
-4. Modo construção.
+4. **Fatia 4 (feita)**: modo construção.
 5. Carreiras e relações aprofundadas.
 
-## Limitações conhecidas da fatia 3
+## Limitações conhecidas da fatia 4
+
+- Um andar só, sem telhado, escada, porão, cercas, piscina ou terreno com
+  desnível. O lote tem o tamanho fixo de sempre (17 × 14).
+- Só um modelo de porta e um de janela, sempre do mesmo tamanho (1 m). Não há
+  porta dupla, arco, janela alta, portão nem porta trancada; portas continuam
+  sempre abertas no desenho.
+- Paredes só em linha reta pelas bordas dos tiles: nada de parede diagonal,
+  meia parede, mureta ou coluna solta.
+- "Dentro" é qualquer tile com piso que não seja grama, não um cômodo fechado
+  com teto. Um piso no meio do quintal conta como cômodo para o corte de
+  paredes e para o lado de dentro da parede.
+- Derrubar não devolve dinheiro, e trocar piso ou revestimento não reembolsa o
+  que estava lá. Só o desfazer devolve, e só a obra inteira (o traço todo).
+- A pilha de desfazer vale enquanto o jogo está aberto: não vai no save e some
+  ao carregar ou começar um jogo novo.
+- Construir não aumenta as contas da casa (só os móveis contam) nem o valor do
+  lote, e não existe vender a casa ou mudar de lote.
+- Janelas só mexem no ambiente (até +12 com três janelas perto). Não há luz do
+  dia entrando nem diferença entre cômodo com e sem janela à noite.
+- Pisos e revestimentos não mexem no ambiente, só no visual.
+- Quadros nas paredes, canteiros e enfeites do quintal (banco, bebedouro,
+  varal) continuam sendo cenário: aparecem sozinhos em paredes livres e somem
+  quando a obra ocupa o lugar deles.
+- No modo construção a mira das paredes inteiras pega a primeira parede que o
+  raio acerta; numa parede cortada (baixa), mira-se pelo chão perto dela.
+
+### Ainda valem da fatia 3
 
 - Fofoca, ciúme e reputação se espalhando pela rede ainda não existem. As
   lembranças já ficam guardadas (com peso) para a fatia 5 usar, mas hoje só
@@ -301,15 +371,15 @@ Decisões principais do núcleo:
   As contas são um valor único, sem detalhe de luz, água etc.
 - O catálogo tem 21 objetos, um modelo de cada (sem variações de cor ou de
   qualidade, sem "versão barata" e "versão cara").
-- Objetos giram, mas não ficam colados na parede sozinhos, não há desfazer no
-  modo compra e não dá para comprar paredes, portas ou pisos (fatia 4).
+- Objetos giram, mas não ficam colados na parede sozinhos e não há desfazer no
+  modo compra (só no modo construção).
 - Objetos comprados com o mesmo modelo dos de detalhe (o sofá, por exemplo)
   trazem junto o tapete decorativo do modelo.
 - Comida tem custo por refeição, mas não existe estoque de mantimentos nem
   compras de mercado.
 - As habilidades não têm efeito visual (o quadro do cavalete não melhora com a
   criatividade) e não dão dinheiro direto (vender quadros, por exemplo).
-- Uma única casa; sem construção ainda.
+- Uma única casa.
 - "Ambiente" é calculado por proximidade de objetos (raio em tiles), não por cômodo.
 - Sem morte: fome no zero só derruba o humor. Energia no zero causa desmaio e
   bexiga no zero causa um acidente.
@@ -327,8 +397,8 @@ Decisões principais do núcleo:
   na mão (livro, prato, fone, panela).
 - O fogão só é usado quando o jogador manda (a IA continua indo à geladeira), a
   bancada é só enfeite e a mesa com as duas cadeiras é um objeto único.
-- Quadros, canteiros de flores, portas abertas e janelas são só cenário: não
-  existem na simulação e as portas não abrem nem fecham.
+- Quadros, canteiros de flores e portas abertas são só cenário: não existem na
+  simulação e as portas não abrem nem fecham.
 - A imagem em baixa resolução e as cores de 16 bits são fixas; não há opção de
   alta resolução.
 - O desempenho só foi medido em navegador sem placa de vídeo; não foi testado

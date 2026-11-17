@@ -1,14 +1,41 @@
 import * as THREE from 'three';
 import { t } from '../i18n';
-import { NEED_IDS, TICKS_PER_SECOND, checkPlacement, clockOf, moodOf, objectSize } from '../sim';
-import type { Action, Folk, InteractionDef, NeedId, ObjectDef, RelDelta, SocialDef, Speed, WorldObject } from '../sim';
+import {
+  NEED_IDS,
+  TICKS_PER_SECOND,
+  checkPlacement,
+  clockOf,
+  edgeOfFace,
+  faceKey,
+  facesOfEdge,
+  formatMoney,
+  lineEdges,
+  moodOf,
+  objectSize,
+  planBuild,
+  roomFaces,
+} from '../sim';
+import type {
+  Action,
+  BuildCommand,
+  Folk,
+  InteractionDef,
+  NeedId,
+  ObjectDef,
+  RelDelta,
+  Side,
+  SocialDef,
+  Speed,
+  WorldObject,
+} from '../sim';
 import type { Expression } from './art/textures';
 import type { Hud } from '../ui/hud';
 import { FolkModel } from './art/folk';
 import type { FolkAnim } from './art/folk';
 import { buildFurniture, furnitureSpec } from './art/furniture';
 import type { Anchor, FurnitureModel, FurnitureSpec } from './art/furniture';
-import { House } from './art/house';
+import { COVER_ART, FLOOR_ART, House, LOW_H, TH, WALL_H } from './art/house';
+import { texMat } from './art/build';
 import { PAL } from './art/palette';
 import { buildScenery } from './art/scenery';
 import { getTexture } from './art/textures';
@@ -100,6 +127,16 @@ export class GameView {
   private ghostTile: { x: number; y: number } | null = null;
   private builtObjects = -1;
   private thumbs = new Map<string, string>();
+  private scenery: THREE.Group | null = null;
+  private builtGrid = -1;
+  /** prévia do modo construção (paredes fantasmas, piso, faces) */
+  private buildPreview = new THREE.Group();
+  private previewKey = '';
+  /** traço em andamento no modo construção (vértices ou tiles) */
+  private buildDrag: { start: { x: number; y: number }; cur: { x: number; y: number } } | null = null;
+  /** comando que um clique agora faria, já com a prévia montada */
+  private buildCmd: BuildCommand | null = null;
+  private shiftDown = false;
 
   private target = new THREE.Vector3();
   private azimuth = Math.PI / 4;
@@ -112,7 +149,7 @@ export class GameView {
   private last = 0;
   private lastSpeed: Speed = 1;
   private hover: Hover = {};
-  private pointer = { down: false, x: 0, y: 0, startX: 0, startY: 0, dragged: false };
+  private pointer = { down: false, x: 0, y: 0, startX: 0, startY: 0, dragged: false, building: false };
   private raycaster = new THREE.Raycaster();
   private tmp = new THREE.Vector3();
 
@@ -164,7 +201,7 @@ export class GameView {
     this.ghostPad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), flat(0x6fd06a, 0.45));
     this.ghostPad.rotation.x = -Math.PI / 2;
     this.ghostPad.visible = false;
-    this.scene.add(this.ring, this.hoverTile, this.hoverPad, this.ghostPad);
+    this.scene.add(this.ring, this.hoverTile, this.hoverPad, this.ghostPad, this.buildPreview);
 
     this.post.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), retroPass(this.frameBuffer.texture)));
 
@@ -199,14 +236,8 @@ export class GameView {
 
     const world = this.ctrl.world;
     const { grid } = world;
-    const occupied = new Set<string>();
-    for (const obj of world.objects) {
-      const def = this.ctrl.sim.defOf(obj);
-      if (!def) continue;
-      for (let dy = 0; dy < def.size.h; dy++) for (let dx = 0; dx < def.size.w; dx++) occupied.add(`${obj.x + dx},${obj.y + dy}`);
-    }
-    this.house = new House(grid, occupied);
-    this.worldRoot.add(buildScenery(grid), this.house.group);
+    this.scenery = null;
+    this.buildHouse();
     this.worldRoot.add(this.objectsRoot);
     this.rebuildObjects();
 
@@ -219,6 +250,40 @@ export class GameView {
     this.acc = 0;
     this.hover = {};
     this.hud.closeMenu();
+  }
+
+  /** Monta (ou refaz, depois de uma obra) a casa e o cenário em volta. */
+  private buildHouse(): void {
+    const world = this.ctrl.world;
+    const { grid } = world;
+    const dispose = (g: THREE.Object3D) =>
+      g.traverse((o) => {
+        if (o instanceof THREE.Mesh) o.geometry.dispose();
+      });
+    if (this.house) {
+      this.worldRoot.remove(this.house.group);
+      dispose(this.house.group);
+    }
+    if (this.scenery) {
+      this.worldRoot.remove(this.scenery);
+      dispose(this.scenery);
+    }
+    const occupied = new Set<string>();
+    for (const obj of world.objects) {
+      const def = this.ctrl.sim.defOf(obj);
+      if (!def) continue;
+      const size = objectSize(def, obj.rot);
+      for (let dy = 0; dy < size.h; dy++) for (let dx = 0; dx < size.w; dx++) occupied.add(`${obj.x + dx},${obj.y + dy}`);
+    }
+    const floors = this.ctrl.sim.catalog.floors;
+    this.house = new House(grid, occupied, floors);
+    const free = (x: number, y: number) =>
+      x >= 0 && y >= 0 && x < grid.w && y < grid.h && floors[grid.floor[y * grid.w + x]]?.outdoor === true && !occupied.has(`${x},${y}`);
+    this.scenery = buildScenery(grid, free);
+    this.worldRoot.add(this.scenery, this.house.group);
+    this.builtGrid = this.ctrl.gridVersion;
+    this.wallState = '';
+    this.previewKey = '';
   }
 
   /** Cria o modelo de quem chegou e tira o de quem foi embora. */
@@ -345,10 +410,22 @@ export class GameView {
     const el = this.renderer.domElement;
     el.addEventListener('pointerdown', (e) => {
       el.setPointerCapture(e.pointerId);
-      Object.assign(this.pointer, { down: true, x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, dragged: false });
+      // no modo construção o botão esquerdo traça; o direito arrasta a câmera
+      const building = this.ctrl.mode === 'build' && e.button === 0 && !this.hud.isMenuOpen();
+      Object.assign(this.pointer, { down: true, x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, dragged: false, building });
+      if (building) this.beginBuildDrag(e.clientX, e.clientY);
     });
     el.addEventListener('pointermove', (e) => {
       const p = this.pointer;
+      this.shiftDown = e.shiftKey;
+      if (this.ctrl.mode === 'build' && (!p.down || p.building)) {
+        if (p.down && Math.hypot(e.clientX - p.startX, e.clientY - p.startY) > CLICK_SLOP) p.dragged = true;
+        this.hover = {};
+        this.updateBuildHover(e.clientX, e.clientY);
+        p.x = e.clientX;
+        p.y = e.clientY;
+        return;
+      }
       if (p.down) {
         if (Math.hypot(e.clientX - p.startX, e.clientY - p.startY) > CLICK_SLOP) p.dragged = true;
         if (p.dragged) {
@@ -378,11 +455,18 @@ export class GameView {
     });
     el.addEventListener('pointerup', (e) => {
       const wasDrag = this.pointer.dragged;
+      const wasBuilding = this.pointer.building;
       this.pointer.down = false;
+      this.pointer.building = false;
+      if (wasBuilding) {
+        this.commitBuild(e.clientX, e.clientY);
+        return;
+      }
       if (wasDrag) return;
       if (e.button === 2) {
-        // clique direito desiste do que estava sendo posto
+        // clique direito desiste do que estava sendo posto (ou do traço)
         if (this.ctrl.placing) this.ctrl.placing = null;
+        if (this.buildDrag) this.cancelBuildDrag();
         return;
       }
       this.click(e.clientX, e.clientY);
@@ -390,6 +474,7 @@ export class GameView {
     el.addEventListener('pointerleave', () => {
       this.hover = {};
       this.hud.setTooltip(0, 0, null);
+      if (!this.pointer.down) this.clearBuildPreview();
     });
     el.addEventListener(
       'wheel',
@@ -401,8 +486,17 @@ export class GameView {
     );
     el.addEventListener('contextmenu', (e) => e.preventDefault());
 
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'Shift') this.shiftDown = false;
+    });
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
+      if (e.key === 'Shift') this.shiftDown = true;
+      if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        if (this.ctrl.mode === 'build') this.ctrl.undoBuild();
+        return;
+      }
       switch (e.code) {
         case 'Space':
           e.preventDefault();
@@ -425,6 +519,9 @@ export class GameView {
         case 'KeyB':
           this.hud.toggleBuyMode();
           break;
+        case 'KeyC':
+          this.hud.toggleBuildMode();
+          break;
         case 'Tab':
           e.preventDefault();
           this.ctrl.selectNext();
@@ -432,7 +529,9 @@ export class GameView {
         case 'Escape':
           if (this.hud.isMenuOpen()) this.hud.closeMenu();
           else if (this.ctrl.placing) this.ctrl.placing = null;
+          else if (this.buildDrag) this.cancelBuildDrag();
           else if (this.ctrl.mode === 'buy') this.hud.toggleBuyMode();
+          else if (this.ctrl.mode === 'build') this.hud.toggleBuildMode();
           break;
       }
     });
@@ -508,6 +607,7 @@ export class GameView {
       this.hud.closeMenu();
       return;
     }
+    if (this.ctrl.mode === 'build') return;
     if (this.ctrl.mode === 'buy') {
       if (this.ctrl.placing) {
         const tile = this.groundTile(clientX, clientY);
@@ -550,7 +650,11 @@ export class GameView {
 
   private frame(dt: number): void {
     if (this.builtVersion !== this.ctrl.worldVersion) this.rebuild();
-    if (this.builtObjects !== this.ctrl.objectsVersion) this.rebuildObjects();
+    if (this.builtObjects !== this.ctrl.objectsVersion) {
+      this.rebuildObjects();
+      this.buildHouse();
+    }
+    if (this.builtGrid !== this.ctrl.gridVersion) this.buildHouse();
     const world = this.ctrl.world;
 
     const rate = TICKS_PER_SECOND[world.speed];
@@ -588,6 +692,10 @@ export class GameView {
     this.showOutcomes();
     this.updateMarkers(dt);
     this.updateGhost();
+    if (this.ctrl.mode !== 'build' && (this.buildPreview.children.length > 0 || this.buildDrag)) {
+      this.buildDrag = null;
+      this.clearBuildPreview();
+    }
 
     this.renderer.setRenderTarget(this.frameBuffer);
     this.renderer.render(this.scene, this.camera);
@@ -873,6 +981,330 @@ export class GameView {
     (this.ghostPad.material as THREE.MeshBasicMaterial).color.setHex(ok && affordable ? 0x6fd06a : 0xe0533f);
   }
 
+  // ---------- modo construção ----------
+
+  /** Ponto do chão (y = 0) sob o mouse. */
+  private groundPoint(clientX: number, clientY: number): THREE.Vector3 | null {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    return this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+  }
+
+  /** Vértice do grid mais perto do mouse (cantos dos tiles). */
+  private vertexAt(clientX: number, clientY: number): { x: number; y: number } | null {
+    const p = this.groundPoint(clientX, clientY);
+    if (!p) return null;
+    const { w, h } = this.ctrl.world.grid;
+    return { x: THREE.MathUtils.clamp(Math.round(p.x), 0, w), y: THREE.MathUtils.clamp(Math.round(p.z), 0, h) };
+  }
+
+  private tileAt(clientX: number, clientY: number): { x: number; y: number } | null {
+    const p = this.groundPoint(clientX, clientY);
+    if (!p) return null;
+    const { w, h } = this.ctrl.world.grid;
+    const x = Math.floor(p.x);
+    const y = Math.floor(p.z);
+    return x >= 0 && y >= 0 && x < w && y < h ? { x, y } : null;
+  }
+
+  /**
+   * Face de parede sob o mouse: primeiro tenta acertar uma parede de verdade
+   * (vale para as inteiras, que ficam em pé na frente do chão); se não, usa a
+   * borda mais perto do ponto do chão.
+   */
+  private faceAt(clientX: number, clientY: number): string | null {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const walls = this.house.pickables();
+    const hit = this.raycaster.intersectObjects(
+      walls.map((w) => w.object),
+      true,
+    )[0];
+    if (hit) {
+      let o: THREE.Object3D | null = hit.object;
+      while (o && o.userData.edge === undefined) o = o.parent;
+      const edge = o?.userData.edge as string | undefined;
+      if (edge) {
+        const [xs, ys, side] = edge.split(',');
+        const front = side === 'N' ? hit.point.z > Number(ys) : hit.point.x > Number(xs);
+        return facesOfEdge(edge)[front ? 0 : 1];
+      }
+    }
+    const tile = this.tileAt(clientX, clientY);
+    const p = this.groundPoint(clientX, clientY);
+    if (!tile || !p) return null;
+    const fx = p.x - tile.x;
+    const fy = p.z - tile.y;
+    const sides: [Side, number][] = [
+      ['N', fy],
+      ['S', 1 - fy],
+      ['W', fx],
+      ['E', 1 - fx],
+    ];
+    sides.sort((a, b) => a[1] - b[1]);
+    return faceKey(tile.x, tile.y, sides[0][0]);
+  }
+
+  private beginBuildDrag(clientX: number, clientY: number): void {
+    const tool = this.ctrl.buildTool;
+    if (tool === 'wall' || tool === 'erase') {
+      const v = this.vertexAt(clientX, clientY);
+      if (v) this.buildDrag = { start: v, cur: v };
+    } else if (tool === 'floor') {
+      const t = this.tileAt(clientX, clientY);
+      if (t) this.buildDrag = { start: t, cur: t };
+    }
+    this.updateBuildHover(clientX, clientY);
+  }
+
+  private cancelBuildDrag(): void {
+    this.buildDrag = null;
+    this.pointer.building = false;
+    this.clearBuildPreview();
+  }
+
+  /** Monta o comando que o mouse está apontando e a prévia dele. */
+  private updateBuildHover(clientX: number, clientY: number): void {
+    const tool = this.ctrl.buildTool;
+    const drag = this.buildDrag;
+    let cmd: BuildCommand | null = null;
+    if (tool === 'wall' || tool === 'erase') {
+      const v = this.vertexAt(clientX, clientY);
+      if (drag && v) {
+        // a linha segue o eixo em que o mouse andou mais
+        const dx = Math.abs(v.x - drag.start.x);
+        const dy = Math.abs(v.y - drag.start.y);
+        drag.cur = dx >= dy ? { x: v.x, y: drag.start.y } : { x: drag.start.x, y: v.y };
+        const c = { x0: drag.start.x, y0: drag.start.y, x1: drag.cur.x, y1: drag.cur.y };
+        cmd = tool === 'wall' ? { type: 'buildWalls', ...c } : { type: 'eraseWalls', ...c };
+      } else if (v) {
+        this.showVertex(v);
+        this.hud.setTooltip(clientX, clientY, t(tool === 'wall' ? 'build.hint.wallStart' : 'build.hint.eraseStart'));
+        this.buildCmd = null;
+        return;
+      }
+    } else if (tool === 'floor') {
+      const tile = this.tileAt(clientX, clientY);
+      if (drag && tile) drag.cur = tile;
+      const a = drag?.start ?? tile;
+      const b = drag?.cur ?? tile;
+      if (a && b) cmd = { type: 'paintFloor', x0: a.x, y0: a.y, x1: b.x, y1: b.y, floorId: this.ctrl.floorId };
+    } else if (tool === 'door' || tool === 'window') {
+      const face = this.faceAt(clientX, clientY);
+      if (face) cmd = { type: 'placeOpening', edge: edgeOfFace(face), kind: tool };
+    } else if (tool === 'paint') {
+      const face = this.faceAt(clientX, clientY);
+      if (face) {
+        const [xs, ys] = face.split(',');
+        const faces = this.shiftDown ? roomFaces(this.ctrl.world.grid, Number(xs), Number(ys)) : [face];
+        if (faces.length) cmd = { type: 'paintWalls', faces, coveringId: this.ctrl.coveringId };
+      }
+    }
+    this.buildCmd = cmd;
+    if (!cmd) {
+      this.clearBuildPreview();
+      this.hud.setTooltip(0, 0, null);
+      return;
+    }
+    const plan = planBuild(this.ctrl.world, this.ctrl.sim.catalog, cmd);
+    const tip = plan.ok
+      ? plan.cost > 0
+        ? formatMoney(plan.cost)
+        : t('build.free')
+      : `${plan.cost > 0 ? `${formatMoney(plan.cost)} · ` : ''}${t(`problem.${plan.problem ?? 'invalid'}`)}`;
+    this.hud.setTooltip(clientX, clientY, tip);
+    const key = `${JSON.stringify(cmd)}|${plan.ok}|${this.ctrl.gridVersion}`;
+    if (key !== this.previewKey) {
+      this.previewKey = key;
+      this.drawPreview(cmd, plan.ok);
+    }
+  }
+
+  /** Solta o botão: o traço (ou o clique) vira obra. */
+  private commitBuild(clientX: number, clientY: number): void {
+    const tool = this.ctrl.buildTool;
+    if (this.hud.isMenuOpen()) {
+      this.hud.closeMenu();
+      return;
+    }
+    this.updateBuildHover(clientX, clientY);
+    const cmd = this.buildCmd;
+    this.buildDrag = null;
+    if (cmd) {
+      const ok = this.ctrl.commandOrExplain(cmd);
+      if (ok && cmd.type === 'placeOpening') this.addPing(...this.edgeCenter(cmd.edge));
+      if (ok && tool === 'floor' && cmd.type === 'paintFloor') this.addPing(cmd.x1, cmd.y1);
+    }
+    this.previewKey = '';
+    this.clearBuildPreview();
+    this.updateBuildHover(clientX, clientY);
+  }
+
+  private edgeCenter(edge: string): [number, number] {
+    const [xs, ys, side] = edge.split(',');
+    return side === 'N' ? [Number(xs), Number(ys) - 0.5] : [Number(xs) - 0.5, Number(ys)];
+  }
+
+  private clearBuildPreview(): void {
+    this.buildPreview.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        o.geometry.dispose();
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) if ((m as THREE.Material).userData.preview) (m as THREE.Material).dispose();
+      }
+    });
+    this.buildPreview.clear();
+    this.previewKey = '';
+    this.buildCmd = null;
+  }
+
+  private showVertex(v: { x: number; y: number }): void {
+    const key = `v|${v.x},${v.y}|${this.ctrl.buildTool}`;
+    if (key === this.previewKey) return;
+    this.clearBuildPreview();
+    this.previewKey = key;
+    const post = new THREE.Mesh(new THREE.BoxGeometry(TH + 0.08, 0.7, TH + 0.08), previewMat(this.ctrl.buildTool === 'erase' ? 0xe0533f : PAL.mustard, 0.85));
+    post.position.set(v.x, 0.35, v.y);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.18, 0.26, 16), previewMat(PAL.mustard, 0.9));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(v.x, 0.03, v.y);
+    this.buildPreview.add(post, ring);
+  }
+
+  /** Desenha a prévia: verde/amarelo onde dá, vermelho onde não dá. */
+  private drawPreview(cmd: BuildCommand, ok: boolean): void {
+    const keep = this.previewKey;
+    this.clearBuildPreview();
+    this.previewKey = keep;
+    this.buildCmd = cmd;
+    const grid = this.ctrl.world.grid;
+    const bad = 0xe0533f;
+    const edgeBox = (edge: string, h: number, len: number, color: number, opacity: number) => {
+      const [xs, ys, side] = edge.split(',');
+      const x = Number(xs);
+      const y = Number(ys);
+      const north = side === 'N';
+      const m = new THREE.Mesh(new THREE.BoxGeometry(north ? len : TH + 0.04, h, north ? TH + 0.04 : len), previewMat(color, opacity));
+      m.position.set(north ? x + 0.5 : x, h / 2, north ? y : y + 0.5);
+      m.renderOrder = 3;
+      this.buildPreview.add(m);
+    };
+
+    if (cmd.type === 'buildWalls' || cmd.type === 'eraseWalls') {
+      const edges = lineEdges(grid, cmd.x0, cmd.y0, cmd.x1, cmd.y1) ?? [];
+      for (const e of edges) {
+        const exists = !!grid.edges[e];
+        if (cmd.type === 'buildWalls') edgeBox(e, exists ? 0.5 : WALL_H * 0.75, 1, ok ? 0x6fd06a : bad, exists ? 0.3 : 0.55);
+        else edgeBox(e, exists ? WALL_H * 0.75 : 0.12, 1, exists ? bad : 0xffffff, exists ? 0.55 : 0.35);
+      }
+      for (const [vx, vy] of [
+        [cmd.x0, cmd.y0],
+        [cmd.x1, cmd.y1],
+      ]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(TH + 0.08, 0.8, TH + 0.08), previewMat(PAL.mustard, 0.9));
+        post.position.set(vx, 0.4, vy);
+        this.buildPreview.add(post);
+      }
+    } else if (cmd.type === 'placeOpening') {
+      const exists = !!grid.edges[cmd.edge];
+      const h = cmd.kind === 'door' ? 2.1 : 1.3;
+      edgeBox(cmd.edge, exists && this.house.isTallEdge(cmd.edge) ? h : Math.max(h * 0.5, LOW_H + 0.4), cmd.kind === 'door' ? 0.8 : 0.86, ok ? 0x6fd06a : bad, 0.6);
+    } else if (cmd.type === 'paintFloor') {
+      const kind = FLOOR_ART.includes(cmd.floorId) ? cmd.floorId : cmd.floorId === 'grass' ? 'grass' : 'wood';
+      const mat = ok ? previewTexMat(kind, 0.85) : previewMat(bad, 0.5);
+      const xa = Math.max(0, Math.min(cmd.x0, cmd.x1));
+      const xb = Math.min(grid.w - 1, Math.max(cmd.x0, cmd.x1));
+      const ya = Math.max(0, Math.min(cmd.y0, cmd.y1));
+      const yb = Math.min(grid.h - 1, Math.max(cmd.y0, cmd.y1));
+      const pos: number[] = [];
+      const uv: number[] = [];
+      const idx: number[] = [];
+      for (let y = ya; y <= yb; y++) {
+        for (let x = xa; x <= xb; x++) {
+          const b = pos.length / 3;
+          pos.push(x, 0, y, x + 1, 0, y, x, 0, y + 1, x + 1, 0, y + 1);
+          uv.push(x, -y, x + 1, -y, x, -(y + 1), x + 1, -(y + 1));
+          idx.push(b, b + 2, b + 1, b + 1, b + 2, b + 3);
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      geo.setIndex(idx);
+      // o piso aparece por cima de tudo: num cômodo ainda fechado, a parede
+      // inteira esconderia o chão
+      mat.depthTest = false;
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.y = 0.03;
+      mesh.renderOrder = 4;
+      const frame = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(xb - xa + 1, 0.02, yb - ya + 1)),
+        new THREE.LineBasicMaterial({ color: ok ? PAL.mustard : bad }),
+      );
+      frame.position.set((xa + xb + 1) / 2, 0.05, (ya + yb + 1) / 2);
+      this.buildPreview.add(mesh, frame);
+    } else if (cmd.type === 'paintWalls') {
+      const art = COVER_ART[cmd.coveringId];
+      for (const face of cmd.faces) {
+        const edge = edgeOfFace(face);
+        if (!grid.edges[edge]) continue;
+        const tall = this.house.isTallEdge(edge);
+        const h = tall ? WALL_H : LOW_H + 0.02;
+        const [xs, ys, side] = face.split(',');
+        const x = Number(xs);
+        const y = Number(ys);
+        const plane = new THREE.Mesh(new THREE.PlaneGeometry(1, h), ok && art ? previewTexMat(art.tex, 0.9) : previewMat(bad, 0.5));
+        if (ok && art) {
+          // a textura da parede cobre 2,6 m de altura
+          const uvs = plane.geometry.getAttribute('uv');
+          for (let i = 0; i < uvs.count; i++) uvs.setY(i, uvs.getY(i) * (h / WALL_H));
+        }
+        const off = TH / 2 + 0.012;
+        plane.renderOrder = 3;
+        if (side === 'N') {
+          plane.position.set(x + 0.5, h / 2, y + off);
+        } else if (side === 'S') {
+          plane.position.set(x + 0.5, h / 2, y + 1 - off);
+          plane.rotation.y = Math.PI;
+        } else if (side === 'W') {
+          plane.position.set(x + off, h / 2, y + 0.5);
+          plane.rotation.y = Math.PI / 2;
+        } else {
+          plane.position.set(x + 1 - off, h / 2, y + 0.5);
+          plane.rotation.y = -Math.PI / 2;
+        }
+        this.buildPreview.add(plane);
+      }
+    }
+  }
+
+  /**
+   * Amostra de piso ou revestimento para o catálogo do modo construção: o
+   * desenho da própria textura, sem luz.
+   */
+  swatch(texture: string, tall = false): string {
+    const key = `sw|${texture}|${tall}`;
+    const hit = this.thumbs.get(key);
+    if (hit) return hit;
+    const img = getTexture(texture).image as HTMLCanvasElement;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 64;
+    const ctx = canvas.getContext('2d')!;
+    ctx.imageSmoothingEnabled = false;
+    if (tall) {
+      // parede: a metade de baixo, com rodapé, que é onde está o desenho
+      const sh = Math.min(img.height, img.width * 1.5);
+      ctx.drawImage(img, 0, img.height - sh, img.width, sh, 10, 0, 44, 64);
+    } else {
+      ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, 64, 64);
+    }
+    const url = canvas.toDataURL();
+    this.thumbs.set(key, url);
+    return url;
+  }
+
   /**
    * Miniatura de um objeto para o catálogo, renderizada com o mesmo ângulo e
    * as mesmas cores de 16 bits do jogo. Fica em cache por id de desenho.
@@ -935,6 +1367,21 @@ export class GameView {
     this.thumbs.set(art, url);
     return url;
   }
+}
+
+/** Material da prévia de obra: cor chapada, meio transparente, por cima de tudo. */
+function previewMat(color: number, opacity: number): THREE.MeshBasicMaterial {
+  const m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide });
+  m.userData.preview = true;
+  return m;
+}
+
+/** Material da prévia com a textura do piso ou da parede escolhida. */
+function previewTexMat(texture: string, opacity: number): THREE.MeshBasicMaterial {
+  const base = texMat(texture);
+  const m = new THREE.MeshBasicMaterial({ map: base.map, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide });
+  m.userData.preview = true;
+  return m;
 }
 
 /**

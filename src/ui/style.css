@@ -1002,6 +1002,28 @@ button {
   color: #6a5a4c;
 }
 
+.item-glyph {
+  display: grid;
+  place-items: center;
+  font-size: 30px;
+  font-weight: 700;
+  color: #c9382f;
+  border: 2px dashed #c9b79a;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+.btn-undo {
+  margin-left: auto;
+  font-size: 12px;
+  padding: 3px 10px;
+}
+
+.btn-undo:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 @media (max-width: 900px) {
   .catalog {
     left: 14px;

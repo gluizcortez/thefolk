@@ -1,19 +1,21 @@
 import * as THREE from 'three';
-import type { Grid } from '../../sim';
+import type { Catalog, Grid } from '../../sim';
 import { box, colorMat, setShadows, texMat } from './build';
 import { PAL } from './palette';
 
 export type WallMode = 'cutaway' | 'down' | 'up';
 
 export const WALL_H = 2.6;
-const LOW_H = 0.28;
-const TH = 0.18;
+export const LOW_H = 0.28;
+export const TH = 0.18;
 const DOOR_H = 2.08;
 const DOOR_W = 0.8;
 
-export function isIndoor(grid: Grid, x: number, y: number): boolean {
+/** Tile com piso de dentro? Sem catálogo, só a grama conta como fora. */
+export function isIndoor(grid: Grid, x: number, y: number, floors?: Catalog['floors']): boolean {
   if (x < 0 || y < 0 || x >= grid.w || y >= grid.h) return false;
-  return grid.floor[y * grid.w + x] !== 'grass';
+  const f = grid.floor[y * grid.w + x];
+  return floors ? floors[f]?.outdoor !== true : f !== 'grass';
 }
 
 interface Finish {
@@ -21,18 +23,32 @@ interface Finish {
   window: string;
 }
 
-const FINISH: Record<string, Finish> = {
-  wood: { tex: 'wallLiving', window: 'windowIn:wood' },
-  carpet: { tex: 'wallBedroom', window: 'windowIn:carpet' },
-  tile: { tex: 'wallBath', window: 'windowIn:tile' },
+/** Textura de cada revestimento (ids de data/build.ts) e a cortina da janela. */
+export const COVER_ART: Record<string, Finish> = {
+  living: { tex: 'wallLiving', window: 'windowIn:wood' },
+  bedroom: { tex: 'wallBedroom', window: 'windowIn:carpet' },
+  bath: { tex: 'wallBath', window: 'windowIn:tile' },
   kitchen: { tex: 'wallKitchen', window: 'windowIn:kitchen' },
-  exterior: { tex: 'wallExterior', window: 'windowOut' },
+  plaster: { tex: 'wallPlaster', window: 'windowIn:lace' },
+  stripes: { tex: 'wallStripes', window: 'windowIn:lace' },
+  panel: { tex: 'wallPanel', window: 'windowIn:carpet' },
+  brick: { tex: 'wallExterior', window: 'windowIn:wood' },
 };
 
-/** Pisos que a casa sabe desenhar; qualquer outro cai no assoalho. */
-const FLOORS = ['wood', 'carpet', 'tile', 'kitchen'];
+const EXTERIOR: Finish = { tex: 'wallExterior', window: 'windowOut' };
 
-interface WallPiece {
+/** Revestimento de uma face sem escolha do jogador: segue o piso do cômodo. */
+const DEFAULT_COVER: Record<string, string> = {
+  wood: 'living',
+  carpet: 'bedroom',
+  tile: 'bath',
+  kitchen: 'kitchen',
+};
+
+/** Pisos que a casa sabe desenhar (textura com o mesmo nome); outros caem no assoalho. */
+export const FLOOR_ART = ['wood', 'carpet', 'tile', 'kitchen', 'parquet', 'checker', 'slate'];
+
+export interface WallPiece {
   key: string;
   north: boolean;
   x: number;
@@ -57,34 +73,64 @@ export class House {
   readonly group = new THREE.Group();
   private walls: WallPiece[] = [];
   private posts: Post[] = [];
+  /** tiles cercados por paredes (sem saída sem cruzar parede, porta ou janela) */
+  private enclosed: Uint8Array;
 
   /** `occupied`: tiles com móveis ("x,y"), para não pendurar quadro atrás deles. */
   constructor(
     private readonly grid: Grid,
     private readonly occupied: Set<string> = new Set(),
+    private readonly floors?: Catalog['floors'],
   ) {
+    this.enclosed = enclosedTiles(grid);
     this.buildFloors();
     this.buildWalls();
     this.buildPosts();
     this.buildPath();
   }
 
-  private finishOf(x: number, y: number): Finish {
-    if (!isIndoor(this.grid, x, y)) return FINISH.exterior;
-    return FINISH[this.grid.floor[y * this.grid.w + x]] ?? FINISH.wood;
+  private indoor(x: number, y: number): boolean {
+    return isIndoor(this.grid, x, y, this.floors);
+  }
+
+  /** Acabamento da face de parede do lado `side` do tile (x, y). */
+  private finishOf(x: number, y: number, side: string): Finish {
+    const chosen = this.grid.coverings[`${x},${y},${side}`];
+    if (chosen && COVER_ART[chosen]) return COVER_ART[chosen];
+    if (!this.indoor(x, y)) return EXTERIOR;
+    return COVER_ART[DEFAULT_COVER[this.grid.floor[y * this.grid.w + x]] ?? 'plaster'];
+  }
+
+  /**
+   * Para o corte de paredes, conta como cômodo o tile com piso e também o
+   * cercado por paredes ainda sem piso (um cômodo recém-levantado).
+   */
+  private roomy(x: number, y: number): boolean {
+    if (this.indoor(x, y)) return true;
+    return x >= 0 && y >= 0 && x < this.grid.w && y < this.grid.h && this.enclosed[y * this.grid.w + x] === 1;
+  }
+
+  /** A parede dessa borda está inteira (true) ou cortada? */
+  isTallEdge(key: string): boolean {
+    return this.walls.find((w) => w.key === key)?.isTall ?? true;
+  }
+
+  /** Paredes, com a borda de cada uma, para o modo construção apontar. */
+  pickables(): { edge: string; object: THREE.Object3D }[] {
+    return this.walls.map((w) => ({ edge: w.key, object: w.isTall ? w.tall : w.low }));
   }
 
   private buildFloors(): void {
     const { grid } = this;
-    for (const kind of FLOORS) {
+    for (const kind of FLOOR_ART) {
       const pos: number[] = [];
       const uv: number[] = [];
       const idx: number[] = [];
       for (let y = 0; y < grid.h; y++) {
         for (let x = 0; x < grid.w; x++) {
           const f = grid.floor[y * grid.w + x];
-          if (f === 'grass') continue;
-          if ((FLOORS.includes(f) ? f : 'wood') !== kind) continue;
+          if (!this.indoor(x, y)) continue;
+          if ((FLOOR_ART.includes(f) ? f : 'wood') !== kind) continue;
           const b = pos.length / 3;
           pos.push(x, 0, y, x + 1, 0, y, x, 0, y + 1, x + 1, 0, y + 1);
           uv.push(x, -y, x + 1, -y, x, -(y + 1), x + 1, -(y + 1));
@@ -118,10 +164,10 @@ export class House {
       // frente (+z local) = tile (x,y); fundo = o vizinho do outro lado
       const bx = north ? x : x - 1;
       const by = north ? y - 1 : y;
-      const front = this.finishOf(x, y);
-      const back = this.finishOf(bx, by);
-      const frontIn = isIndoor(grid, x, y);
-      const backIn = isIndoor(grid, bx, by);
+      const front = this.finishOf(x, y, side);
+      const back = this.finishOf(bx, by, north ? 'S' : 'E');
+      const frontIn = this.indoor(x, y);
+      const backIn = this.indoor(bx, by);
       const mats = [plaster, plaster, cap, cap, texMat(front.tex), texMat(back.tex)];
 
       const tall = new THREE.Group();
@@ -165,18 +211,23 @@ export class House {
       } else {
         tall.add(wallPart(1, WALL_H, 0, 0, mats));
         low.add(wallPart(1, LOW_H, 0, 0, mats));
-        const outer = frontIn !== backIn;
-        if (outer && (x * 2 + y) % 3 === 0) {
-          const out = frontIn ? -1 : 1;
-          tall.add(
-            box(0.84, 1.26, TH + 0.08, [plaster, plaster, plaster, plaster, texMat(front.window, { gloss: 0.3 }), texMat(back.window, { gloss: 0.3 })], 0, 0.88, 0),
-            // peitoril por dentro e floreira por fora
-            box(0.94, 0.04, 0.12, plaster, 0, 0.86, -out * (TH / 2 + 0.05)),
-            box(0.86, 0.14, 0.16, texMat('walnut'), 0, 0.72, out * (TH / 2 + 0.09)),
-          );
-          const blooms = new THREE.Mesh(new THREE.PlaneGeometry(0.86, 0.34), texMat('flowers', { alphaTest: 0.5, doubleSide: true }));
-          blooms.position.set(0, 1.0, out * (TH / 2 + 0.09));
-          tall.add(blooms);
+        if (kind === 'window') {
+          const glass = (f: Finish, inside: boolean) => texMat(inside ? f.window : 'windowOut', { gloss: 0.3 });
+          tall.add(box(0.84, 1.26, TH + 0.08, [plaster, plaster, plaster, plaster, glass(front, frontIn), glass(back, backIn)], 0, 0.88, 0));
+          // peitoril do lado de dentro e floreira do lado de fora
+          for (const [inside, dir] of [
+            [frontIn, 1],
+            [backIn, -1],
+          ] as [boolean, number][]) {
+            if (inside) {
+              tall.add(box(0.94, 0.04, 0.12, plaster, 0, 0.86, dir * (TH / 2 + 0.05)));
+            } else if (frontIn !== backIn) {
+              tall.add(box(0.86, 0.14, 0.16, texMat('walnut'), 0, 0.72, dir * (TH / 2 + 0.09)));
+              const blooms = new THREE.Mesh(new THREE.PlaneGeometry(0.86, 0.34), texMat('flowers', { alphaTest: 0.5, doubleSide: true }));
+              blooms.position.set(0, 1.0, dir * (TH / 2 + 0.09));
+              tall.add(blooms);
+            }
+          }
         } else if ((x * 5 + y * 3 + (north ? 0 : 2)) % 4 === 0) {
           // quadro no lado de dentro, se não houver móvel encostado
           const sides: [boolean, number, number, number][] = [
@@ -199,6 +250,8 @@ export class House {
       }
       setShadows(tall, false, true);
       setShadows(low, false, true);
+      tall.userData.edge = key;
+      low.userData.edge = key;
       this.group.add(place(tall, north, x, y), place(low, north, x, y));
       this.walls.push({ key, north, x, y, tall, low, isTall: true });
     }
@@ -235,8 +288,10 @@ export class House {
       const [xs, ys, side] = key.split(',');
       const x = Number(xs);
       const y = Number(ys);
-      if (side !== 'N' || !isIndoor(grid, x, y - 1) || isIndoor(grid, x, y)) continue;
+      if (side !== 'N' || !this.indoor(x, y - 1) || this.indoor(x, y)) continue;
       for (let z = y; z < grid.h + 1; z++) {
+        // o caminho para onde encontra parede ou cômodo
+        if (z < grid.h && (this.indoor(x, z) || (z > y && grid.edges[`${x},${z},N`]))) break;
         const slab = box(0.74, 0.035, 0.74, texMat('stone'), x + 0.5, 0, z + 0.5);
         slab.rotation.y = ((z * 7) % 5) * 0.03 - 0.06;
         slab.receiveShadow = true;
@@ -252,8 +307,8 @@ export class House {
   update(mode: WallMode, camX: number, camZ: number): void {
     for (const w of this.walls) {
       let behindIndoor: boolean;
-      if (w.north) behindIndoor = camZ > 0 ? isIndoor(this.grid, w.x, w.y - 1) : isIndoor(this.grid, w.x, w.y);
-      else behindIndoor = camX > 0 ? isIndoor(this.grid, w.x - 1, w.y) : isIndoor(this.grid, w.x, w.y);
+      if (w.north) behindIndoor = camZ > 0 ? this.roomy(w.x, w.y - 1) : this.roomy(w.x, w.y);
+      else behindIndoor = camX > 0 ? this.roomy(w.x - 1, w.y) : this.roomy(w.x, w.y);
       w.isTall = mode === 'up' || (mode === 'cutaway' && !behindIndoor);
       w.tall.visible = w.isTall;
       w.low.visible = !w.isTall;
@@ -264,6 +319,37 @@ export class House {
       p.low.visible = !tall;
     }
   }
+}
+
+/** Tiles que não chegam à divisa do lote sem cruzar uma borda com algo. */
+function enclosedTiles(grid: Grid): Uint8Array {
+  const { w, h } = grid;
+  const open = new Uint8Array(w * h);
+  const queue: number[] = [];
+  const visit = (x: number, y: number) => {
+    const i = y * w + x;
+    if (open[i]) return;
+    open[i] = 1;
+    queue.push(i);
+  };
+  for (let x = 0; x < w; x++) {
+    if (!grid.edges[`${x},0,N`]) visit(x, 0);
+    if (!grid.edges[`${x},${h},N`]) visit(x, h - 1);
+  }
+  for (let y = 0; y < h; y++) {
+    if (!grid.edges[`0,${y},W`]) visit(0, y);
+    if (!grid.edges[`${w},${y},W`]) visit(w - 1, y);
+  }
+  while (queue.length > 0) {
+    const i = queue.shift()!;
+    const x = i % w;
+    const y = Math.floor(i / w);
+    if (x > 0 && !grid.edges[`${x},${y},W`]) visit(x - 1, y);
+    if (x < w - 1 && !grid.edges[`${x + 1},${y},W`]) visit(x + 1, y);
+    if (y > 0 && !grid.edges[`${x},${y},N`]) visit(x, y - 1);
+    if (y < h - 1 && !grid.edges[`${x},${y + 1},N`]) visit(x, y + 1);
+  }
+  return open.map((v) => (v ? 0 : 1));
 }
 
 /**

@@ -55,7 +55,7 @@ export interface PlaceCheck {
 }
 
 /** Tiles alcançáveis a pé a partir de um ponto (busca em largura). */
-function reachable(nav: Nav, from: Vec): Set<number> {
+export function reachable(nav: Nav, from: Vec): Set<number> {
   const seen = new Set<number>();
   if (!nav.isFree(from.x, from.y)) return seen;
   const queue: Vec[] = [from];

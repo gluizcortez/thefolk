@@ -1,5 +1,6 @@
 import { SHIRT, SKIN } from '../game/art/palette';
-import type { GameController } from '../game/controller';
+import { COVER_ART, FLOOR_ART } from '../game/art/house';
+import type { BuildTool, GameController } from '../game/controller';
 import { t } from '../i18n';
 import {
   availableSocials,
@@ -65,6 +66,20 @@ const CATEGORIES: (ObjectCategory | 'all')[] = [
 ];
 
 type Panel = 'skills' | 'job' | 'relations' | null;
+
+type BuildTab = 'walls' | 'openings' | 'floors' | 'coverings';
+const BUILD_TABS: BuildTab[] = ['walls', 'openings', 'floors', 'coverings'];
+/** ferramenta que cada aba do modo construção escolhe ao abrir */
+const TAB_TOOL: Record<BuildTab, BuildTool> = { walls: 'wall', openings: 'door', floors: 'floor', coverings: 'paint' };
+/** aba onde fica cada ferramenta */
+const TOOL_TAB: Record<BuildTool, BuildTab> = {
+  wall: 'walls',
+  erase: 'walls',
+  door: 'openings',
+  window: 'openings',
+  floor: 'floors',
+  paint: 'coverings',
+};
 
 const SOCIAL_ORDER: SocialCategory[] = ['friendly', 'professional', 'romantic', 'mean'];
 
@@ -161,6 +176,15 @@ export class Hud {
   private category: ObjectCategory | 'all' = 'all';
   private catalogSig = '';
   private thumbnail: ((art: string) => string) | null = null;
+  private swatch: ((texture: string, tall?: boolean) => string) | null = null;
+  private buildButton = el('button', 'btn btn-buy');
+  private buildEl = el('div', 'card catalog build');
+  private buildTabs = el('div', 'catalog-tabs');
+  private buildItems = el('div', 'catalog-items');
+  private buildHint = el('div', 'catalog-hint');
+  private undoButton = el('button', 'btn btn-undo');
+  private buildTab: BuildTab = 'walls';
+  private buildSig = '';
 
   constructor(
     private readonly root: HTMLElement,
@@ -175,6 +199,7 @@ export class Hud {
     this.buildQueue();
     this.buildPanel();
     this.buildCatalog();
+    this.buildBuildPanel();
     this.root.append(this.floatsEl, this.toastsEl, this.menuEl, this.bubbleEl, this.tooltipEl);
     this.tooltipEl.hidden = true;
     this.menuEl.hidden = true;
@@ -267,7 +292,9 @@ export class Hud {
     });
     this.buyButton.title = t('hud.buyTip');
     this.buyButton.addEventListener('click', () => this.toggleBuyMode());
-    bar.append(turn('⟲', 'hud.turnLeft', -1), turn('⟳', 'hud.turnRight', 1), walls, this.buyButton);
+    this.buildButton.title = t('hud.buildTip');
+    this.buildButton.addEventListener('click', () => this.toggleBuildMode());
+    bar.append(turn('⟲', 'hud.turnLeft', -1), turn('⟳', 'hud.turnRight', 1), walls, this.buyButton, this.buildButton);
     this.root.append(bar, el('div', 'help', t('hud.help')));
   }
 
@@ -351,6 +378,9 @@ export class Hud {
     const buyLabel = this.ctrl.mode === 'buy' ? t('hud.live') : t('hud.buy');
     if (this.buyButton.textContent !== buyLabel) this.buyButton.textContent = buyLabel;
     this.buyButton.classList.toggle('on', this.ctrl.mode === 'buy');
+    const buildLabel = this.ctrl.mode === 'build' ? t('hud.live') : t('hud.build');
+    if (this.buildButton.textContent !== buildLabel) this.buildButton.textContent = buildLabel;
+    this.buildButton.classList.toggle('on', this.ctrl.mode === 'build');
     this.clockTime.textContent =
       world.speed === 0 ? `${formatClock(world.tick)} · ${t('hud.paused')}` : formatClock(world.tick);
     const night = clock.hour < 6 || clock.hour >= 19;
@@ -387,6 +417,7 @@ export class Hud {
     this.renderQueue();
     this.renderPanel();
     this.renderCatalog();
+    this.renderBuild();
   }
 
   private actionLabel(action: Action): string {
@@ -420,7 +451,7 @@ export class Hud {
     this.queueSig = sig;
     this.queueEl.replaceChildren();
 
-    if (this.ctrl.mode === 'buy') {
+    if (this.ctrl.mode !== 'live') {
       this.queueEl.parentElement!.hidden = true;
       return;
     }
@@ -935,8 +966,123 @@ export class Hud {
     this.closeMenu();
     this.ctrl.setMode(this.ctrl.mode === 'buy' ? 'live' : 'buy');
     this.catalogSig = '';
+    this.buildSig = '';
     this.queueSig = '';
     this.update();
+  }
+
+  // ---------- modo construção ----------
+
+  setSwatcher(fn: (texture: string, tall?: boolean) => string): void {
+    this.swatch = fn;
+  }
+
+  toggleBuildMode(): void {
+    this.closeMenu();
+    this.ctrl.setMode(this.ctrl.mode === 'build' ? 'live' : 'build');
+    this.catalogSig = '';
+    this.buildSig = '';
+    this.queueSig = '';
+    this.update();
+  }
+
+  private buildBuildPanel(): void {
+    const head = el('div', 'catalog-head');
+    head.append(el('div', 'panel-title', t('build.title')), this.buildTabs);
+    for (const tab of BUILD_TABS) {
+      const b = el('button', 'tab', t(`build.tab.${tab}`));
+      b.dataset.tab = tab;
+      b.addEventListener('click', () => {
+        this.buildTab = tab;
+        this.ctrl.setBuildTool(TAB_TOOL[tab]);
+        this.renderBuild();
+      });
+      this.buildTabs.append(b);
+    }
+    this.undoButton.title = t('build.undoTip');
+    this.undoButton.addEventListener('click', () => {
+      this.ctrl.undoBuild();
+      this.update();
+    });
+    head.append(this.undoButton);
+    this.buildEl.append(head, this.buildItems, this.buildHint);
+    this.buildEl.hidden = true;
+    this.root.append(this.buildEl);
+  }
+
+  private renderBuild(): void {
+    const building = this.ctrl.mode === 'build';
+    this.buildEl.hidden = !building;
+    if (!building) return;
+    const c = this.ctrl;
+    this.buildTab = TOOL_TAB[c.buildTool];
+    const depth = c.sim.undoDepth;
+    const funds = c.world.household.funds;
+    const sig = `${this.buildTab}|${c.buildTool}|${c.floorId}|${c.coveringId}|${depth}|${funds}`;
+    if (sig === this.buildSig) return;
+    this.buildSig = sig;
+    for (const b of this.buildTabs.children) {
+      (b as HTMLElement).classList.toggle('on', (b as HTMLElement).dataset.tab === this.buildTab);
+    }
+    this.undoButton.textContent = depth > 0 ? t('build.undoN', { n: depth }) : t('build.undo');
+    this.undoButton.disabled = depth === 0;
+    this.buildHint.textContent = t(`build.hint.${c.buildTool}`);
+    this.buildItems.replaceChildren();
+    const catalog = c.sim.catalog;
+    const add = (name: string, price: string, img: string | null, on: boolean, pick: () => void, tip?: string) => {
+      const item = el('button', 'item');
+      item.classList.toggle('on', on);
+      if (img) {
+        const pic = el('img', 'item-img');
+        pic.alt = '';
+        pic.width = 64;
+        pic.height = 64;
+        pic.src = img;
+        item.append(pic);
+      } else {
+        item.append(el('span', 'item-img item-glyph', '✕'));
+      }
+      item.append(el('span', 'item-name', name), el('span', 'item-price', price));
+      item.title = tip ?? `${name} · ${price}`;
+      item.addEventListener('click', () => {
+        pick();
+        this.renderBuild();
+      });
+      this.buildItems.append(item);
+    };
+    const sw = (tex: string, tall = false) => (this.swatch ? this.swatch(tex, tall) : null);
+    const tool = (tool: BuildTool) => () => c.setBuildTool(tool);
+    if (this.buildTab === 'walls') {
+      add(t('build.wall'), t('build.perMeter', { price: formatMoney(catalog.parts.wall.price) }), sw('wallExterior', true), c.buildTool === 'wall', tool('wall'));
+      add(t('build.erase'), t('build.free'), null, c.buildTool === 'erase', tool('erase'), t('build.hint.erase'));
+    } else if (this.buildTab === 'openings') {
+      add(t('build.door'), formatMoney(catalog.parts.door.price), sw('door', true), c.buildTool === 'door', tool('door'));
+      add(
+        t('build.window'),
+        formatMoney(catalog.parts.window.price),
+        sw('windowOut', true),
+        c.buildTool === 'window',
+        tool('window'),
+        `${t('build.window')} · ${formatMoney(catalog.parts.window.price)} · ${t('need.ambience')} +${catalog.parts.window.ambience}`,
+      );
+    } else if (this.buildTab === 'floors') {
+      for (const f of Object.values(catalog.floors).sort((a, b) => a.price - b.price)) {
+        const tex = f.outdoor ? 'grass' : FLOOR_ART.includes(f.id) ? f.id : 'wood';
+        const price = f.price > 0 ? t('build.perTile', { price: formatMoney(f.price) }) : t('build.free');
+        add(t(f.name), price, sw(tex), c.buildTool === 'floor' && c.floorId === f.id, () => {
+          c.floorId = f.id;
+          c.setBuildTool('floor');
+        });
+      }
+    } else {
+      for (const cov of Object.values(catalog.coverings).sort((a, b) => a.price - b.price)) {
+        const tex = COVER_ART[cov.id]?.tex ?? 'wallPlaster';
+        add(t(cov.name), t('build.perFace', { price: formatMoney(cov.price) }), sw(tex, true), c.buildTool === 'paint' && c.coveringId === cov.id, () => {
+          c.coveringId = cov.id;
+          c.setBuildTool('paint');
+        });
+      }
+    }
   }
 
   private buildCatalog(): void {

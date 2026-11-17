@@ -1,4 +1,6 @@
 import { chooseAutonomous } from './ai';
+import type { BuildCommand, BuildProblem, GridChange } from './build';
+import { applyChange, checkGrid, invertChange, isBuildCommand, planBuild } from './build';
 import {
   AWAY_DECAY,
   CALL_AHEAD,
@@ -44,6 +46,7 @@ import { BILL_INTERVAL } from './world';
 /** Por que o último comando foi recusado (para a interface explicar). */
 export type CommandProblem =
   | PlaceProblem
+  | BuildProblem
   | 'busy'
   | 'away'
   | 'collapsed'
@@ -98,6 +101,8 @@ const IDLE_BEFORE_AUTO = 3;
 const AUTO_RECHECK = 10;
 const CRITICAL_NEED = 15;
 const COLLAPSE_MINUTES = 150;
+/** quantas obras ficam guardadas para desfazer */
+const UNDO_LIMIT = 40;
 const COLLAPSE_ENERGY_PER_MINUTE = 0.3;
 
 type ActionSeed = Pick<Action, 'kind' | 'objectId' | 'interactionId' | 'target' | 'otherId' | 'socialId'>;
@@ -117,6 +122,8 @@ export class Sim {
   private outcomes: SocialOutcome[] = [];
   /** visitas que chegaram à calçada neste minuto e saem do lote */
   private departed: number[] = [];
+  /** obras que dá para desfazer, da mais antiga para a mais nova (não vai no save) */
+  private undoStack: { back: GridChange; cost: number }[] = [];
 
   constructor(catalog: Catalog, world: World) {
     this.catalog = catalog;
@@ -127,6 +134,7 @@ export class Sim {
   /** Troca o mundo inteiro (ex.: ao carregar um save). */
   load(world: World): void {
     this.world = world;
+    this.undoStack = [];
     this.invalidateNav();
   }
 
@@ -173,7 +181,10 @@ export class Sim {
   }
 
   private run(cmd: Command): boolean {
+    if (isBuildCommand(cmd)) return this.build(cmd);
     switch (cmd.type) {
+      case 'undoBuild':
+        return this.undoBuild();
       case 'setSpeed':
         this.world.speed = cmd.speed;
         return true;
@@ -262,6 +273,39 @@ export class Sim {
         return true;
       }
     }
+  }
+
+  // ---------- construção ----------
+
+  /** Quantas obras dá para desfazer. */
+  get undoDepth(): number {
+    return this.undoStack.length;
+  }
+
+  private build(cmd: BuildCommand): boolean {
+    const plan = planBuild(this.world, this.catalog, cmd);
+    if (!plan.ok) return this.fail(plan.problem ?? 'invalid');
+    this.undoStack.push({ back: invertChange(this.world.grid, plan.change), cost: plan.cost });
+    if (this.undoStack.length > UNDO_LIMIT) this.undoStack.shift();
+    this.world.grid = applyChange(this.world.grid, plan.change);
+    this.world.household.funds -= plan.cost;
+    this.replanAll();
+    return true;
+  }
+
+  /** Desfaz a última obra e devolve o que ela custou. */
+  private undoBuild(): boolean {
+    const last = this.undoStack[this.undoStack.length - 1];
+    if (!last) return this.fail('undoEmpty');
+    const after = applyChange(this.world.grid, last.back);
+    if (Object.keys(last.back.edges).length > 0 && checkGrid(this.world, this.catalog, after)) {
+      return this.fail('undoBlocked');
+    }
+    this.undoStack.pop();
+    this.world.grid = after;
+    this.world.household.funds += last.cost;
+    this.replanAll();
+    return true;
   }
 
   // ---------- compra e venda ----------

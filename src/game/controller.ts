@@ -3,10 +3,13 @@ import { starterHouse } from '../data/house';
 import { NEIGHBORS } from '../data/neighbors';
 import { hasText, t } from '../i18n';
 import { readSave, writeSave } from '../platform/saveStore';
-import { Sim, createWorld, deserialize, serialize } from '../sim';
+import { Sim, createWorld, deserialize, isBuildCommand, serialize } from '../sim';
 import type { Command, Folk, Rotation, Speed, World } from '../sim';
 
-export type Mode = 'live' | 'buy';
+export type Mode = 'live' | 'buy' | 'build';
+
+/** Ferramenta do modo construção. */
+export type BuildTool = 'wall' | 'erase' | 'door' | 'window' | 'floor' | 'paint';
 
 /** O que está sendo posto no chão no modo compra. */
 export interface Placing {
@@ -36,6 +39,11 @@ export class GameController {
   placing: Placing | null = null;
   /** muda quando objetos são comprados, vendidos ou movidos */
   objectsVersion = 0;
+  /** muda quando paredes, pisos ou revestimentos mudam */
+  gridVersion = 0;
+  buildTool: BuildTool = 'wall';
+  floorId = 'wood';
+  coveringId = 'stripes';
   private speedBeforeBuy: Speed = 1;
   private toastListeners: ((text: string) => void)[] = [];
   private seenLog = 0;
@@ -76,6 +84,7 @@ export class GameController {
   command(cmd: Command): boolean {
     const ok = this.sim.dispatch(cmd);
     if (ok && (cmd.type === 'buy' || cmd.type === 'sell' || cmd.type === 'move')) this.objectsVersion++;
+    if (ok && (isBuildCommand(cmd) || cmd.type === 'undoBuild')) this.gridVersion++;
     return ok;
   }
 
@@ -100,10 +109,12 @@ export class GameController {
 
   setMode(mode: Mode): void {
     if (mode === this.mode) return;
+    const wasLive = this.mode === 'live';
     this.mode = mode;
     this.placing = null;
-    if (mode === 'buy') {
-      this.speedBeforeBuy = this.world.speed === 0 ? 1 : this.world.speed;
+    if (mode !== 'live') {
+      // compra e construção param o tempo
+      if (wasLive) this.speedBeforeBuy = this.world.speed === 0 ? 1 : this.world.speed;
       this.command({ type: 'setSpeed', speed: 0 });
     } else {
       this.command({ type: 'setSpeed', speed: this.speedBeforeBuy });
@@ -133,6 +144,19 @@ export class GameController {
       // depois de mover, larga; depois de comprar, segue com outro igual se der
       if (p.moveId !== undefined || !def || this.world.household.funds < def.price) this.placing = null;
     }
+    return ok;
+  }
+
+  // ---------- modo construção ----------
+
+  setBuildTool(tool: BuildTool): void {
+    this.buildTool = tool;
+  }
+
+  /** Desfaz a última obra (Ctrl+Z ou botão), explicando se não der. */
+  undoBuild(): boolean {
+    const ok = this.commandOrExplain({ type: 'undoBuild' });
+    if (ok) this.toast(t('build.undone'));
     return ok;
   }
 
