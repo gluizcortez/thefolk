@@ -79,6 +79,8 @@ export interface InteractionDef {
   trash?: number;
   /** bloco 3: interruptor da luminária ('on' acende, 'off' apaga) */
   light?: 'on' | 'off';
+  /** bloco 7: botão do som ('on' liga, 'next' troca de estação, 'off' desliga) */
+  tune?: 'on' | 'next' | 'off';
   /**
    * bloco 4: atividade a dois. Com outro folk usando a mesma interação no
    * mesmo objeto ao mesmo tempo, cada um ganha estes efeitos a mais por minuto
@@ -773,6 +775,8 @@ export interface WorldObject {
   uses?: Record<string, number>;
   /** bloco 4: de quem é o objeto querido (id do morador) */
   beloved?: number;
+  /** bloco 7: estação tocando no som (sem isso, desligado) */
+  tune?: string;
 }
 
 export interface ObjectState {

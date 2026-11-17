@@ -64,6 +64,7 @@ import type { Nav } from './grid';
 import { buildNav, nearestFootprintTile, useTiles } from './grid';
 import { NEED_MAX, applyEffects, clampNeed, decayNeeds, moodOf } from './needs';
 import { isDark, lightsIn, roomAt, roomsOf, shining } from './rooms';
+import { NOISY_SLEEP, danceBonus, favoriteStation, isStereo, playing, pressTune, stereosIn } from './music';
 import { findPath, findPathToAny } from './pathfinding';
 import { nextFloat, nextInt } from './rng';
 import { addMemory, affinity, applyDelta, coolRelations, ensureRelation, relationOf, setDating, touch } from './relations';
@@ -772,7 +773,11 @@ export class Sim {
     const world = this.world;
     world.tick++;
     this.stepBills();
-    for (const obj of world.objects) if (shining(obj, this.catalog.objects[obj.defId])) world.household.lightMinutes++;
+    for (const obj of world.objects) {
+      const def = this.catalog.objects[obj.defId];
+      // bloco 7: som ligado também gasta luz
+      if (shining(obj, def) || playing(obj, def)) world.household.lightMinutes++;
+    }
     const minute = world.tick % MINUTES_PER_DAY;
     this.stepServices(minute);
     if (minute === COOL_HOUR * 60) {
@@ -1200,6 +1205,27 @@ export class Sim {
     );
     if (awake) return;
     for (const obj of lightsIn(this.world, this.catalog, map, room)) this.switchLight(obj, false);
+    // bloco 7: e desliga o som do cômodo
+    for (const obj of stereosIn(this.world, this.catalog, map, room)) delete obj.tune;
+  }
+
+  /**
+   * Bloco 7: um minuto com som. Quem dança com a estação de que gosta se
+   * diverte mais (e menos com a que não gosta); quem dorme com som ligado no
+   * cômodo descansa menos.
+   */
+  private soundTick(folk: Folk, action: Action, it: InteractionDef): void {
+    if (it.pose === 'dance') {
+      const obj = this.findObject(action.objectId ?? -1);
+      if (obj && playing(obj, this.defOf(obj))) applyEffects(folk, { effects: { fun: danceBonus(folk, obj.tune) } } as InteractionDef);
+      return;
+    }
+    if (!isSleep(it) || (it.effects.energy ?? 0) <= 0) return;
+    const map = roomsOf(this.world, this.catalog);
+    const room = roomAt(map, folk.x, folk.y);
+    if (!room || stereosIn(this.world, this.catalog, map, room).length === 0) return;
+    applyEffects(folk, { effects: { energy: -(it.effects.energy ?? 0) * NOISY_SLEEP } } as InteractionDef);
+    if (action.elapsed === 30 && !folk.visit) this.log('log.noisySleep', { name: folk.name });
   }
 
   private sleeping(folk: Folk): boolean {
@@ -1219,10 +1245,13 @@ export class Sim {
     const from = roomAt(map, folk.px, folk.py);
     if (!from || from.outdoor || from === roomAt(map, folk.x, folk.y)) return;
     const lit = lightsIn(this.world, this.catalog, map, from).filter((o) => o.lit);
-    if (lit.length === 0) return;
+    // bloco 7: o som esquecido ligado entra na mesma conta
+    const loud = stereosIn(this.world, this.catalog, map, from);
+    if (lit.length === 0 && loud.length === 0) return;
     if (this.world.folks.some((f) => f !== folk && !f.away && roomAt(map, f.x, f.y) === from)) return;
     if (nextFloat(this.world) >= saverOf(this.catalog, folk)) return;
     for (const obj of lit) this.switchLight(obj, false);
+    for (const obj of loud) delete obj.tune;
   }
 
   private checkFailures(folk: Folk): void {
@@ -1421,6 +1450,9 @@ export class Sim {
         }
       }
       if (obj && it?.light) this.switchLight(obj, it.light === 'on');
+      // bloco 7: botão do som; dançar com o som desligado liga na estação preferida
+      if (obj && it?.tune) pressTune(obj, it, folk);
+      if (obj && it?.pose === 'dance' && !obj.tune && isStereo(this.defOf(obj))) obj.tune = favoriteStation(folk).id;
       if (it && isSleep(it)) this.lightsOutForSleep(folk);
       if (action.eatAt === undefined) {
         action.phase = 'using';
@@ -1436,6 +1468,7 @@ export class Sim {
         return;
       }
       applyEffects(folk, it);
+      this.soundTick(folk, action, it);
       if (!folk.visit) wishOnUse(this.world, this.catalog, this.logger, folk, it);
       const used = this.findObject(action.objectId!);
       const usedDef = used && this.defOf(used);

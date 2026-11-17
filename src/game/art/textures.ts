@@ -1115,6 +1115,21 @@ const zzz: Painter = (c, w, h) => {
   c.fillText('Z', w / 2, h / 2);
 };
 
+/** Bloco 7: nota musical que sobe do som ligado (cor pela estação). */
+function musicNote(color: number): Painter {
+  return (c, w, h) => {
+    c.clearRect(0, 0, w, h);
+    c.font = `bold ${h * 0.85}px serif`;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.lineWidth = 4;
+    c.strokeStyle = css(0x2a2320);
+    c.strokeText('♪', w / 2, h / 2);
+    c.fillStyle = css(color);
+    c.fillText('♪', w / 2, h / 2);
+  };
+}
+
 /** Plaquinha que flutua sobre quem puxa conversa, com o símbolo do tipo de conversa. */
 function socialIcon(kind: string): Painter {
   return (c, w, h) => {
@@ -1700,6 +1715,9 @@ const SPECS: Record<string, Spec> = {
   carGlass: { w: 32, h: 16, paint: carGlass, grain: 2 },
   blob: { w: 32, h: 32, paint: blob, grain: 0, smooth: true },
   zzz: { w: 32, h: 32, paint: zzz, grain: 0, smooth: true },
+  'note:brisa': { w: 32, h: 32, paint: musicNote(0x7fc6d8), grain: 0, smooth: true },
+  'note:chiclete': { w: 32, h: 32, paint: musicNote(0xf08bb4), grain: 0, smooth: true },
+  'note:trovao': { w: 32, h: 32, paint: musicNote(0xf2c14e), grain: 0, smooth: true },
   marble: { w: 64, h: 64, paint: marble, grain: 3 },
   keys: { w: 112, h: 16, paint: keys, grain: 2 },
   felt: { w: 32, h: 32, paint: felt, repeat: true, grain: 6 },

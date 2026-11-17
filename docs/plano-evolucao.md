@@ -307,7 +307,7 @@ conforto e ânimo; com 3 de ânimo, quatro horas de treino em dobro. Cartões
 de aviso para fatos importantes. Simulação de 7 dias com emprego: todo mundo
 sai descansado, sem desmaio nem falta.
 
-## Bloco 7 — Som, música, fala inventada e saves (sem save novo)
+## Bloco 7 — Som, música, fala inventada e saves (sem save novo) — feito em 17/11/2026
 
 **Lacuna**: o jogo é mudo e só tem um slot de save.
 
@@ -327,6 +327,36 @@ sai descansado, sem desmaio nem falta.
 **Pronto quando**: o jogo tem som em todas as ações principais e música nos
 três modos; três slots funcionam; exportar e importar devolvem o mesmo mundo;
 testes de slots e exportação.
+
+**Como ficou**: tudo sintetizado em WebAudio, sem arquivo de som, com saída
+de "placa antiga" (agudos aparados, degrau leve de amplitude). Três canais
+(música, efeitos, vozes) com volume no cartão **Som** e mudo na tecla M,
+guardados no navegador (fora do `World`). Passos por piso (tapete, madeira,
+piso frio, grama), som para cada ação do catálogo (descarga no fim do uso
+do vaso, água do chuveiro, chiado do fogão, porta da geladeira, TV,
+videogame, teclado, pano, serrote e martelo do conserto, discagem do
+telefone), campainha, telefone do trabalho, carta, caixa registradora na
+compra, moedas na venda, martelo e pincel na obra, zumbido no erro, abrir e
+fechar cartão. Piano, teclado e flauta tocam notas de verdade, com nota
+errada para quem tem pouca Criatividade. Trilha procedural por modo (sala
+com piano elétrico, vitrine com marimba, oficina com suingue), composta
+compasso a compasso por acordes empilhados na escala. **Folquês**: sílabas
+inventadas com voz própria de cada folk (altura pelo nome, mais grave no
+corpo forte, mais rápida com Pique, mais ar com Afeto) e entonação pelo tipo
+de conversa (alegre sobe, briga acelera e desce, romântica devagar e baixa,
+recusada triste); quem ouve responde às vezes; recusa vira resmungo.
+**Som de casa**: rádio, caixa de som e jukebox ganharam ligar, trocar de
+estação e desligar; três estações (Brisa, Chiclete, Trovão) com andamento e
+estilo próprios tocam de verdade, com timbre do aparelho e volume pela
+distância, e a trilha abaixa perto delas. Cada folk tem a estação preferida
+pelo temperamento: dançar com ela diverte mais, com a que não gosta, menos;
+dançar com o som desligado liga na preferida; a dança segue o andamento.
+Som ligado gasta luz, atrapalha o sono no mesmo cômodo e quem vai dormir ou
+sai por último desliga (como a luz). Campo opcional `WorldObject.tune`, sem
+migração. **Saves**: três vagas com nome editável, dia, dinheiro, moradores
+e miniatura da casa; o save antigo vira a vaga 1; jogo novo vai para uma
+vaga livre; exportar baixa um `.folk.json` e importar abre numa vaga livre,
+passando pelas migrações.
 
 ## Bloco 8 — Carreiras completas e amigos da família (save v12)
 

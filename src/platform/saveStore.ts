@@ -49,3 +49,10 @@ export function readSave(slot: string): Promise<unknown | undefined> {
 export function deleteSave(slot: string): Promise<void> {
   return run('readwrite', (s) => s.delete(slot)).then(() => undefined);
 }
+
+/** Bloco 7: o IndexedDB visto como SaveBackend (vagas de jogos salvos). */
+export const idbBackend = {
+  get: readSave,
+  put: writeSave,
+  delete: deleteSave,
+};

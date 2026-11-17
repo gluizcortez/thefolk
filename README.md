@@ -313,8 +313,32 @@ npm run preview  # serve o dist/ localmente
   (técnico) e Plácido (oficial de penhora) têm traços, relações e lembranças
   como qualquer um. Marta é fofoqueira: se a casa estava uma bagunça, conta
   por aí sobre quem mais sujou.
-- **Salvar / Carregar / Novo jogo** no canto superior direito. O jogo também
-  salva sozinho a cada 30 segundos e continua de onde parou ao reabrir.
+- **Som (bloco 7)**: tudo é sintetizado na hora, sem arquivo de som. Passos
+  mudam com o piso; cada ação tem o seu som (descarga, chuveiro, fogão,
+  geladeira, TV, videogame, teclado, pano, conserto, telefone); campainha,
+  carta, caixa registradora na compra, moedas na venda, martelo e pincel na
+  obra. Piano, teclado e flauta tocam notas de verdade (e erram com pouca
+  Criatividade). Cada modo tem a sua música, composta enquanto você joga.
+- **Folquês (bloco 7)**: os folks falam uma língua inventada, cada um com a
+  sua voz (o Pique acelera, o corpo forte engrossa). Conversa alegre sobe no
+  fim, briga acelera e desce, carinho sai devagar e baixinho; quem ouve
+  responde de vez em quando, e a recusa vira resmungo.
+- **Rádio de verdade (bloco 7)**: rádio, caixa de som e jukebox têm Ligar o
+  som, Trocar de estação e Desligar. As estações **Brisa** (calma),
+  **Chiclete** (pop alegre) e **Trovão** (batida forte) tocam de verdade, com
+  notinhas da cor da estação subindo do aparelho. Cada folk tem a sua
+  preferida (o menu do som diz qual): dançar com ela diverte mais, com a que
+  não gosta, menos; dançar com o som desligado liga na preferida. Som ligado
+  gasta luz e atrapalha quem dorme no mesmo cômodo; quem vai dormir desliga.
+- **Volume (bloco 7)**: o botão ♪ abre volumes de geral, música, efeitos e
+  vozes, e silenciar; a tecla M silencia. Fica guardado no navegador.
+- **Jogos salvos (bloco 7)**: **Salvar** grava na vaga em uso; **Jogos** abre
+  as três vagas com nome (clique para mudar), dia, dinheiro, quem mora e uma
+  miniatura da casa, para salvar em outra vaga, abrir ou apagar. **Exportar
+  arquivo** baixa o jogo num `.folk.json` e **Importar arquivo** abre um
+  arquivo exportado numa vaga livre (saves de versões antigas são
+  convertidos). O jogo salva sozinho a cada 30 segundos na vaga em uso e
+  continua de onde parou ao reabrir; o save de antes do bloco 7 vira a vaga 1.
 
 ## Deploy na Vercel
 
@@ -492,6 +516,20 @@ Decisões principais do núcleo:
   `art/textures.ts` (desenho dos ícones em `ui/icons.ts`, `ICON_PATHS`),
   gestos `refuse`/`cheer` e cara `tired` em `art/folk.ts`, cartões de aviso
   por `noticeIcon` em `game/controller.ts`. Save v11.
+- **Som, música e saves (bloco 7)**: a parte pura do som de casa fica em
+  `sim/music.ts` (`STATIONS`, `favoriteStation`, `danceBonus`, `pressTune`,
+  `stereosIn`, `playing`); `WorldObject.tune` é opcional (sem save novo) e
+  `InteractionDef.tune` é o botão ('on' | 'next' | 'off', helpers `tuning()`
+  em `data/interactions.ts`). O áudio mora em `src/audio/`: `compose.ts`
+  (estilos e compassos, puro), `folkes.ts` (voz, sílabas e entonação, puro),
+  `sounds.ts` (som de cada ação, linha do log e comando, puro), `prefs.ts`
+  (volumes no localStorage), `engine.ts` (WebAudio: canais, instrumentos,
+  efeitos, sons contínuos e fala), `player.ts` (toca um estilo com
+  antecedência) e `director.ts` (olha o mundo a cada quadro e decide o que
+  soa; `GameView.hearing` dá volume e lado pela câmera). A interface só avisa
+  por `audio/cues.ts`. As vagas ficam em `platform/slots.ts` (atrás de
+  `SaveBackend`; o IndexedDB é `idbBackend` em `saveStore.ts`), com
+  exportar/importar; os cartões Jogos e Som estão em `ui/system.ts`.
 - **Catálogo e atividades a dois (bloco 4)** moram em `sim/furnish.ts`.
   `ObjectDef` ganhou `tier` (0, 1, 2), `line` (a função que agrupa as faixas;
   frilas e negócios aceitam qualquer objeto da mesma `line`), `colors` e
@@ -602,6 +640,13 @@ Decisões principais do núcleo:
   `wish.<id>` em i18n e, se o ícone for novo, o desenho em `ui/icons.ts`.
 - **Fato que vira cartão de aviso**: a chave do log e o ícone em `NOTICES`
   (`game/controller.ts`).
+- **Som de uma ação nova**: o caso em `actionSound` (`src/audio/sounds.ts`);
+  efeito novo é um `case` em `AudioEngine.sfx` (ou `loop`) em
+  `src/audio/engine.ts`. Linha do log com som: `logSound` no mesmo arquivo.
+- **Estação de rádio ou estilo de música**: uma entrada em `STATIONS`
+  (`sim/music.ts`, com o gosto por eixo) e o estilo de mesmo id em `STYLES`
+  (`audio/compose.ts`), mais o texto `station.<id>` e a cor da nota em
+  `art/textures.ts`.
 - **Mudou o formato do `World`?** Aumente `SAVE_VERSION` em `src/sim/save.ts` e
   registre a migração no mesmo arquivo.
 
@@ -630,7 +675,26 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
 - **Bloco 6 (feito)**: recusa de esforço com motivo e gesto, balões de
   vontade, conversa, bagunça e saudade, cara de cansaço, sono planejado com
   despertador, desejos do dia, ânimo e dia inspirado, cartões de aviso (save v11).
-- Próximo: bloco 7, som, música, fala inventada e vários saves.
+- **Bloco 7 (feito)**: som sintetizado em todas as ações, música procedural
+  por modo, fala inventada com voz e entonação, rádio com três estações que
+  tocam de verdade, volume e mudo, três vagas de save com miniatura,
+  exportar e importar (sem save novo).
+- Próximo: bloco 8, carreiras completas e amigos da família.
+
+## Limitações conhecidas do bloco 7
+
+- O navegador só libera o som depois do primeiro clique ou tecla; até lá o
+  jogo fica mudo.
+- Só se ouve um aparelho de som por vez (o mais perto da câmera); dois
+  rádios ligados não se misturam.
+- O volume pela distância é pela câmera (o que está na tela), não por
+  paredes: som na cozinha se ouve igual com a parede no meio.
+- Com o jogo pausado ou nos modos de compra e construção, os sons das ações
+  e as falas param; a música do modo continua.
+- Importar só abre numa vaga livre; com as três ocupadas é preciso apagar
+  uma antes. Jogo novo sem vaga livre ocupa a vaga em uso.
+- A miniatura é tirada da vista de agora na hora de salvar (com cartões
+  abertos por cima, não aparecem; o que conta é a cena 3D).
 
 ## Limitações conhecidas do bloco 6
 

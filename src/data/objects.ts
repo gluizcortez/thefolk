@@ -1,6 +1,6 @@
 import type { ObjectDef } from '../sim/types';
 
-import { admire, clean, dishes, lightOff, lightOn, repair, service } from './interactions';
+import { admire, clean, dishes, lightOff, lightOn, repair, service, tuning } from './interactions';
 import { FURNITURE } from './furniture';
 
 // Catálogo de objetos. Tudo aqui é dado: para criar um objeto novo, adicione
@@ -310,6 +310,7 @@ const list: ObjectDef[] = [
         pose: 'dance',
         skill: { id: 'fitness', xpPerMinute: 0.2 },
       },
+      ...tuning(),
       repair(),
       service(),
     ],

@@ -2098,3 +2098,129 @@ button {
   bottom: 304px;
   max-height: calc(100vh - 390px);
 }
+
+/* ---------- bloco 7: jogos salvos e som ---------- */
+
+.syscard {
+  top: 60px;
+  right: 14px;
+  width: 380px;
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+  padding: 10px 12px 12px;
+  display: grid;
+  gap: 8px;
+  z-index: 6;
+}
+
+.syscard[hidden] {
+  display: none;
+}
+
+.slot {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  grid-template-rows: auto auto;
+  gap: 4px 10px;
+  padding: 8px;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.slot.current {
+  background: #f7e3b0;
+}
+
+.slot-thumb {
+  grid-row: span 2;
+  width: 96px;
+  height: 60px;
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: #3a3029;
+  color: var(--paper);
+  font-size: 22px;
+}
+
+.slot-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+
+.slot-info {
+  min-width: 0;
+}
+
+.slot-name {
+  width: 100%;
+  font: inherit;
+  font-weight: 700;
+  font-size: 13.5px;
+  border: 0;
+  border-bottom: 1px dashed transparent;
+  background: transparent;
+  color: var(--ink);
+  padding: 0;
+}
+
+.slot-name:hover,
+.slot-name:focus {
+  border-bottom-color: var(--ink);
+  outline: none;
+}
+
+.slot-sub {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.slot-empty {
+  font-size: 12.5px;
+  font-style: italic;
+  opacity: 0.7;
+  padding-top: 6px;
+}
+
+.slot-actions,
+.slot-files,
+.sound-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.slot-files .catalog-hint,
+.sound-foot .catalog-hint {
+  flex-basis: 100%;
+}
+
+.sound-row {
+  display: grid;
+  grid-template-columns: 70px 1fr 42px;
+  gap: 8px;
+  align-items: center;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.sound-row input[type='range'] {
+  accent-color: var(--terracotta);
+  width: 100%;
+}
+
+.sound-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.btn.muted {
+  background: var(--paper);
+  opacity: 0.75;
+}

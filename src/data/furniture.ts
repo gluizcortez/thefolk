@@ -1,5 +1,5 @@
 import type { DuoDef, InteractionDef, Needs, ObjectDef, Outfit } from '../sim/types';
-import { clean, lightOff, lightOn, repair, service } from './interactions';
+import { clean, lightOff, lightOn, repair, service, tuning } from './interactions';
 
 // Bloco 4: catálogo em faixas de preço. Cada função de necessidade ganha uma
 // versão barata (tier 0) e uma cara (tier 2) ao lado do modelo médio que já
@@ -508,7 +508,7 @@ export const FURNITURE: ObjectDef[] = [
     art: 'radio',
     size: { w: 1, h: 1 },
     ambience: 0,
-    interactions: [dance(1.2), repair(), service()],
+    interactions: [dance(1.2), ...tuning(), repair(), service()],
     upkeep: { wear: 0.2, breaks: true },
   },
   {
@@ -524,7 +524,7 @@ export const FURNITURE: ObjectDef[] = [
     size: { w: 1, h: 1 },
     slots: 3,
     ambience: 9,
-    interactions: [dance(2.6, { effects: { social: 0.6, fun: 0.3 }, friendship: 0.05 }), repair(), service()],
+    interactions: [dance(2.6, { effects: { social: 0.6, fun: 0.3 }, friendship: 0.05 }), ...tuning(), repair(), service()],
     upkeep: { wear: 0.06, breaks: true },
   },
   {

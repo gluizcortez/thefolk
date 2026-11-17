@@ -56,6 +56,11 @@ import {
   transferLevel,
   DIRTY_AT,
   careAvailable,
+  interactionOpen,
+  isStereo,
+  stationDef,
+  favoriteStation,
+  nextStation,
   stateOf,
   FAIR,
   GROCERIES,
@@ -86,6 +91,9 @@ import type {
   WorldObject,
 } from '../sim';
 import { iconSvg } from './icons';
+import { SystemCards } from './system';
+import { cue } from '../audio/cues';
+import type { AudioEngine } from '../audio/engine';
 import type { IconId } from './icons';
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -256,11 +264,15 @@ export class Hud {
   private undoButton = el('button', 'btn btn-undo');
   private buildTab: BuildTab = 'walls';
   private buildSig = '';
+  /** bloco 7: cartões de jogos salvos e de som */
+  private system: SystemCards;
+  private soundButton = el('button', 'btn btn-icon');
 
   constructor(
     private readonly root: HTMLElement,
     private readonly ctrl: GameController,
   ) {
+    this.system = new SystemCards(ctrl);
     this.buildClock();
     this.buildSystem();
     this.buildViewBar();
@@ -322,17 +334,39 @@ export class Hud {
   private buildSystem(): void {
     const bar = el('div', 'system');
     const save = el('button', 'btn', t('hud.save'));
-    save.addEventListener('click', () => void this.ctrl.save());
-    const load = el('button', 'btn', t('hud.load'));
-    load.addEventListener('click', () => void this.ctrl.load());
+    save.title = t('hud.saveTip');
+    save.addEventListener('click', () => void this.ctrl.save().then(() => {
+      if (this.system.isOpen('saves')) void this.system.render();
+    }));
+    // bloco 7: "Jogos" abre as três vagas, exportar e importar
+    const games = el('button', 'btn', t('hud.games'));
+    games.title = t('hud.gamesTip');
+    games.addEventListener('click', () => this.system.toggle('saves'));
+    this.soundButton.addEventListener('click', () => this.system.toggle('sound'));
+    this.system.onChange = () => this.renderSoundButton();
+    this.renderSoundButton();
     const fresh = el('button', 'btn btn-quiet', t('hud.new'));
     // bloco 5: jogo novo abre a tela de criar família (que tem o atalho da família pronta)
     fresh.addEventListener('click', () => {
+      this.system.close();
       if (this.openCreator) this.openCreator();
       else this.ctrl.newGame();
     });
-    bar.append(save, load, fresh);
-    this.root.append(bar);
+    bar.append(save, games, this.soundButton, fresh);
+    this.root.append(bar, this.system.el);
+  }
+
+  private renderSoundButton(): void {
+    const muted = this.system.muted;
+    this.soundButton.textContent = muted ? '♪̸' : '♪';
+    this.soundButton.classList.toggle('muted', muted);
+    this.soundButton.title = t(muted ? 'hud.soundMuted' : 'hud.sound');
+    this.soundButton.setAttribute('aria-label', this.soundButton.title);
+  }
+
+  /** Bloco 7: liga os volumes ao motor de som. */
+  setAudio(engine: AudioEngine): void {
+    this.system.setAudio(engine);
   }
 
   /** Controles de câmera e de paredes, no canto superior esquerdo. */
@@ -687,6 +721,13 @@ export class Hud {
     const state = stateOf(obj);
     const status = this.objectStatus(obj);
     if (status) this.menuEl.append(el('div', `menu-note ${state.broken ? 'menu-warn' : ''}`, status));
+    // bloco 7: o que o som está tocando e qual estação o folk prefere
+    if (isStereo(def)) {
+      const on = stationDef(obj.tune);
+      const fav = favoriteStation(folk);
+      if (on && !state.broken) this.menuEl.append(el('div', 'menu-note', `♪ ${t('menu.playing', { station: t(on.name) })} · ${t(`${on.name}Tip`)}`));
+      this.menuEl.append(el('div', 'menu-note', `${t(fav.name)}: ${t('menu.favStation', { name: folk.name.split(' ')[0] })}`));
+    }
     // bloco 2: cada conta da caixa de correio, detalhada
     if (def.interactions.some((i) => i.special === 'payBills')) {
       for (const bill of unpaidBills(this.ctrl.world)) {
@@ -702,6 +743,8 @@ export class Hud {
     const shown = def.interactions.filter((it) => {
       if (it.hidden) return false;
       if (it.care) return careAvailable(obj, it);
+      // bloco 7: ligar, trocar e desligar o som só quando faz sentido
+      if (it.tune) return interactionOpen(obj, it);
       if (it.takeout || it.special === 'fair' || it.special === 'payBills') return interactionReady(world, it);
       return true;
     });
@@ -719,6 +762,7 @@ export class Hud {
       if (it.special === 'payBills') extras.push(formatMoney(debtOf(world)));
       if (it.special === 'fair') extras.push(formatMoney(FAIR.price));
       if (it.skill) extras.push(t(`skill.${it.skill.id}`));
+      if (it.tune === 'next') extras.push(t(stationDef(nextStation(obj.tune))!.name));
       // bloco 6: de mau humor ele não topa; o menu já avisa (mas deixa tentar)
       const why = refusal(this.ctrl.sim.catalog, folk, it, world.tick);
       if (why) {
@@ -1060,6 +1104,7 @@ export class Hud {
   }
 
   private showMenuAt(x: number, y: number): void {
+    if (this.menuEl.hidden) cue('open');
     this.menuEl.hidden = false;
     this.menuOpen = true;
     const rect = this.menuEl.getBoundingClientRect();
@@ -1079,6 +1124,7 @@ export class Hud {
 
   togglePanel(panel: Exclude<Panel, null>): void {
     this.panel = this.panel === panel ? null : panel;
+    cue(this.panel ? 'open' : 'close');
     this.panelSig = '';
     this.renderPanel();
   }

@@ -97,6 +97,10 @@ export function interactionOpen(obj: WorldObject, it: InteractionDef): boolean {
   // bloco 3: o interruptor só oferece o que muda alguma coisa
   if (it.light === 'on') return !obj.lit && !stateOf(obj).broken;
   if (it.light === 'off') return !!obj.lit;
+  // bloco 7: o botão do som (ligar, trocar de estação, desligar); veja sim/music.ts
+  if (it.tune === 'on') return !obj.tune && !stateOf(obj).broken;
+  if (it.tune === 'next') return !!obj.tune && !stateOf(obj).broken;
+  if (it.tune === 'off') return !!obj.tune;
   return !stateOf(obj).broken;
 }
 

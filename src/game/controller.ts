@@ -3,8 +3,25 @@ import { starterHouse } from '../data/house';
 import { familySeed } from '../data/family';
 import { NEIGHBORS, NEIGHBOR_TIES } from '../data/neighbors';
 import { hasText, t } from '../i18n';
-import { readSave, writeSave } from '../platform/saveStore';
-import { Sim, createWorld, deserialize, isBuildCommand, serialize } from '../sim';
+import { idbBackend } from '../platform/saveStore';
+import type { SaveBackend, SlotId, SlotMeta } from '../platform/slots';
+import {
+  SLOT_IDS,
+  adoptLegacy,
+  currentSlot,
+  defaultSlotName,
+  deleteSlot,
+  exportFileName,
+  exportSave,
+  freeSlot,
+  importSave,
+  listSlots,
+  readSlot,
+  renameSlot,
+  setCurrentSlot,
+  writeSlot,
+} from '../platform/slots';
+import { Sim, createWorld, isBuildCommand } from '../sim';
 import type { Command, FamilyDraft, Folk, Rotation, Speed, World } from '../sim';
 import { cleanName, familyProblem } from '../sim';
 
@@ -24,7 +41,11 @@ export interface Placing {
 }
 import type { WallMode } from './art/house';
 
-const SLOT = 'principal';
+/** Dados de fora do núcleo que as migrações de save usam. */
+const MIGRATION = { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES, catalog: CATALOG };
+
+/** Bloco 7: o que aconteceu com um comando (a camada de som escuta). */
+export type CommandListener = (cmd: Command, ok: boolean) => void;
 
 /**
  * Bloco 6: fatos importantes do log viram cartão de aviso (que fica na tela)
@@ -80,6 +101,13 @@ export class GameController {
   private toastListeners: ((text: string) => void)[] = [];
   private noticeListeners: ((text: string, icon: string) => void)[] = [];
   private seenLog = 0;
+  /** bloco 7: vaga de save em uso e o nome do jogo */
+  slot: SlotId = SLOT_IDS[0];
+  slotName = '';
+  /** bloco 7: tira a miniatura da casa para a vaga (a tela fornece) */
+  snapshot: (() => string | undefined) | null = null;
+  private commandListeners: CommandListener[] = [];
+  private readonly db: SaveBackend = idbBackend;
 
   constructor() {
     this.sim = new Sim(CATALOG, createWorld(starterHouse(freshSeed())));
@@ -116,6 +144,7 @@ export class GameController {
 
   command(cmd: Command): boolean {
     const ok = this.sim.dispatch(cmd);
+    for (const cb of this.commandListeners) cb(cmd, ok);
     if (ok && (cmd.type === 'buy' || cmd.type === 'sell' || cmd.type === 'move' || cmd.type === 'undoBuy')) this.objectsVersion++;
     if (ok && (isBuildCommand(cmd) || cmd.type === 'undoBuild')) this.gridVersion++;
     return ok;
@@ -278,9 +307,38 @@ export class GameController {
     this.worldVersion++;
   }
 
-  async save(silent = false): Promise<boolean> {
+  // ---------- bloco 7: jogos salvos ----------
+
+  onCommand(cb: CommandListener): void {
+    this.commandListeners.push(cb);
+  }
+
+  /** Na abertura: traz o save antigo para a vaga 1 e carrega a vaga em uso. */
+  async boot(): Promise<boolean> {
     try {
-      await writeSave(SLOT, serialize(this.world, Date.now()));
+      await adoptLegacy(this.db, MIGRATION);
+      this.slot = await currentSlot(this.db);
+    } catch {
+      return false;
+    }
+    return this.loadSlot(this.slot, true);
+  }
+
+  /** Salva o jogo na vaga em uso (ou em outra, que passa a ser a vaga em uso). */
+  async save(silent = false, slot: SlotId = this.slot): Promise<boolean> {
+    try {
+      let thumb: string | undefined;
+      try {
+        thumb = this.snapshot?.();
+      } catch {
+        thumb = undefined;
+      }
+      const meta = await writeSlot(this.db, slot, this.world, this.slotName || defaultSlotName(this.world), Date.now(), thumb);
+      this.slotName = meta.name;
+      if (slot !== this.slot) {
+        this.slot = slot;
+        await setCurrentSlot(this.db, slot);
+      }
       if (!silent) this.toast(t('toast.saved'));
       return true;
     } catch {
@@ -289,32 +347,93 @@ export class GameController {
     }
   }
 
-  async load(silent = false): Promise<boolean> {
-    let raw: unknown;
+  /** Carrega a vaga em uso (botão de antes do bloco 7). */
+  load(silent = false): Promise<boolean> {
+    return this.loadSlot(this.slot, silent);
+  }
+
+  async loadSlot(slot: SlotId, silent = false): Promise<boolean> {
+    let found: Awaited<ReturnType<typeof readSlot>>;
     try {
-      raw = await readSave(SLOT);
+      found = await readSlot(this.db, slot, MIGRATION);
     } catch {
       if (!silent) this.toast(t('toast.loadError'));
       return false;
     }
-    if (raw === undefined) {
+    if (!found) {
       if (!silent) this.toast(t('toast.noSave'));
       return false;
     }
+    this.replaceWorld(found.world);
+    this.slot = slot;
+    this.slotName = found.meta.name;
+    void setCurrentSlot(this.db, slot).catch(() => undefined);
+    this.toast(t('toast.loadedSlot', { name: found.meta.name }));
+    return true;
+  }
+
+  slots(): Promise<(SlotMeta | null)[]> {
+    return listSlots(this.db).catch(() => SLOT_IDS.map(() => null));
+  }
+
+  async renameSlot(slot: SlotId, name: string): Promise<boolean> {
+    const ok = await renameSlot(this.db, slot, name).catch(() => false);
+    if (ok && slot === this.slot) this.slotName = (await this.slots())[SLOT_IDS.indexOf(slot)]?.name ?? this.slotName;
+    return ok;
+  }
+
+  async deleteSlot(slot: SlotId): Promise<boolean> {
     try {
-      this.replaceWorld(deserialize(raw, { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES, catalog: CATALOG }).world);
-      this.toast(t('toast.loaded'));
+      await deleteSlot(this.db, slot);
+      this.toast(t('toast.slotDeleted'));
       return true;
     } catch {
-      this.toast(t('toast.loadError'));
+      this.toast(t('toast.saveError'));
       return false;
     }
+  }
+
+  /** Texto e nome do arquivo para baixar o jogo de agora. */
+  exportGame(): { text: string; fileName: string } {
+    const name = this.slotName || defaultSlotName(this.world);
+    return { text: exportSave(this.world, name, Date.now()), fileName: exportFileName(name, Math.floor(this.world.tick / 1440) + 1) };
+  }
+
+  /**
+   * Abre um arquivo exportado. Vai para uma vaga livre (para não apagar
+   * nenhum jogo); sem vaga livre, avisa e não abre.
+   */
+  async importGame(text: string): Promise<boolean> {
+    let found: ReturnType<typeof importSave>;
+    try {
+      found = importSave(text, MIGRATION);
+    } catch {
+      this.toast(t('toast.importError'));
+      return false;
+    }
+    const slot = await freeSlot(this.db).catch(() => null);
+    if (!slot) {
+      this.toast(t('toast.importFull'));
+      return false;
+    }
+    this.replaceWorld(found.world);
+    this.slotName = found.name;
+    await this.save(true, slot);
+    this.toast(t('toast.imported', { name: found.name }));
+    return true;
+  }
+
+  /** Jogo novo vai para uma vaga livre; sem vaga livre, usa a vaga de agora. */
+  private async freshSlot(): Promise<void> {
+    const slot = await freeSlot(this.db).catch(() => null);
+    this.slotName = '';
+    await this.save(true, slot ?? this.slot);
   }
 
   newGame(): void {
     this.replaceWorld(createWorld(starterHouse(freshSeed())));
     this.toast(t('toast.newGame'));
-    void this.save(true);
+    void this.freshSlot();
   }
 
   /** Bloco 5: começa de novo com a família criada na tela de criação. */
@@ -322,7 +441,7 @@ export class GameController {
     if (familyProblem(this.sim.catalog, draft)) return false;
     this.replaceWorld(createWorld(familySeed(draft, freshSeed())));
     this.toast(t('toast.newFamily', { name: cleanName(draft.surname) }));
-    void this.save(true);
+    void this.freshSlot();
     return true;
   }
 }

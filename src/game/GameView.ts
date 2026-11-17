@@ -43,6 +43,7 @@ import { PAINT, PAL } from './art/palette';
 import { colorOf } from '../sim/furnish';
 import { wearOf } from '../sim/family';
 import { thoughtOf } from '../sim/will';
+import { stationDef } from '../sim/music';
 import type { Look, Wear } from '../sim/types';
 import { buildScenery } from './art/scenery';
 import { getTexture } from './art/textures';
@@ -108,6 +109,10 @@ interface ObjectEntry {
   turn: number;
   /** manchas, moscas, fumaça e faísca (bloco 1) */
   fx: WearFx;
+  /** altura do modelo (bloco 7: as notas do som saem daí) */
+  height: number;
+  /** bloco 7: notas que sobem do som ligado */
+  notes?: { station: string; sprites: THREE.Sprite[] };
 }
 
 interface FolkEntry {
@@ -406,7 +411,7 @@ export class GameView {
       const fx = new WearFx(size.w, size.h, height, obj.id);
       fx.group.position.copy(center);
       this.objectsRoot.add(model.group, fx.group);
-      this.objects.set(obj.id, { obj, def, spec, model, center, turn, fx });
+      this.objects.set(obj.id, { obj, def, spec, model, center, turn, fx, height });
     }
     this.builtObjects = this.ctrl.objectsVersion;
     this.hover = {};
@@ -802,6 +807,7 @@ export class GameView {
     for (const entry of this.objects.values()) {
       entry.model.tick?.({ time: this.animTime, using: using.get(entry.obj.id), night, lit: !!entry.obj.lit && !entry.obj.state?.broken });
       if (entry.obj.state) entry.fx.update(entry.obj.state, !!entry.def.upkeep?.bin && entry.obj.state.fill >= 100, this.animTime);
+      this.updateNotes(entry);
       const s = entry === this.hover.entry ? 1.04 : 1;
       entry.model.group.scale.lerp(this.tmp.set(s, s, s), 0.3);
     }
@@ -826,6 +832,34 @@ export class GameView {
       this.hudClock = 0;
       this.hud.update();
     }
+  }
+
+  /** Bloco 7: som ligado solta notinhas coloridas no ritmo da estação. */
+  private updateNotes(entry: ObjectEntry): void {
+    const station = !entry.obj.state?.broken ? stationDef(entry.obj.tune) : undefined;
+    if (!station) {
+      if (entry.notes) {
+        for (const s of entry.notes.sprites) this.objectsRoot.remove(s);
+        entry.notes = undefined;
+      }
+      return;
+    }
+    if (entry.notes?.station !== station.id) {
+      if (entry.notes) for (const s of entry.notes.sprites) this.objectsRoot.remove(s);
+      const sprites = [0, 1, 2].map(() => {
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: getTexture(`note:${station.id}`), transparent: true, depthTest: false }));
+        this.objectsRoot.add(sp);
+        return sp;
+      });
+      entry.notes = { station: station.id, sprites };
+    }
+    const speed = station.bpm / 120;
+    entry.notes.sprites.forEach((sp, i) => {
+      const k = (performance.now() / 1000 * 0.5 * speed + i / 3) % 1;
+      sp.position.set(entry.center.x + Math.sin(k * 6 + i * 2) * 0.22, entry.height + 0.15 + k * 0.9, entry.center.z);
+      sp.scale.setScalar(0.3 + k * 0.1);
+      sp.material.opacity = k < 0.15 ? k / 0.15 : 1 - (k - 0.15) / 0.85;
+    });
   }
 
   private applyDaylight(night: number): void {
@@ -965,7 +999,10 @@ export class GameView {
     }
 
     const mood = moodOf(sim.catalog, folk.needs);
-    view.model.update({ anim, ...place, mood, time: this.animTime, dt, expr, hold: it?.hold, energy: folk.needs.energy });
+    // bloco 7: dança no ritmo da estação que está tocando
+    const station = anim === 'dance' && entry ? stationDef(entry.obj.tune) : undefined;
+    const time = station ? this.animTime * (station.bpm / 110) : this.animTime;
+    view.model.update({ anim, ...place, mood, time, dt, expr, hold: it?.hold, energy: folk.needs.energy });
 
     const iconKey = social?.icon ?? (thought ? `th:${thought.kind}:${thought.icon}` : undefined);
     view.icon.visible = !!iconKey;
@@ -1549,6 +1586,29 @@ export class GameView {
     }
     ctx.putImageData(img, 0, 0);
     return canvas.toDataURL();
+  }
+
+  /**
+   * Bloco 7: quanto se ouve de um tile e de que lado. Fora da tela vai
+   * sumindo; com a câmera longe, tudo fica mais baixo.
+   */
+  hearing(x: number, y: number): { gain: number; pan: number } {
+    const v = this.tmp.set(x + 0.5, 0.6, y + 0.5).project(this.camera);
+    const edge = Math.max(Math.abs(v.x), Math.abs(v.y));
+    const off = edge <= 1 ? 1 : Math.max(0, 1 - (edge - 1) * 1.6);
+    const zoom = Math.min(1, Math.max(0.45, 11 / this.viewHeight));
+    return { gain: off * zoom, pan: Math.max(-1, Math.min(1, v.x)) * 0.7 };
+  }
+
+  /** Bloco 7: miniatura da vista de agora para a vaga do save (16 bits, como o jogo). */
+  snapshot(w = 192): string {
+    const el = this.renderer.domElement;
+    const aspect = el.clientWidth > 0 && el.clientHeight > 0 ? el.clientWidth / el.clientHeight : 16 / 9;
+    const h = Math.max(48, Math.round(w / aspect));
+    const prev = this.scene.background;
+    const url = this.renderToUrl(this.scene, this.camera, w, h);
+    this.scene.background = prev;
+    return url;
   }
 
   thumbnail(art: string): string {

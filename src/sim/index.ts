@@ -26,3 +26,4 @@ export * from './temper';
 export * from './family';
 export * from './will';
 export * from './wishes';
+export * from './music';

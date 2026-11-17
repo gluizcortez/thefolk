@@ -15,6 +15,14 @@ export const admire = (fun: number): InteractionDef => ({
   skill: { id: 'creativity', xpPerMinute: 0.2 },
 });
 
+// ---------- bloco 7: botão do som ----------
+// Ligar põe a estação preferida de quem ligou; trocar passa para a próxima.
+export const tuneOn = (): InteractionDef => ({ id: 'tuneOn', label: 'act.tuneOn', duration: 1, effects: {}, tune: 'on', autonomous: false });
+export const tuneNext = (): InteractionDef => ({ id: 'tuneNext', label: 'act.tuneNext', duration: 1, effects: {}, tune: 'next', autonomous: false });
+export const tuneOff = (): InteractionDef => ({ id: 'tuneOff', label: 'act.tuneOff', duration: 1, effects: {}, tune: 'off', autonomous: false });
+/** os três botões, para pôr em todo objeto de som */
+export const tuning = (): InteractionDef[] => [tuneOn(), tuneNext(), tuneOff()];
+
 // ---------- bloco 1: cuidados com a casa ----------
 // Interações de cuidado só aparecem quando há o que fazer (sujeira, objeto
 // quebrado, desgaste, lixeira com lixo). Veja sim/upkeep.ts.
