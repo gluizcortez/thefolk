@@ -242,7 +242,9 @@ export class GameController {
 function translateParams(params?: Record<string, string | number>): Record<string, string | number> | undefined {
   if (!params) return params;
   const out: Record<string, string | number> = {};
-  for (const [k, v] of Object.entries(params)) out[k] = typeof v === 'string' && hasText(v) ? t(v) : v;
+  // textos dentro de textos (resultado de evento, notícia) usam os mesmos parâmetros
+  const raw: Record<string, string | number> = { ...params, about: params.about ?? params.name };
+  for (const [k, v] of Object.entries(params)) out[k] = typeof v === 'string' && hasText(v) ? t(v, raw) : v;
   return out;
 }
 
