@@ -997,7 +997,34 @@ const mirror: FurnitureSpec = {
   },
 };
 
+/** Bloco 5: guarda-roupa de duas portas, com espelho numa delas e pés torneados. */
+const wardrobe: FurnitureSpec = {
+  build() {
+    const oak = texMat('oak', { gloss: 0.3 });
+    const dark = colorMat(0x5a3a22, { gloss: 0.35 });
+    const knob = colorMat(PAL.brass, { gloss: 0.9 });
+    const g = group(
+      rbox(0.92, 1.86, 0.56, 0.03, oak, 0, 0.12, -0.2),
+      // cornija e rodapé
+      rbox(0.98, 0.08, 0.6, 0.02, dark, 0, 1.98, -0.2),
+      box(0.94, 0.06, 0.58, dark, 0, 0.1, -0.2),
+      // portas: frisos, espelho na esquerda, puxadores no meio
+      box(0.42, 1.64, 0.02, oak, -0.22, 0.24, 0.085),
+      box(0.42, 1.64, 0.02, oak, 0.22, 0.24, 0.085),
+      box(0.012, 1.64, 0.025, dark, 0, 0.24, 0.088),
+      box(0.3, 1.1, 0.012, texMat('mirror', { gloss: 1 }), -0.22, 0.5, 0.1),
+      box(0.3, 1.1, 0.012, dark, 0.22, 0.5, 0.093),
+      box(0.26, 1.04, 0.012, oak, 0.22, 0.53, 0.098),
+      ball(0.018, 0.018, 0.018, knob, -0.04, 1.06, 0.11, 8),
+      ball(0.018, 0.018, 0.018, knob, 0.04, 1.06, 0.11, 8),
+    );
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(cyl(0.035, 0.025, 0.1, 8, dark, sx * 0.4, 0, -0.2 + sz * 0.23));
+    return { group: g };
+  },
+};
+
 export const FURNITURE4: Record<string, FurnitureSpec> = {
+  wardrobe,
   bedcot,
   bedqueen,
   sofacheap,

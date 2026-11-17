@@ -24,6 +24,7 @@ export const clean = (): InteractionDef => ({
   duration: 60,
   effects: { hygiene: -0.06, fun: -0.03 },
   care: 'clean',
+  hold: 'rag',
   skill: { id: 'tidiness', xpPerMinute: 0.8 },
 });
 export const repair = (): InteractionDef => ({

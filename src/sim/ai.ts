@@ -11,6 +11,7 @@ import { grudge, pickGossip } from './gossip';
 import { committedElsewhere, guessAccept, onLot, socialAllowed, socialTaste, talkTiles, talkingWith } from './social';
 import type { Catalog, Folk, InteractionDef, Needs, ServiceOrder, SocialDef, World } from './types';
 import { NEED_IDS } from './types';
+import { temperPull } from './temper';
 import { JOIN_BONUS, TIER_PULL, duoPartners, occupiedId, tierOf } from './furnish';
 
 /** Bloco 4: vontade de entrar na atividade a dois que alguém já começou. */
@@ -199,7 +200,8 @@ export function scoreOptions(world: World, catalog: Catalog, folk: Folk, nav: Na
     if (!path) continue;
     for (const it of auto) {
       // bloco 4: o objeto melhor puxa mais; atividade a dois com alguém já jogando também
-      let utility = interactionUtility(catalog, folk, it) * TIER_PULL[tierOf(def)];
+      // bloco 5: o temperamento puxa para o que combina (malhar, pintar, ler)
+      let utility = interactionUtility(catalog, folk, it) * TIER_PULL[tierOf(def)] * temperPull(folk, it);
       if (it.duo) utility += joinUtility(world, catalog, folk, obj.id, it);
       const score = utility / (1 + DISTANCE_COST * path.length);
       options.push({ objectId: obj.id, interactionId: it.id, score, distance: path.length });

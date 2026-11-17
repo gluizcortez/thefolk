@@ -1,5 +1,6 @@
 import { roomAmbience } from './rooms';
 import { skillBoost } from './skills';
+import { temperDecay, temperWeight } from './temper';
 import type { Catalog, Folk, InteractionDef, NeedId, Needs, World } from './types';
 import { NEED_IDS } from './types';
 
@@ -22,14 +23,14 @@ export function fullNeeds(value = NEED_MAX): Needs {
 export function decayMultiplier(catalog: Catalog, folk: Folk, need: NeedId): number {
   let m = 1;
   for (const t of folk.traits) m *= catalog.traits[t]?.decay?.[need] ?? 1;
-  return m;
+  return m * temperDecay(folk.temper, need);
 }
 
 /** Peso que a IA do folk dá a uma necessidade (traços). */
 export function needWeight(catalog: Catalog, folk: Folk, need: NeedId): number {
   let m = 1;
   for (const t of folk.traits) m *= catalog.traits[t]?.needWeight?.[need] ?? 1;
-  return m;
+  return m * temperWeight(folk.temper, need);
 }
 
 /**

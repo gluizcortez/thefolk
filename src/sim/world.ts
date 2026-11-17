@@ -4,7 +4,8 @@ import { personOf } from './people';
 import { ensureRelation } from './relations';
 import { START_PANTRY } from './services';
 import { freshState } from './upkeep';
-import type { EdgeKind, Folk, Grid, Neighbor, Needs, Rotation, Vec, World } from './types';
+import { NEUTRAL_TEMPER, fullLook } from './temper';
+import type { EdgeKind, Folk, Grid, Look, Neighbor, Needs, Outfit, Rotation, Temper, Vec, World } from './types';
 
 export interface RoomStyle {
   floor: string;
@@ -62,8 +63,12 @@ export interface FolkSeed {
   x: number;
   y: number;
   needs?: Partial<Needs>;
-  look?: Folk['look'];
+  look?: Partial<Look>;
   skills?: Record<string, number>;
+  /** bloco 5 (padrão: 5 em tudo, neutro) */
+  temper?: Temper;
+  month?: number;
+  outfit?: Outfit;
 }
 
 export interface ObjectSeed {
@@ -74,7 +79,11 @@ export interface ObjectSeed {
 }
 
 /** Vizinho como dado: o id nasce quando o mundo é criado. */
-export type NeighborSeed = Omit<Neighbor, 'id'>;
+export type NeighborSeed = Omit<Neighbor, 'id' | 'look' | 'temper' | 'month'> & {
+  look: Partial<Look>;
+  temper?: Temper;
+  month?: number;
+};
 
 /** Relação inicial entre dois folks da casa, pelos nomes (vale para os dois lados). */
 export interface RelationSeed {
@@ -123,7 +132,9 @@ export function seedNeighbors(seeds: NeighborSeed[], nextId: number): Neighbor[]
     ...n,
     id: nextId + i,
     traits: [...n.traits],
-    look: { ...n.look },
+    look: fullLook(n.look),
+    temper: { ...(n.temper ?? NEUTRAL_TEMPER) },
+    month: n.month ?? 0,
     skills: { ...n.skills },
     career: n.career ? { ...n.career } : null,
   }));
@@ -210,7 +221,11 @@ export function createWorld(seed: WorldSeed): World {
     autonomy: true,
     idleTicks: 0,
     collapsed: 0,
-    look: f.look ?? { skin: 0, hair: 0, shirt: 0, pants: 0 },
+    look: fullLook(f.look),
+    temper: { ...(f.temper ?? NEUTRAL_TEMPER) },
+    month: f.month ?? 0,
+    outfit: f.outfit ?? 'day',
+    habits: {},
     skills: { ...f.skills },
     job: null,
     away: null,

@@ -1,3 +1,4 @@
+import { monthChemistry } from './temper';
 import type { Catalog, Folk, Memory, RelAxis, RelDelta, Relation, World } from './types';
 
 export const REL_MIN = -100;
@@ -47,8 +48,9 @@ function clampRel(v: number): number {
  * Afinidade de `a` por `b` vinda dos traços: +1 para cada traço do outro de
  * que gosta, -1 para cada um que dá atrito, +0,5 por traço em comum.
  */
-export function affinity(catalog: Catalog, a: Pick<Folk, 'traits'>, b: Pick<Folk, 'traits'>): number {
-  let sum = 0;
+export function affinity(catalog: Catalog, a: Pick<Folk, 'traits'> & { month?: number }, b: Pick<Folk, 'traits'> & { month?: number }): number {
+  // bloco 5: o mês de nascimento combina (ou não) com o do outro
+  let sum = monthChemistry(catalog, a.month, b.month);
   for (const ta of a.traits) {
     const def = catalog.traits[ta];
     for (const tb of b.traits) {

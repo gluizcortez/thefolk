@@ -103,6 +103,8 @@ describe('emprego', () => {
     expect(sim.world.log.some((l) => l.key === 'log.needSkills')).toBe(true);
 
     folk.skills.logic = xpForLevel(2);
+    // o turno anterior pode ter custado desempenho (humor, evento do expediente)
+    folk.job!.performance = PROMOTE_AT + 5;
     shift = nextShift(CATALOG, folk, sim.world.tick)!;
     until(sim, shift.end);
     expect(folk.job!.level).toBe(1);

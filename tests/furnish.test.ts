@@ -297,7 +297,7 @@ describe('objeto querido (bloco 4)', () => {
 
 describe('save v9 (bloco 4)', () => {
   it('migra da v8: objetos ganham contagem de uso, sem data de compra', () => {
-    expect(SAVE_VERSION).toBe(9);
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(9);
     const world = createWorld(starterHouse(1));
     for (const o of world.objects) {
       delete o.used;

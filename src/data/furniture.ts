@@ -1,4 +1,4 @@
-import type { DuoDef, InteractionDef, Needs, ObjectDef } from '../sim/types';
+import type { DuoDef, InteractionDef, Needs, ObjectDef, Outfit } from '../sim/types';
 import { clean, lightOff, lightOn, repair, service } from './interactions';
 
 // Bloco 4: catálogo em faixas de preço. Cada função de necessidade ganha uma
@@ -21,6 +21,7 @@ const sleep = (energy: number, comfort: number, duo?: DuoDef): InteractionDef =>
   residentOnly: true,
   pose: 'lie',
   onObject: true,
+  wear: 'sleep',
   duo,
 });
 const nap = (energy: number, comfort: number): InteractionDef => ({
@@ -34,6 +35,16 @@ const nap = (energy: number, comfort: number): InteractionDef => ({
   residentOnly: true,
   pose: 'lie',
   onObject: true,
+});
+/** Bloco 5: trocar de roupa no guarda-roupa. */
+const dress = (outfit: Outfit): InteractionDef => ({
+  id: `dress_${outfit}`,
+  label: `act.dress.${outfit}`,
+  duration: 4,
+  effects: { comfort: 0.2 },
+  autonomous: false,
+  residentOnly: true,
+  dress: outfit,
 });
 const rest = (comfort: number, energy = 0, duration = 60): InteractionDef => ({
   id: 'rest',
@@ -61,6 +72,7 @@ const shower = (hygiene: number, comfort: number): InteractionDef => ({
   until: 'hygiene',
   residentOnly: true,
   onObject: true,
+  wear: 'bath',
   leaves: { kind: 'puddle', chance: 0.35 },
 });
 const toilet = (bladder: number, effects: Partial<Needs>): InteractionDef => ({
@@ -81,6 +93,7 @@ const fridgeUses = (hunger: number, extra: Partial<Needs> = {}, snackCost = 2): 
     effects: { hunger, energy: -0.02, ...extra },
     until: 'hunger',
     atTable: true,
+    hold: 'plate',
     portions: 1,
     residentOnly: true,
     skill: { id: 'cooking', xpPerMinute: 0.3, boosts: 'hunger' },
@@ -94,11 +107,12 @@ const fridgeUses = (hunger: number, extra: Partial<Needs> = {}, snackCost = 2): 
     effects: { hunger: 2.4, fun: 0.1 },
     until: 'hunger',
     atTable: true,
+    hold: 'plate',
     takeout: true,
     leaves: { kind: 'plate', chance: 0.7 },
     trash: 8,
   },
-  { id: 'snack', label: 'act.snack', duration: 12, effects: { hunger: 2.2 }, until: 'hunger', cost: snackCost, trash: 3, atTable: true },
+  { id: 'snack', label: 'act.snack', duration: 12, effects: { hunger: 2.2 }, until: 'hunger', cost: snackCost, trash: 3, atTable: true, hold: 'plate' },
   clean(),
 ];
 const stoveUses = (hunger: number, xp: number, fun: number): InteractionDef[] => [
@@ -109,6 +123,7 @@ const stoveUses = (hunger: number, xp: number, fun: number): InteractionDef[] =>
     effects: { hunger, fun },
     until: 'hunger',
     atTable: true,
+    hold: 'plate',
     autonomous: false,
     portions: 1,
     residentOnly: true,
@@ -135,7 +150,7 @@ const dance = (fun: number, duo?: DuoDef): InteractionDef => ({
 });
 const bookUses = (fun: number, xp: number, extra: boolean): InteractionDef[] => {
   const out: InteractionDef[] = [
-    { id: 'read', label: 'act.read', duration: 75, effects: { fun }, until: 'fun' },
+    { id: 'read', label: 'act.read', duration: 75, effects: { fun }, until: 'fun', hold: 'book' },
     { id: 'study', label: 'act.study', duration: 60, effects: { fun: 0.15 }, skill: { id: 'logic', xpPerMinute: xp } },
   ];
   if (extra) {
@@ -540,6 +555,21 @@ export const FURNITURE: ObjectDef[] = [
     ambience: 14,
     interactions: bookUses(1.3, 1.4, true),
   },
+  // ---------- bloco 5: roupas ----------
+  {
+    id: 'wardrobe',
+    name: 'obj.wardrobe',
+    tier: 1,
+    line: 'wardrobe',
+    room: 'bedroom',
+    price: 380,
+    category: 'decor',
+    art: 'wardrobe',
+    useSides: ['S'],
+    size: { w: 1, h: 1 },
+    ambience: 3,
+    interactions: [dress('day'), dress('formal'), dress('sleep'), dress('swim')],
+  },
   // ---------- luz ----------
   {
     id: 'lampcheap',
@@ -673,6 +703,7 @@ export const FURNITURE: ObjectDef[] = [
         until: 'comfort',
         pose: 'sit',
         onObject: true,
+        wear: 'swim',
         duo: { effects: { social: 1.0, fun: 0.4 }, friendship: 0.06 },
       },
       clean(),

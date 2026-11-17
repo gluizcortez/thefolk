@@ -1,3 +1,4 @@
+import { temperMessSense, temperTidy } from './temper';
 import type { Nav } from './grid';
 import { edgeKey, footprint } from './grid';
 import type { Logger } from './gossip';
@@ -51,14 +52,14 @@ export function stateOf(obj: WorldObject): ObjectState {
 export function tidyOf(catalog: Catalog, folk: Folk): number {
   let m = 1;
   for (const t of folk.traits) m *= catalog.traits[t]?.tidy ?? 1;
-  return m;
+  return m * temperTidy(folk.temper);
 }
 
 /** Quanto a bagunça incomoda o folk (1 = normal). */
 export function messSenseOf(catalog: Catalog, folk: Folk): number {
   let m = 1;
   for (const t of folk.traits) m *= catalog.traits[t]?.messSense ?? 1;
-  return m;
+  return m * temperMessSense(folk.temper);
 }
 
 /** Quem é desleixado suja mais; quem é caprichoso, menos. */

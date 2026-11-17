@@ -208,6 +208,31 @@ npm run preview  # serve o dist/ localmente
   catálogo, com filtro por faixa). A cara enche mais rápido, dá conforto
   junto, melhora o cômodo e gasta menos; a barata quebra mais e enfeia. A IA
   prefere a melhor quando pode escolher. São 70 objetos em 10 categorias.
+- **Criar família (bloco 5)**: jogo novo (ou o primeiro, sem save) abre a
+  tela de criar família: sobrenome da casa e de 1 a 8 moradores com nome,
+  pele, cor e corte de cabelo, rosto (liso, sardas, óculos), corpo (magro,
+  médio, forte), roupa do dia, de festa, pijama e traje de banho, até 2
+  traços e o **mês de nascimento**. O atalho **Família pronta** traz Tomé e
+  Lia de sempre. Quem mora junto já começa amigo.
+- **Temperamento em cinco eixos (bloco 5)**: **Ordem**, **Expansão**,
+  **Pique**, **Graça** e **Afeto**, de 0 a 10, com 25 pontos para distribuir.
+  Ordem arruma e sente a bagunça; Expansão perde Social mais rápido e puxa
+  conversa; Pique liga menos para conforto e treina Forma e Jeito mais
+  rápido; Graça enjoa mais rápido e cria, e quem tem pouca Graça é sério e
+  aprende Lógica; Afeto alto é gentil e Afeto baixo provoca e briga. O eixo
+  alto também puxa a IA para o que combina (malhar, pintar, ler). Tudo em 5 é
+  neutro. A cada duas semanas de jogo, o hábito mexe um ponto: quem limpa
+  muito ganha Ordem, quem conversa muito ganha Expansão. O painel de
+  habilidades mostra o temperamento e o mês.
+- **Mês de nascimento (bloco 5)**: doze meses com nome de coisa de casa
+  (Chaleira, Pião, Lampião, Pipa, Novelo, Bússola, Sino, Martelo, Concha,
+  Balão, Ninho, Faísca). Cada um sugere um temperamento e combina ou dá
+  atrito com alguns outros, o que soma na afinidade como um traço a mais.
+- **Roupas e mãos (bloco 5)**: o **guarda-roupa** troca a roupa de sempre
+  (dia, festa, pijama, banho); na cama o folk está de pijama, no chuveiro de
+  roupão, na banheira de hidromassagem de traje de banho, e ninguém vai
+  trabalhar de pijama. Prato, livro, telefone e pano de limpeza aparecem na
+  mão de quem come, lê, liga e limpa.
 - **Cores**: sofás, poltronas, cadeiras e camas têm cores para escolher no
   rodapé do catálogo antes de pôr no chão.
 - **Depreciação e desfazer**: no dia da compra o objeto vale o que custou (e
@@ -419,6 +444,15 @@ Decisões principais do núcleo:
   `FloorDef.ambience/cover`, `CoveringDef.ambience`; `TraitDef.roomTaste` e
   `saver`; `household.lightMinutes`. `nightAmount`/`daylightAt` em
   `sim/clock.ts` servem à simulação e à tela.
+- **Temperamento, mês e família (bloco 5)** moram em `sim/temper.ts` (eixos,
+  efeitos em decaimento, peso da IA, treino, gosto social, arrumação; hábito
+  e virada a cada `HABIT_PERIOD_DAYS`; `fullLook`) e `sim/family.ts`
+  (`FamilyDraft`, `familyProblem`, `wearOf`); o mundo da família criada sai de
+  `data/family.ts` e os meses de `data/months.ts`. `Folk` ganhou `temper`,
+  `month`, `outfit` e `habits`; `Look` ganhou `style`, `face`, `body`,
+  `formal`, `sleepwear` e `swimwear`; `TraitDef.temper` diz para onde o
+  traço puxa; `InteractionDef` ganhou `dress`, `wear` e `hold`. Save v10.
+  A tela fica em `ui/creator.ts` e o retrato em `GameView.portrait`.
 - **Catálogo e atividades a dois (bloco 4)** moram em `sim/furnish.ts`.
   `ObjectDef` ganhou `tier` (0, 1, 2), `line` (a função que agrupa as faixas;
   frilas e negócios aceitam qualquer objeto da mesma `line`), `colors` e
@@ -546,7 +580,22 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
 - **Bloco 4 (feito)**: catálogo de 70 objetos em faixas barato, médio e caro,
   cores, depreciação, desfazer no modo compra, mesa e cadeiras separadas,
   atividades a dois e objeto querido (save v9).
-- Próximo: bloco 5, criar família com temperamento, corpo e roupa.
+- **Bloco 5 (feito)**: criar família de 1 a 8, temperamento em cinco eixos
+  que muda com o hábito, mês de nascimento com afinidade, corpos, rostos,
+  cortes, roupas por ocasião, guarda-roupa e objetos na mão (save v10).
+- Próximo: bloco 6, humor que manda (recusa, balões, desejos, sono).
+
+## Limitações conhecidas do bloco 5
+
+- A família criada sempre muda para a casa pronta, com duas camas; para mais
+  gente é preciso comprar camas. Ainda não há escolha de lote nem de casa.
+- Saves antigos não ganham guarda-roupa (dá para comprar por 380 ⟡).
+- O traje de banho só aparece na banheira de hidromassagem até chegar a
+  piscina (bloco 13). Roupa de festa ainda não muda nada no trabalho.
+- O prato fica na frente do corpo e o pano na mão direita, sem animação de
+  pegar e largar. Na cama o cobertor esconde quase todo o pijama.
+- A virada de temperamento é de um ponto por período e por folk; visitas não
+  mudam de temperamento.
 
 ## Limitações conhecidas do bloco 4
 

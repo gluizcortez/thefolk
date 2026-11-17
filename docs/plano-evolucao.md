@@ -225,7 +225,7 @@ vontade de entrar no jogo de alguém. Objeto querido depois de 1200 minutos de
 uso de quem mais usou; vender ou perder na penhora dói. Save v9 dá contagem
 de uso aos objetos antigos.
 
-## Bloco 5 — Criar família: temperamento, corpo e roupa (save v10)
+## Bloco 5 — Criar família: temperamento, corpo e roupa (save v10) — feito em 17/11/2026
 
 **Lacuna**: o jogo começa sempre com Tomé e Lia; não existe criar pessoas,
 temperamento numérico nem corpo e roupas diferentes.
@@ -254,6 +254,16 @@ temperamento numérico nem corpo e roupas diferentes.
 com eixos opostos se comportam de forma visivelmente diferente na simulação
 headless; testes de eixos, criação e migração (Tomé e Lia ganham eixos
 coerentes com os traços).
+
+**Como ficou**: tela própria de criar família (1 a 8, sobrenome, aparência
+com corte de cabelo, rosto e corpo, quatro roupas, até 2 traços que não se
+anulam, mês e temperamento com 25 pontos) e atalho da família pronta. Os
+eixos multiplicam decaimento, peso da IA, treino de habilidade, vontade de
+arrumar e gosto por tipo de conversa; 5 em tudo é neutro. Hábito acumulado
+vira um ponto a cada 14 dias (900 minutos no período). Meses com pares de
+afinidade e atrito escritos à mão. Guarda-roupa, pijama na cama, roupão no
+chuveiro, traje na hidromassagem, prato, livro, fone e pano na mão. Papo
+autônomo agora larga a conversa quando a campainha toca sem ninguém ir.
 
 ## Bloco 6 — Humor que manda: vontade própria, balões e desejos (save v11)
 

@@ -6,10 +6,11 @@ import { computeRooms, lightsIn } from './rooms';
 import { START_PANTRY } from './services';
 import type { NeighborSeed, RelationSeed } from './world';
 import { freshState } from './upkeep';
+import { NEUTRAL_TEMPER, fullLook, monthFor, temperFromTraits } from './temper';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 9;
+export const SAVE_VERSION = 10;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -154,6 +155,18 @@ const migrations: Record<number, Migration> = {
   8: (save) => {
     const world = { ...(save.world as Obj) } as unknown as World;
     world.objects = (world.objects ?? []).map((o) => ({ used: 0, uses: {}, ...o }));
+    return { ...save, world: world as unknown as Obj };
+  },
+  // bloco 5: temperamento em cinco eixos (coerente com os traços), mês de
+  // nascimento, corpo, rosto, corte de cabelo e roupas por ocasião
+  9: (save, ctx) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    const born = (traits: string[] | undefined) => {
+      const temper = ctx.catalog ? temperFromTraits(ctx.catalog, traits ?? []) : { ...NEUTRAL_TEMPER };
+      return { temper, month: ctx.catalog ? monthFor(ctx.catalog, temper) : 0 };
+    };
+    world.folks = (world.folks ?? []).map((f) => Object.assign({ ...born(f.traits), outfit: 'day', habits: {} }, f, { look: fullLook(f.look) }));
+    world.neighbors = (world.neighbors ?? []).map((n) => ({ ...born(n.traits), ...n, look: fullLook(n.look) }));
     return { ...save, world: world as unknown as Obj };
   },
 };

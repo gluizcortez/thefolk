@@ -70,6 +70,10 @@ export const SKIN = [0xf0c49c, 0xd9a273, 0xa87148, 0x74482c];
 export const HAIR = [0x231c18, 0x5e3a20, 0xa1461f, 0xd6ab4c, 0xbdb6aa];
 export const SHIRT = [0x2f7fc4, 0xc9382f, 0xe8b830, 0x3f9455, 0x7d55ad, 0xe9e4d6];
 export const PANTS = [0x2c3c60, 0x4d3a2b, 0x55603f, 0x6c6862];
+/** bloco 5: roupa de festa, pijama e traje de banho */
+export const FORMAL = [0x2b2d33, 0x1f3357, 0x6b2430, 0xd8ccb0];
+export const PAJAMA = [0x9cc3e0, 0xe3a5b4, 0xa9d6b2, 0xe8d690];
+export const SWIM = [0xd2382c, 0x2a6fc0, 0xe8b830, 0x2a9a8c];
 
 export function shade(color: number, f: number): number {
   const r = Math.min(255, Math.round(((color >> 16) & 0xff) * f));

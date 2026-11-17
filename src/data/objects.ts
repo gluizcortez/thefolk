@@ -27,6 +27,7 @@ const list: ObjectDef[] = [
       {
         id: 'meal',
         atTable: true,
+        hold: 'plate',
         label: 'act.meal',
         duration: 50,
         effects: { hunger: 2.0, energy: -0.02 },
@@ -41,6 +42,7 @@ const list: ObjectDef[] = [
       {
         id: 'takeout',
         atTable: true,
+        hold: 'plate',
         label: 'act.takeout',
         duration: 25,
         effects: { hunger: 2.4, fun: 0.1 },
@@ -49,7 +51,7 @@ const list: ObjectDef[] = [
         leaves: { kind: 'plate', chance: 0.7 },
         trash: 8,
       },
-      { id: 'snack', label: 'act.snack', duration: 12, effects: { hunger: 2.2 }, until: 'hunger', cost: 2, trash: 3, atTable: true },
+      { id: 'snack', label: 'act.snack', duration: 12, effects: { hunger: 2.2 }, until: 'hunger', cost: 2, trash: 3, atTable: true, hold: 'plate' },
       clean(),
     ],
     upkeep: { dirt: 0.08 },
@@ -77,6 +79,7 @@ const list: ObjectDef[] = [
         residentOnly: true,
         pose: 'lie',
         onObject: true,
+        wear: 'sleep',
       },
       {
         id: 'nap',
@@ -111,6 +114,7 @@ const list: ObjectDef[] = [
         until: 'hygiene',
         residentOnly: true,
         onObject: true,
+        wear: 'bath',
         leaves: { kind: 'puddle', chance: 0.35 },
       },
       clean(),
@@ -218,7 +222,7 @@ const list: ObjectDef[] = [
     size: { w: 2, h: 1 },
     ambience: 8,
     interactions: [
-      { id: 'read', label: 'act.read', duration: 75, effects: { fun: 0.9 }, until: 'fun' },
+      { id: 'read', label: 'act.read', duration: 75, effects: { fun: 0.9 }, until: 'fun', hold: 'book' },
       {
         id: 'study',
         label: 'act.study',
@@ -419,6 +423,7 @@ const list: ObjectDef[] = [
       {
         id: 'cook',
         atTable: true,
+        hold: 'plate',
         label: 'act.cook',
         duration: 45,
         effects: { hunger: 2.6, fun: 0.1 },

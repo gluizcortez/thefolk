@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { HAIR, PAL, PANTS, SHIRT, SKIN, css, seeded, shade } from './palette';
+import { FORMAL, HAIR, PAJAMA, PAL, PANTS, SHIRT, SKIN, SWIM, css, seeded, shade } from './palette';
 
 // Todas as texturas do jogo são pintadas aqui, por código, em canvases
 // pequenos (cerca de 64 pixels por metro). Cada uma recebe um granulado por
@@ -1170,8 +1170,8 @@ export type Expression = 'happy' | 'neutral' | 'sad' | 'talk' | 'angry';
  * Pele da cabeça, que dá a volta inteira (u = 0.5 é o centro do rosto).
  * O rosto é discreto, de proporção realista: os olhos ficam na altura do meio.
  */
-function face(skinIdx: number, hairIdx: number, expr: Expression, eyesClosed: boolean): Painter {
-  return (c, w, h) => {
+function face(skinIdx: number, hairIdx: number, expr: Expression, eyesClosed: boolean, variant = 0): Painter {
+  return (c, w, h, rnd) => {
     const skin = SKIN[skinIdx % SKIN.length];
     const hair = HAIR[hairIdx % HAIR.length];
     fill(c, skin);
@@ -1235,6 +1235,86 @@ function face(skinIdx: number, hairIdx: number, expr: Expression, eyesClosed: bo
     }
     c.stroke();
     oval(c, cx, my + 3.5, 4, 1.2, shade(skin, 0.7), 0.4);
+    // bloco 5: sardas nas bochechas e no nariz
+    if (variant === 1) {
+      for (let i = 0; i < 22; i++) {
+        const s = i % 2 ? 1 : -1;
+        const fx = cx + s * (4 + rnd() * 11);
+        const fy = ey + 4 + rnd() * 6;
+        fill(c, shade(skin, 0.62), Math.round(fx), Math.round(fy), 1, 1, 0.8);
+      }
+    }
+  };
+}
+
+/** Bloco 5: paleta de cada tipo de roupa. */
+function outfitColor(kind: string, idx: number): number {
+  const list = kind === 'suit' ? FORMAL : kind === 'pj' ? PAJAMA : kind === 'swim' ? SWIM : [0xf2efe6];
+  return list[((idx % list.length) + list.length) % list.length];
+}
+
+/**
+ * Bloco 5: tecidos das roupas por ocasião. `part` diz qual peça: tronco,
+ * manga, quadril ou perna. Paletó tem lapela, camisa branca e gravata;
+ * pijama é listrado; roupão é felpudo; traje de banho tem faixa clara.
+ */
+function outfitTex(kind: string, part: string, idx: number): Painter {
+  return (c, w, h, rnd) => {
+    const base = outfitColor(kind, idx);
+    fill(c, base);
+    if (kind === 'pj') {
+      for (let x = 0; x < w; x += 8) fill(c, 0xf7f3ea, x, 0, 3, h, 0.75);
+      for (let x = 3; x < w; x += 8) fill(c, shade(base, 0.7), x, 0, 1, h, 0.5);
+    } else if (kind === 'robe') {
+      for (let i = 0; i < w * h * 0.35; i++) fill(c, rnd() > 0.5 ? 0xffffff : 0xcfc8b8, Math.floor(rnd() * w), Math.floor(rnd() * h), 1, 1, 0.7);
+    } else if (kind === 'swim') {
+      fill(c, 0xf7f3ea, 0, h * 0.62, w, Math.max(2, h * 0.08), 0.9);
+    } else {
+      for (let i = 0; i < 5; i++) {
+        const x = rnd() * w;
+        line(c, x, rnd() * h, x + rnd() * 4 - 2, h, shade(base, 0.7), 0.3, 1.5);
+      }
+    }
+    wrapShade(c, w, h, 0.3);
+    const cx = w / 2;
+    if (part === 'torso' && kind === 'suit') {
+      // camisa branca em V, gravata e lapelas
+      c.fillStyle = css(0xf4efdf);
+      c.beginPath();
+      c.moveTo(cx - 10, 0);
+      c.lineTo(cx, 26);
+      c.lineTo(cx + 10, 0);
+      c.fill();
+      c.fillStyle = css(base === FORMAL[2] ? 0xe8b830 : 0xb8352b);
+      c.beginPath();
+      c.moveTo(cx - 2, 3);
+      c.lineTo(cx + 2, 3);
+      c.lineTo(cx + 3, 22);
+      c.lineTo(cx, 26);
+      c.lineTo(cx - 3, 22);
+      c.fill();
+      line(c, cx - 10, 0, cx, 26, shade(base, 0.5), 1, 1.5);
+      line(c, cx + 10, 0, cx, 26, shade(base, 0.5), 1, 1.5);
+      for (const y of [32, 44]) {
+        fill(c, shade(base, 0.55), cx - 1, y, 2, 2);
+      }
+      fill(c, shade(base, 1.4), cx + 9, 18, 6, 2, 0.8);
+    } else if (part === 'torso' && kind === 'robe') {
+      // gola cruzada e faixa na cintura
+      line(c, cx - 9, 0, cx + 4, 34, 0xb8b0a0, 1, 2);
+      line(c, cx + 9, 0, cx - 2, 20, 0xb8b0a0, 1, 2);
+      fill(c, 0xd8d0c0, 0, h - 10, w, 5);
+    } else if (part === 'torso' && kind === 'pj') {
+      fill(c, shade(base, 1.2), 0, 0, w, 4);
+      for (let y = 14; y < h - 4; y += 11) fill(c, 0xf7f3ea, cx - 1, y, 2, 2);
+    } else if (part === 'torso' && kind === 'swim') {
+      // regata de banho: alças e decote
+      c.fillStyle = 'rgba(0,0,0,0.25)';
+      c.fillRect(cx - 11, 0, 22, 4);
+    } else if (part === 'sleeve') {
+      fill(c, shade(base, 0.6), 0, h - 3, w, 3, 0.6);
+    }
+    vshade(c, w, h, 0.05, 0.2);
   };
 }
 
@@ -1552,7 +1632,16 @@ function specFor(name: string): Spec | undefined {
   const n = Number(parts[1]);
   switch (parts[0]) {
     case 'face':
-      return { w: 128, h: 64, paint: face(n, Number(parts[2]), parts[3] as Expression, parts[4] === '1'), grain: 3 };
+      return { w: 128, h: 64, paint: face(n, Number(parts[2]), parts[3] as Expression, parts[4] === '1', Number(parts[5] ?? 0)), grain: 3 };
+    case 'suit':
+    case 'pj':
+    case 'robe':
+    case 'swim': {
+      // nome: tipo:peça:cor (ex.: suit:torso:1)
+      const part = parts[1];
+      const big = part === 'torso';
+      return { w: big ? 64 : 32, h: big ? 64 : part === 'sleeve' ? 16 : 32, paint: outfitTex(parts[0], part, Number(parts[2] ?? 0)), grain: 7 };
+    }
     case 'shirt':
       return { w: 64, h: 64, paint: shirt(n), grain: 7 };
     case 'sleeve':
@@ -1605,6 +1694,6 @@ export function getTexture(name: string): THREE.CanvasTexture {
   return tex;
 }
 
-export function faceTextureName(skin: number, hair: number, expr: Expression, eyesClosed: boolean): string {
-  return `face:${skin}:${hair}:${expr}:${eyesClosed ? 1 : 0}`;
+export function faceTextureName(skin: number, hair: number, expr: Expression, eyesClosed: boolean, variant = 0): string {
+  return `face:${skin}:${hair}:${expr}:${eyesClosed ? 1 : 0}:${variant === 1 ? 1 : 0}`;
 }

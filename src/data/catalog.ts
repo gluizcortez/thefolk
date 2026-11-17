@@ -1,3 +1,4 @@
+import { MONTHS } from './months';
 import type { Catalog } from '../sim/types';
 import { COVERINGS, FLOORS, PARTS } from './build';
 import { CAREERS } from './careers';
@@ -26,4 +27,5 @@ export const CATALOG: Catalog = {
   gigs: GIGS,
   businesses: BUSINESSES,
   news: NEWS,
+  months: MONTHS,
 };

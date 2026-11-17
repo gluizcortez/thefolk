@@ -22,3 +22,5 @@ export * from './upkeep';
 export * from './services';
 export * from './rooms';
 export * from './furnish';
+export * from './temper';
+export * from './family';

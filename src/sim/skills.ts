@@ -1,4 +1,5 @@
 import type { Folk, InteractionDef, NeedId } from './types';
+import { habitOfSkill, temperTraining } from './temper';
 
 export const MAX_SKILL_LEVEL = 10;
 /** experiência para ir do nível n-1 ao n é n × isto (1 xp ≈ 1 minuto de treino puxado) */
@@ -39,9 +40,12 @@ export function levelProgress(xp: number): number {
 export function trainSkill(folk: Folk, it: InteractionDef, mood: number): number | null {
   const gain = it.skill;
   if (!gain) return null;
+  // bloco 5: o treino vira hábito (o temperamento muda devagar)
+  if (folk.habits) habitOfSkill(folk, gain.id);
   const before = skillLevel(folk, gain.id);
   if (before >= MAX_SKILL_LEVEL) return null;
-  const rate = gain.xpPerMinute * (mood < LOW_MOOD ? 0.5 : 1);
+  // bloco 5: o temperamento acelera (ou freia) o treino e o treino vira hábito
+  const rate = gain.xpPerMinute * (mood < LOW_MOOD ? 0.5 : 1) * temperTraining(folk.temper, gain.id);
   folk.skills[gain.id] = Math.min(xpForLevel(MAX_SKILL_LEVEL), (folk.skills[gain.id] ?? 0) + rate);
   const after = skillLevel(folk, gain.id);
   return after > before ? after : null;

@@ -41,6 +41,8 @@ import { COVER_ART, FLOOR_ART, House, LOW_H, TH, WALL_H } from './art/house';
 import { texMat } from './art/build';
 import { PAINT, PAL } from './art/palette';
 import { colorOf } from '../sim/furnish';
+import { wearOf } from '../sim/family';
+import type { Look, Wear } from '../sim/types';
 import { buildScenery } from './art/scenery';
 import { getTexture } from './art/textures';
 import { WearFx, buildMess } from './art/upkeep';
@@ -109,6 +111,8 @@ interface ObjectEntry {
 
 interface FolkEntry {
   model: FolkModel;
+  /** bloco 5: aparência e roupa com que o modelo foi montado */
+  lookKey: string;
   zzz: THREE.Sprite[];
   /** plaquinha do tipo de conversa, sobre quem puxou */
   icon: THREE.Sprite;
@@ -120,6 +124,10 @@ interface Hover {
   mess?: Mess;
   tile?: { x: number; y: number };
   folk?: Folk;
+}
+
+function lookKey(look: Look, wear: Wear): string {
+  return `${JSON.stringify(look)}|${wear}`;
 }
 
 /** O que a conversa em andamento pede de animação para este folk. */
@@ -335,7 +343,7 @@ export class GameView {
     const world = this.ctrl.world;
     for (const folk of world.folks) {
       if (this.folks.has(folk.id)) continue;
-      const model = new FolkModel(folk.look);
+      const model = new FolkModel(folk.look, wearOf(folk));
       model.group.userData.folkId = folk.id;
       const zzz: THREE.Sprite[] = [];
       for (let i = 0; i < 3; i++) {
@@ -349,7 +357,7 @@ export class GameView {
       icon.scale.setScalar(0.42);
       icon.renderOrder = 5;
       this.worldRoot.add(model.group, icon);
-      this.folks.set(folk.id, { model, zzz, icon, iconKey: 'soc:friendly' });
+      this.folks.set(folk.id, { model, zzz, icon, iconKey: 'soc:friendly', lookKey: lookKey(folk.look, wearOf(folk)) });
     }
     if (this.folks.size === world.folks.length) return;
     for (const [id, entry] of this.folks) {
@@ -541,6 +549,8 @@ export class GameView {
     });
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
+      // bloco 5: com a tela de criar família aberta, o jogo não ouve o teclado
+      if (document.querySelector('.creator:not([hidden])')) return;
       if (e.key === 'Shift') this.shiftDown = true;
       if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
@@ -845,6 +855,23 @@ export class GameView {
     // bloco 4: comendo sentado à mesa, o folk fica no lugar, não na geladeira
     const seatId = action?.eatAt !== undefined && action.eatAt >= 0 ? action.eatAt : undefined;
     const entry = it && action?.objectId !== undefined ? this.objects.get(seatId ?? action.objectId) : undefined;
+    // bloco 5: trocou de roupa (pijama, roupão, guarda-roupa): monta o modelo de novo
+    const wear = wearOf(folk, it);
+    const key = lookKey(folk.look, wear);
+    if (key !== view.lookKey) {
+      const old = view.model;
+      const fresh = new FolkModel(folk.look, wear);
+      fresh.group.userData.folkId = folk.id;
+      fresh.group.position.copy(old.group.position);
+      fresh.group.rotation.copy(old.group.rotation);
+      this.worldRoot.remove(old.group);
+      old.group.traverse((o) => {
+        if (o instanceof THREE.Mesh) o.geometry.dispose();
+      });
+      this.worldRoot.add(fresh.group);
+      view.model = fresh;
+      view.lookKey = key;
+    }
 
     const fx = folk.px + (folk.x - folk.px) * alpha + 0.5;
     const fz = folk.py + (folk.y - folk.py) * alpha + 0.5;
@@ -904,7 +931,7 @@ export class GameView {
     }
 
     const mood = moodOf(sim.catalog, folk.needs);
-    view.model.update({ anim, ...place, mood, time: this.animTime, dt, expr });
+    view.model.update({ anim, ...place, mood, time: this.animTime, dt, expr, hold: it?.hold });
 
     const iconKey = social?.icon;
     view.icon.visible = !!iconKey;
@@ -1428,6 +1455,65 @@ export class GameView {
    * Miniatura de um objeto para o catálogo, renderizada com o mesmo ângulo e
    * as mesmas cores de 16 bits do jogo. Fica em cache por id de desenho.
    */
+  /**
+   * Bloco 5: retrato de corpo inteiro (tela de criar família), em pé e de
+   * frente, com a roupa pedida. Devolve uma imagem em data URL.
+   */
+  portrait(look: Look, wear: Wear, w = 120, h = 200): string {
+    const scene = new THREE.Scene();
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xc4b295, 1.7));
+    const sun = new THREE.DirectionalLight(PAL.sun, 2.0);
+    sun.position.set(-2, 5, 6);
+    scene.add(sun);
+    const model = new FolkModel(look, wear);
+    model.update({ anim: 'idle', x: 0, y: 0, z: 0, heading: 0.35, mood: 75, time: 0, dt: 1 });
+    model.update({ anim: 'idle', x: 0, y: 0, z: 0, heading: 0.35, mood: 75, time: 0, dt: 1 });
+    scene.add(model.group);
+    const half = 1.05;
+    const cam = new THREE.OrthographicCamera(-half * (w / h), half * (w / h), half, -half, 0.1, 50);
+    cam.position.set(0, 1.25, 10);
+    cam.lookAt(0, 0.95, 0);
+    cam.updateMatrixWorld();
+    const url = this.renderToUrl(scene, cam, w, h);
+    model.group.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.geometry.dispose();
+    });
+    return url;
+  }
+
+  /** Desenha a cena fora da tela e devolve a imagem em 16 bits, como o jogo. */
+  private renderToUrl(scene: THREE.Scene, cam: THREE.Camera, w: number, h: number): string {
+    const target = new THREE.WebGLRenderTarget(w, h, { type: THREE.UnsignedByteType, colorSpace: THREE.SRGBColorSpace });
+    const prevColor = this.renderer.getClearColor(new THREE.Color());
+    const prevAlpha = this.renderer.getClearAlpha();
+    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.setRenderTarget(target);
+    this.renderer.clear();
+    this.renderer.render(scene, cam);
+    const pixels = new Uint8Array(w * h * 4);
+    this.renderer.readRenderTargetPixels(target, 0, 0, w, h, pixels);
+    this.renderer.setRenderTarget(null);
+    this.renderer.setClearColor(prevColor, prevAlpha);
+    target.dispose();
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d')!;
+    const img = ctx.createImageData(w, h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const src = ((h - 1 - y) * w + x) * 4;
+        const dst = (y * w + x) * 4;
+        img.data[dst] = pixels[src] & 0xf8;
+        img.data[dst + 1] = pixels[src + 1] & 0xfc;
+        img.data[dst + 2] = pixels[src + 2] & 0xf8;
+        img.data[dst + 3] = pixels[src + 3] > 8 ? 255 : 0;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return canvas.toDataURL();
+  }
+
   thumbnail(art: string): string {
     const hit = this.thumbs.get(art);
     if (hit) return hit;

@@ -110,6 +110,9 @@ describe('despensa', () => {
       expect(sim.world.relations[`${zeca.id}>${tome.id}`] ?? sim.world.relations[`${zeca.id}>${lia.id}`]).toBeDefined();
     }
     const fridge = sim.world.objects.find((o) => o.defId === 'fridge')!;
+    // só a Lia come agora (o Tomé, com fome, poderia pegar uma porção também)
+    tome.autonomy = false;
+    tome.queue = [];
     lia.needs.hunger = 20;
     expect(sim.dispatch({ type: 'queueUse', folkId: lia.id, objectId: fridge.id, interactionId: 'takeout' })).toBe(true);
     run(sim, 40);

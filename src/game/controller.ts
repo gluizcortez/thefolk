@@ -1,10 +1,12 @@
 import { CATALOG } from '../data/catalog';
 import { starterHouse } from '../data/house';
+import { familySeed } from '../data/family';
 import { NEIGHBORS, NEIGHBOR_TIES } from '../data/neighbors';
 import { hasText, t } from '../i18n';
 import { readSave, writeSave } from '../platform/saveStore';
 import { Sim, createWorld, deserialize, isBuildCommand, serialize } from '../sim';
-import type { Command, Folk, Rotation, Speed, World } from '../sim';
+import type { Command, FamilyDraft, Folk, Rotation, Speed, World } from '../sim';
+import { cleanName, familyProblem } from '../sim';
 
 export type Mode = 'live' | 'buy' | 'build';
 
@@ -272,6 +274,15 @@ export class GameController {
     this.replaceWorld(createWorld(starterHouse(freshSeed())));
     this.toast(t('toast.newGame'));
     void this.save(true);
+  }
+
+  /** Bloco 5: começa de novo com a família criada na tela de criação. */
+  newFamily(draft: FamilyDraft): boolean {
+    if (familyProblem(this.sim.catalog, draft)) return false;
+    this.replaceWorld(createWorld(familySeed(draft, freshSeed())));
+    this.toast(t('toast.newFamily', { name: cleanName(draft.surname) }));
+    void this.save(true);
+    return true;
   }
 }
 

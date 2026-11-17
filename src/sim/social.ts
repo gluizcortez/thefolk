@@ -3,13 +3,14 @@ import { blocksStep, edgeKey } from './grid';
 import { moodOf } from './needs';
 import { partnersOf, reputationOf } from './gossip';
 import { affinity, knows, memoryWeight, relationOf } from './relations';
-import type { Catalog, Folk, SocialCategory, SocialDef, Vec, World } from './types';
+import type { Catalog, Folk, SocialCategory, SocialDef, Temper, Vec, World } from './types';
+import { temperSocial } from './temper';
 
 /** Gosto do folk por um tipo de interação social (produto dos traços). */
-export function socialTaste(catalog: Catalog, folk: Pick<Folk, 'traits'>, cat: SocialCategory): number {
+export function socialTaste(catalog: Catalog, folk: Pick<Folk, 'traits'> & { temper?: Temper }, cat: SocialCategory): number {
   let m = 1;
   for (const t of folk.traits) m *= catalog.traits[t]?.social?.[cat] ?? 1;
-  return m;
+  return m * temperSocial(folk.temper, cat);
 }
 
 /** O folk está em casa e em condição de conversar com alguém? */

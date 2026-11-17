@@ -15,6 +15,7 @@ import {
   respectLabel,
   romanceLabel,
   MAX_SKILL_LEVEL,
+  TEMPER_AXES,
   NEED_IDS,
   PROMOTE_AT,
   billAmount,
@@ -231,6 +232,8 @@ export class Hud {
   private catalogSig = '';
   private thumbnail: ((art: string) => string) | null = null;
   private swatch: ((texture: string, tall?: boolean) => string) | null = null;
+  /** bloco 5: abre a tela de criar família */
+  openCreator: (() => void) | null = null;
   private buildButton = el('button', 'btn btn-buy');
   private buildEl = el('div', 'card catalog build');
   private buildTabs = el('div', 'catalog-tabs');
@@ -308,23 +311,10 @@ export class Hud {
     const load = el('button', 'btn', t('hud.load'));
     load.addEventListener('click', () => void this.ctrl.load());
     const fresh = el('button', 'btn btn-quiet', t('hud.new'));
-    let armed = 0;
+    // bloco 5: jogo novo abre a tela de criar família (que tem o atalho da família pronta)
     fresh.addEventListener('click', () => {
-      if (armed) {
-        window.clearTimeout(armed);
-        armed = 0;
-        fresh.textContent = t('hud.new');
-        fresh.classList.remove('armed');
-        this.ctrl.newGame();
-        return;
-      }
-      fresh.textContent = t('hud.newConfirm');
-      fresh.classList.add('armed');
-      armed = window.setTimeout(() => {
-        armed = 0;
-        fresh.textContent = t('hud.new');
-        fresh.classList.remove('armed');
-      }, 3500);
+      if (this.openCreator) this.openCreator();
+      else this.ctrl.newGame();
     });
     bar.append(save, load, fresh);
     this.root.append(bar);
@@ -1005,7 +995,7 @@ export class Hud {
     const world = this.ctrl.world;
     const sig =
       this.panel === 'skills'
-        ? `s|${folk.id}|${Object.entries(folk.skills)
+        ? `s|${folk.id}|${JSON.stringify(folk.temper)}|${Object.entries(folk.skills)
             .map(([k, v]) => `${k}:${Math.floor(v)}`)
             .join(',')}`
         : this.panel === 'relations'
@@ -1226,7 +1216,24 @@ export class Hud {
       row.append(top, pips, bar);
       list.append(row);
     }
-    this.panelEl.append(list, el('div', 'panel-note', t('skills.hint')), el('div', 'panel-note', t('skills.mood')));
+    // bloco 5: temperamento e mês de nascimento
+    const temper = el('div', 'temper-list');
+    temper.append(el('div', 'panel-title', t('temper.title')));
+    for (const axis of TEMPER_AXES) {
+      const row = el('div', 'temper-row');
+      row.title = t(`temperHint.${axis}`);
+      const pips = el('div', 'pips');
+      for (let i = 0; i < 10; i++) pips.append(el('span', i < (folk.temper?.[axis] ?? 5) ? 'pip on' : 'pip'));
+      row.append(el('span', '', t(`temper.${axis}`)), pips);
+      temper.append(row);
+    }
+    const month = this.ctrl.sim.catalog.months[folk.month ?? 0];
+    if (month) {
+      const born = el('div', 'panel-note', t('temper.born', { month: t(month.name) }));
+      born.title = t(month.hint);
+      temper.append(born);
+    }
+    this.panelEl.append(list, temper, el('div', 'panel-note', t('skills.hint')), el('div', 'panel-note', t('skills.mood')));
   }
 
   private renderJob(): void {

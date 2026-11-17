@@ -1,6 +1,16 @@
 import type { RoomStyle, WorldSeed } from '../sim/world';
 import { NEIGHBORS, NEIGHBOR_TIES } from './neighbors';
 import { gridFromMap } from '../sim/world';
+import { monthFor, temperFromTraits } from '../sim/temper';
+import type { Temper } from '../sim/types';
+import { MONTHS } from './months';
+import { TRAITS } from './traits';
+
+/** Bloco 5: temperamento que combina com os traços e o mês que combina com ele. */
+function bornOf(traits: string[]): { temper: Temper; month: number } {
+  const temper = temperFromTraits({ traits: TRAITS }, traits);
+  return { temper, month: monthFor({ months: MONTHS }, temper) };
+}
 
 // A casa pronta da fatia 1. Cada letra é um cômodo; paredes nascem sozinhas
 // entre letras diferentes. Portas e janelas são bordas: "x,y,N" = borda norte
@@ -80,6 +90,8 @@ export function starterHouse(seed = 20001): WorldSeed {
       { defId: 'wallclock', x: 12, y: 2 },
       { defId: 'bigrug', x: 5, y: 7 },
       { defId: 'rug', x: 4, y: 4 },
+      // bloco 5: guarda-roupa no quarto, de frente para as camas
+      { defId: 'wardrobe', x: 7, y: 4, rot: 3 },
     ],
     funds: STARTING_FUNDS,
     exit: HOUSE_EXIT,
@@ -90,7 +102,8 @@ export function starterHouse(seed = 20001): WorldSeed {
         x: 8,
         y: 8,
         needs: { hunger: 55, energy: 80, bladder: 60, fun: 50, social: 45, hygiene: 65 },
-        look: { skin: 1, hair: 2, shirt: 0, pants: 1 },
+        look: { skin: 1, hair: 2, shirt: 0, pants: 1, style: 0, face: 0, body: 1, formal: 0, sleepwear: 2, swimwear: 1 },
+        ...bornOf(['tagarela', 'caseiro']),
       },
       {
         name: 'Lia Sacada',
@@ -98,7 +111,8 @@ export function starterHouse(seed = 20001): WorldSeed {
         x: 10,
         y: 9,
         needs: { hunger: 70, energy: 65, bladder: 75, fun: 40, social: 55, hygiene: 80 },
-        look: { skin: 3, hair: 1, shirt: 4, pants: 2 },
+        look: { skin: 3, hair: 1, shirt: 4, pants: 2, style: 2, face: 1, body: 0, formal: 2, sleepwear: 1, swimwear: 3 },
+        ...bornOf(['agitado', 'gentil']),
       },
     ],
     // dividem a casa há pouco tempo: já se conhecem, mas ainda sem intimidade

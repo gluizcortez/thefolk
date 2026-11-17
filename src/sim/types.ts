@@ -89,9 +89,41 @@ export interface InteractionDef {
   atTable?: boolean;
   /** bloco 4: só dá com o céu escuro (luneta) */
   night?: boolean;
+  /** bloco 5: troca a roupa de sempre do folk (guarda-roupa) */
+  dress?: Outfit;
+  /** bloco 5: roupa só enquanto dura (pijama na cama, roupão no chuveiro) */
+  wear?: Wear;
+  /** bloco 5: o que o folk segura na mão enquanto dura (só visual) */
+  hold?: HeldProp;
   /** dicas só para a renderização */
   pose?: Pose;
   onObject?: boolean;
+}
+
+// ---------- Bloco 5: temperamento, nascimento, corpo e roupa ----------
+
+/** Os cinco eixos do temperamento, de 0 a 10. */
+export type TemperAxis = 'order' | 'outgoing' | 'pep' | 'wit' | 'warmth';
+export type Temper = Record<TemperAxis, number>;
+
+/** Roupa de sempre, escolhida no guarda-roupa. */
+export type Outfit = 'day' | 'formal' | 'sleep' | 'swim';
+/** O que o folk pode estar vestindo: a roupa de sempre ou o roupão do banho. */
+export type Wear = Outfit | 'bath';
+/** Coisa que aparece na mão do folk. */
+export type HeldProp = 'plate' | 'book' | 'phone' | 'rag' | 'cup';
+
+/** Mês de nascimento: temperamento sugerido e com quem combina. */
+export interface MonthDef {
+  id: number;
+  name: string;
+  /** chave de texto com a descrição curta */
+  hint: string;
+  temper: Temper;
+  /** meses com quem se dá bem logo de cara */
+  likes: number[];
+  /** meses com quem tem atrito */
+  dislikes: number[];
 }
 
 /** Bloco 4: o que uma atividade a dois dá a mais quando tem parceiro. */
@@ -374,6 +406,8 @@ export interface TraitDef {
   roomTaste?: Partial<Record<RoomTaste, number>>;
   /** bloco 3: chance de apagar a luz ao sair de um cômodo vazio (padrão 0.4) */
   saver?: number;
+  /** bloco 5: para que lado o traço puxa o temperamento sugerido */
+  temper?: Partial<Temper>;
 }
 
 // ---------- Relações ----------
@@ -473,6 +507,9 @@ export interface Neighbor {
   name: string;
   traits: string[];
   look: Folk['look'];
+  /** bloco 5 */
+  temper: Temper;
+  month: number;
   skills: Record<string, number>;
   /** bloco 2: presta serviço para as casas do bairro */
   service?: ServiceKind;
@@ -614,6 +651,8 @@ export interface Catalog {
   gigs: Record<string, GigDef>;
   businesses: Record<string, BusinessDef>;
   news: Record<string, NewsDef>;
+  /** bloco 5 */
+  months: MonthDef[];
 }
 
 // ---------- Estado ----------
@@ -749,7 +788,15 @@ export interface Folk {
   idleTicks: number;
   /** minutos restantes desmaiado de sono (0 = acordado) */
   collapsed: number;
-  look: { skin: number; hair: number; shirt: number; pants: number };
+  look: Look;
+  /** bloco 5: temperamento em cinco eixos (soma TEMPER_BUDGET) */
+  temper: Temper;
+  /** bloco 5: mês de nascimento (0 a 11) */
+  month: number;
+  /** bloco 5: roupa de sempre */
+  outfit: Outfit;
+  /** bloco 5: minutos de hábito por eixo desde a última virada (sinal = para que lado puxa) */
+  habits: Partial<Temper>;
   /** experiência acumulada por habilidade (o nível sai daqui) */
   skills: Record<string, number>;
   job: Job | null;
@@ -761,6 +808,25 @@ export interface Folk {
   business: Business | null;
   /** null = mora na casa; senão é uma visita */
   visit: Visit | null;
+}
+
+/** Aparência: índices nas paletas da arte. */
+export interface Look {
+  skin: number;
+  /** cor do cabelo */
+  hair: number;
+  shirt: number;
+  pants: number;
+  /** bloco 5: corte de cabelo (0 a 3) */
+  style: number;
+  /** bloco 5: traços do rosto (0 a 2) */
+  face: number;
+  /** bloco 5: corpo 0 = magro, 1 = médio, 2 = forte */
+  body: number;
+  /** bloco 5: cores da roupa formal, do pijama e do traje de banho */
+  formal: number;
+  sleepwear: number;
+  swimwear: number;
 }
 
 export interface Job {

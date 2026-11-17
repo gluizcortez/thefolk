@@ -68,6 +68,8 @@ import { findPath, findPathToAny } from './pathfinding';
 import { nextFloat, nextInt } from './rng';
 import { addMemory, affinity, applyDelta, coolRelations, ensureRelation, relationOf, setDating, touch } from './relations';
 import { skillLevel, trainSkill } from './skills';
+import { HABIT_PERIOD_DAYS, countHabit, settleHabits } from './temper';
+import { streetOutfit } from './family';
 import { acceptChance, adjacent, onLot, socialAllowed, talkTiles, talkingWith } from './social';
 import type {
   Action,
@@ -193,7 +195,7 @@ export interface SocialOutcome {
 }
 
 /** Moradores no máximo (quem chama para morar junto esbarra nisso). */
-export const MAX_RESIDENTS = 4;
+export const MAX_RESIDENTS = 8;
 /** Gente no lote ao mesmo tempo, moradores e visitas. */
 export const MAX_ON_LOT = 8;
 export const MAX_VISITORS = 3;
@@ -732,6 +734,7 @@ export class Sim {
       dailyHearts(world, this.catalog, this.logger);
     }
     if (minute === BOARD_HOUR * 60) refreshBoard(world, this.catalog);
+    if (minute === 0 && Math.floor(world.tick / MINUTES_PER_DAY) % HABIT_PERIOD_DAYS === 0) this.settleTempers();
     this.stepVisits();
     for (const folk of world.folks) {
       this.stepJob(folk);
@@ -742,6 +745,15 @@ export class Sim {
     for (const id of this.departed) this.removeVisitor(id);
     this.departed = [];
     if (world.log.length > MAX_LOG) world.log.splice(0, world.log.length - MAX_LOG);
+  }
+
+  /** Bloco 5: o hábito de semanas puxa um eixo do temperamento um ponto. */
+  private settleTempers(): void {
+    for (const folk of this.residents()) {
+      const shift = settleHabits(folk);
+      if (!shift) continue;
+      this.log(shift.dir > 0 ? 'log.temperUp' : 'log.temperDown', { name: folk.name, axis: `temper.${shift.axis}` });
+    }
   }
 
   /** Quem mora na casa (não conta visitas). */
@@ -916,6 +928,8 @@ export class Sim {
       return;
     }
     job.doneDay = job.calledDay;
+    // bloco 5: ninguém vai trabalhar de pijama
+    folk.outfit = streetOutfit(folk.outfit);
     const start = Math.max(tick, shift.start);
     folk.away = {
       until: shift.end,
@@ -1378,6 +1392,11 @@ export class Sim {
       action.elapsed++;
       const full = it.until !== undefined && folk.needs[it.until] >= NEED_MAX;
       if (action.elapsed >= it.duration || full) {
+        // bloco 5: guarda-roupa troca a roupa de sempre
+        if (it.dress && folk.outfit !== it.dress) {
+          folk.outfit = it.dress;
+          if (!folk.visit) this.log('log.dressed', { name: folk.name, outfit: `outfit.${it.dress}` });
+        }
         if (it.special === 'invite' && action.otherId !== undefined) this.resolveInvite(folk, action.otherId);
         else if (it.special) this.resolveHouseSpecial(folk, it, action);
         let next: Chain = null;
@@ -1612,9 +1631,19 @@ export class Sim {
       this.endSocial(folk); // alguém saiu no meio: não conta
       return;
     }
+    // bloco 5: papo de quem mora na casa não segura a campainha tocando sem ninguém ir
+    if (action.source === 'auto' && !folk.visit && !other.visit && action.elapsed > 0 && this.unansweredBell(folk, 3)) {
+      this.endSocial(folk);
+      folk.idleTicks = IDLE_BEFORE_AUTO;
+      return;
+    }
     const mood = moodOf(this.catalog, folk.needs);
     applyEffects(folk, { effects: def.effects } as InteractionDef);
     applyEffects(other, { effects: def.targetEffects ?? def.effects } as InteractionDef);
+    // bloco 5: conversar vira hábito (Expansão); ser gentil ou maldoso mexe no Afeto
+    countHabit(folk, 'outgoing', 1);
+    if (def.category === 'friendly' || def.category === 'romantic') countHabit(folk, 'warmth', 1);
+    else if (def.category === 'mean') countHabit(folk, 'warmth', -2);
     if (def.skill) {
       const up = trainSkill(folk, { skill: def.skill } as InteractionDef, mood);
       if (up !== null && !folk.visit) {
@@ -2155,6 +2184,10 @@ export class Sim {
       idleTicks: 0,
       collapsed: 0,
       look: { ...n.look },
+      temper: { ...n.temper },
+      month: n.month,
+      outfit: 'day',
+      habits: {},
       skills: { ...n.skills },
       job: null,
       away: null,

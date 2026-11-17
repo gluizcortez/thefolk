@@ -4,6 +4,7 @@ import type { Ring } from './build';
 import { PAL, SHIRT, SKIN, shade } from './palette';
 import { faceTextureName, getTexture } from './textures';
 import type { Expression } from './textures';
+import type { HeldProp, Look, Wear } from '../../sim/types';
 
 // Folk em 3D: um adulto de proporção realista (cerca de sete cabeças de
 // altura), modelado com cascas suaves para tronco, braços e pernas, roupa e
@@ -31,12 +32,10 @@ export type FolkAnim =
   | 'kiss'
   | 'argue';
 
-export interface FolkLook {
-  skin: number;
-  hair: number;
-  shirt: number;
-  pants: number;
-}
+export type FolkLook = Look;
+
+/** Bloco 5: largura do corpo (magro, médio, forte). */
+const BODY_WIDTH = [0.88, 1, 1.14];
 
 export interface FolkFrame {
   anim: FolkAnim;
@@ -52,6 +51,8 @@ export interface FolkFrame {
   dt: number;
   /** expressão forçada (conversa), no lugar da que vem do humor */
   expr?: Expression;
+  /** bloco 5: o que está na mão */
+  hold?: HeldProp;
 }
 
 export const FOLK_HEIGHT = 1.8;
@@ -352,6 +353,9 @@ export class FolkModel {
   private blob: THREE.Mesh;
   private book = new THREE.Group();
   private handset = new THREE.Group();
+  private plate = new THREE.Group();
+  private rag = new THREE.Group();
+  private cup = new THREE.Group();
   private faceMat: THREE.MeshPhongMaterial;
   private faceKey = '';
   private pose = rest();
@@ -359,45 +363,70 @@ export class FolkModel {
   private blinkAt = 2;
   private clock = 0;
 
-  constructor(private readonly look: FolkLook) {
+  constructor(
+    private readonly look: FolkLook,
+    readonly wear: Wear = 'day',
+  ) {
     const skinColor = SKIN[look.skin % SKIN.length];
     const skin = texMat(`skin:${look.skin % SKIN.length}`, { gloss: 0.12 });
-    const shirtMat = texMat(`shirt:${look.shirt}`);
-    const sleeve = texMat(`sleeve:${look.shirt}`);
-    const pants = texMat(`pants:${look.pants}`);
-    const pelvis = texMat(`pelvis:${look.pants}`);
+    // bloco 5: a roupa depende da ocasião
+    const kind = wear === 'formal' ? 'suit' : wear === 'sleep' ? 'pj' : wear === 'bath' ? 'robe' : wear === 'swim' ? 'swim' : null;
+    const tone = wear === 'formal' ? look.formal : wear === 'sleep' ? look.sleepwear : wear === 'swim' ? look.swimwear : 0;
+    const cloth = (part: string) => texMat(`${kind}:${part}:${tone}`);
+    const shirtMat = kind ? cloth('torso') : texMat(`shirt:${look.shirt}`);
+    const sleeve = kind && kind !== 'swim' ? cloth('sleeve') : kind === 'swim' ? skin : texMat(`sleeve:${look.shirt}`);
+    const longSleeve = kind === 'suit' || kind === 'pj' || kind === 'robe';
+    const pants = kind === 'swim' ? skin : kind ? cloth('leg') : texMat(`pants:${look.pants}`);
+    const shinMat = kind === 'robe' || kind === 'swim' ? skin : pants;
+    const pelvis = kind ? cloth('hip') : texMat(`pelvis:${look.pants}`);
     const collar = colorMat(shade(SHIRT[look.shirt % SHIRT.length], 1.3));
     const hairMat = texMat(`hair:${look.hair}`, { gloss: 0.25 });
-    const shoe = colorMat(PAL.shoe, { gloss: 0.45 });
+    const barefoot = kind === 'swim';
+    const shoe = colorMat(kind === 'pj' || kind === 'robe' ? 0x7a5a8a : kind === 'suit' ? 0x15110e : PAL.shoe, { gloss: kind === 'suit' ? 0.8 : 0.45 });
     const sole = colorMat(0xd8d0bc);
     const lace = colorMat(0xf4efdf);
     const SIDES = 12;
+    const k = BODY_WIDTH[look.body ?? 1] ?? 1;
+    const widen = <T extends THREE.Object3D>(o: T): T => {
+      o.scale.x *= k;
+      o.scale.z *= 0.5 + k * 0.5;
+      return o;
+    };
 
     // quadril, cinto e tronco
     this.hips.add(
-      loft(
-        [
-          { y: -0.13, rx: 0.06, rz: 0.07 },
-          { y: -0.08, rx: 0.14, rz: 0.1 },
-          { y: 0, rx: 0.165, rz: 0.108 },
-          { y: 0.08, rx: 0.154, rz: 0.1 },
-        ],
-        SIDES,
-        pelvis,
+      widen(
+        loft(
+          [
+            { y: -0.13, rx: 0.06, rz: 0.07 },
+            { y: -0.08, rx: 0.14, rz: 0.1 },
+            { y: 0, rx: 0.165, rz: 0.108 },
+            { y: 0.08, rx: 0.154, rz: 0.1 },
+          ],
+          SIDES,
+          pelvis,
+        ),
       ),
-      loft(
-        [
-          { y: 0.045, rx: 0.159, rz: 0.104 },
-          { y: 0.085, rx: 0.157, rz: 0.102 },
-        ],
-        SIDES,
-        colorMat(0x2a1d14, { gloss: 0.3 }),
-      ),
-      box(0.04, 0.034, 0.012, colorMat(PAL.brass, { gloss: 0.8 }), 0, 0.048, 0.1),
     );
+    if (!kind || kind === 'suit') {
+      // cinto e fivela só com calça de verdade
+      this.hips.add(
+        widen(
+          loft(
+            [
+              { y: 0.045, rx: 0.159, rz: 0.104 },
+              { y: 0.085, rx: 0.157, rz: 0.102 },
+            ],
+            SIDES,
+            colorMat(0x2a1d14, { gloss: 0.3 }),
+          ),
+        ),
+        box(0.04, 0.034, 0.012, colorMat(PAL.brass, { gloss: 0.8 }), 0, 0.048, 0.1 * (0.5 + k * 0.5)),
+      );
+    }
     this.torso.position.y = 0.07;
     this.torso.add(
-      loft(
+      widen(loft(
         [
           { y: 0, rx: 0.152, rz: 0.098 },
           { y: 0.1, rx: 0.153, rz: 0.1 },
@@ -410,11 +439,12 @@ export class FolkModel {
         ],
         SIDES,
         shirtMat,
-      ),
+      )),
       cyl(0.044, 0.05, 0.09, 10, skin, 0, 0.5, 0),
     );
     // gola da camisa: duas abas abertas sobre o peito
     for (const sx of [-1, 1]) {
+      if (kind) break; // só a camisa do dia tem gola de abas
       const flap = box(0.075, 0.016, 0.055, collar, sx * 0.043, 0.498, 0.052);
       flap.rotation.set(0.5, sx * 0.35, sx * -0.45);
       this.torso.add(flap);
@@ -432,6 +462,16 @@ export class FolkModel {
     this.book.rotation.x = 0.75;
     this.book.visible = false;
     this.torso.add(this.book);
+    // bloco 5: prato com comida, seguro na frente do corpo
+    const china = colorMat(0xf4efdf, { gloss: 0.7 });
+    this.plate.add(
+      cyl(0.13, 0.1, 0.02, 14, china, 0, 0, 0),
+      ball(0.07, 0.03, 0.06, colorMat(0xc9822f, { gloss: 0.3 }), -0.02, 0.02, 0, 8),
+      ball(0.035, 0.025, 0.035, colorMat(0x3f9455), 0.05, 0.02, 0.02, 6),
+    );
+    this.plate.position.set(0, 0.12, 0.3 * (0.5 + k * 0.5));
+    this.plate.visible = false;
+    this.torso.add(this.plate);
 
     // cabeça: o rosto vai na textura; nariz, orelhas e cabelo são modelados
     this.faceMat = new THREE.MeshPhongMaterial({ map: null, specular: 0x1a1a1a, shininess: 14 });
@@ -450,14 +490,38 @@ export class FolkModel {
       // nuca
       ball(0.094, 0.082, 0.054, hairMat, 0, 0.108, -0.07, 10),
     );
-    if (look.hair % 2 === 0) {
+    const style = look.style ?? look.hair % 2;
+    if (style === 0) {
       // topete penteado para o lado
       const tuft = ball(0.08, 0.036, 0.052, hairMat, 0.012, 0.25, 0.06, 10);
       tuft.rotation.set(-0.35, 0.25, 0.12);
       this.head.add(tuft);
-    } else {
+    } else if (style === 1 || style === 2) {
       // franja e volume dos lados
       this.head.add(ball(0.106, 0.052, 0.106, hairMat, 0, 0.236, 0, 10), ball(0.11, 0.095, 0.074, hairMat, 0, 0.138, -0.052, 10));
+      if (style === 2) {
+        // comprido: cai atrás até os ombros e emoldura o rosto
+        this.head.add(
+          ball(0.118, 0.17, 0.07, hairMat, 0, 0.03, -0.07, 10),
+          ball(0.03, 0.12, 0.05, hairMat, -0.1, 0.07, -0.01, 8),
+          ball(0.03, 0.12, 0.05, hairMat, 0.1, 0.07, -0.01, 8),
+        );
+      }
+    } else {
+      // raspado: o cabelo fica rente
+      cap.scale.set(0.102, 0.139, 0.112);
+    }
+    if (look.face === 2) {
+      // óculos de aro escuro
+      const rim = colorMat(0x1e1814, { gloss: 0.6 });
+      for (const sx of [-1, 1]) {
+        const lens = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.005, 5, 14), rim);
+        lens.position.set(sx * 0.037, 0.14, 0.098);
+        lens.rotation.y = sx * 0.25;
+        this.head.add(lens);
+        this.head.add(rod([sx * 0.06, 0.142, 0.09], [sx * 0.098, 0.142, 0.0], 0.004, rim, 4));
+      }
+      this.head.add(rod([-0.014, 0.142, 0.104], [0.014, 0.142, 0.104], 0.004, rim, 4));
     }
     // fone do telefone, encostado na orelha durante a ligação
     const phoneRed = colorMat(PAL.phone, { gloss: 0.7 });
@@ -493,18 +557,30 @@ export class FolkModel {
       [this.armL, this.foreL, -1],
       [this.armR, this.foreR, 1],
     ] as const) {
-      arm.position.set(sx * 0.196, 0.42, 0);
-      arm.add(loft(upperArm, 10, skin), loft(sleeveRings, 10, sleeve));
+      arm.position.set(sx * 0.196 * k, 0.42, 0);
+      arm.add(widen(loft(upperArm, 10, longSleeve ? sleeve : skin)));
+      if (kind !== 'swim') arm.add(widen(loft(sleeveRings, 10, sleeve)));
       fore.position.y = -UPPER_ARM;
       fore.add(
-        ball(0.04, 0.04, 0.042, skin, 0, 0, 0, 8),
-        loft(forearm, 10, skin),
+        widen(ball(0.04, 0.04, 0.042, longSleeve ? sleeve : skin, 0, 0, 0, 8)),
+        widen(loft(forearm, 10, longSleeve ? sleeve : skin)),
         // mão: palma, dedos e polegar
         ball(0.03, 0.04, 0.02, skin, 0, -FOREARM - 0.03, 0.004, 8),
         ball(0.026, 0.03, 0.017, skin, 0, -FOREARM - 0.075, 0.012, 8),
         ball(0.011, 0.026, 0.012, skin, sx * -0.026, -FOREARM - 0.035, 0.018, 6),
       );
-      if (sx === -1) {
+      if (sx === 1) {
+        // bloco 5: pano de limpeza e xícara, na mão direita
+        this.rag.add(rbox(0.1, 0.03, 0.12, 0.01, colorMat(0xe8b830), 0, -FOREARM - 0.08, 0.04));
+        this.cup.add(
+          cyl(0.03, 0.026, 0.07, 10, colorMat(0xf4efdf, { gloss: 0.7 }), 0, -FOREARM - 0.1, 0.05),
+          cyl(0.026, 0.026, 0.005, 10, colorMat(0x5a3820), 0, -FOREARM - 0.032, 0.05),
+        );
+        this.rag.visible = false;
+        this.cup.visible = false;
+        fore.add(this.rag, this.cup);
+      }
+      if (sx === -1 && !longSleeve && kind !== 'swim') {
         // relógio de pulso
         fore.add(
           loft(
@@ -540,17 +616,39 @@ export class FolkModel {
       [this.legL, this.shinL, -1],
       [this.legR, this.shinR, 1],
     ] as const) {
-      leg.position.set(sx * 0.082, 0, 0);
-      leg.add(loft(thigh, 10, pants));
+      leg.position.set(sx * 0.082 * k, 0, 0);
+      leg.add(widen(loft(thigh, 10, pants)));
+      if (kind === 'swim') {
+        // bermuda de banho curta
+        leg.add(
+          widen(
+            loft(
+              [
+                { y: -0.13, rx: 0.08, rz: 0.088 },
+                { y: -0.05, rx: 0.087, rz: 0.095 },
+                { y: 0.025, rx: 0.081, rz: 0.089 },
+              ],
+              10,
+              pelvis,
+            ),
+          ),
+        );
+      }
       shin.position.y = -THIGH;
-      shin.add(
-        ball(0.058, 0.058, 0.062, pants, 0, 0, 0, 8),
-        loft(calf, 10, pants),
-        // sapato: sola clara, cabedal escuro e cadarço
-        rbox(0.104, 0.03, 0.27, 0.012, sole, 0, -SHIN - 0.07, 0.05),
-        rbox(0.098, 0.07, 0.25, 0.034, shoe, 0, -SHIN - 0.05, 0.05),
-        box(0.045, 0.01, 0.07, lace, 0, -SHIN + 0.016, 0.085),
-      );
+      shin.add(widen(ball(0.058, 0.058, 0.062, shinMat, 0, 0, 0, 8)), widen(loft(calf, 10, shinMat)));
+      if (barefoot) {
+        shin.add(rbox(0.09, 0.05, 0.22, 0.03, skin, 0, -SHIN - 0.06, 0.05));
+      } else if (kind === 'pj' || kind === 'robe') {
+        // chinelo
+        shin.add(rbox(0.1, 0.04, 0.25, 0.02, shoe, 0, -SHIN - 0.065, 0.05), rbox(0.09, 0.05, 0.2, 0.03, skin, 0, -SHIN - 0.05, 0.04));
+      } else {
+        shin.add(
+          // sapato: sola clara, cabedal escuro e cadarço
+          rbox(0.104, 0.03, 0.27, 0.012, sole, 0, -SHIN - 0.07, 0.05),
+          rbox(0.098, 0.07, 0.25, 0.034, shoe, 0, -SHIN - 0.05, 0.05),
+        );
+        if (kind !== 'suit') shin.add(box(0.045, 0.01, 0.07, lace, 0, -SHIN + 0.016, 0.085));
+      }
       leg.add(shin);
       this.hips.add(leg);
     }
@@ -574,7 +672,7 @@ export class FolkModel {
   }
 
   private setFace(expr: Expression, closed: boolean): void {
-    const key = faceTextureName(this.look.skin, this.look.hair, expr, closed);
+    const key = faceTextureName(this.look.skin, this.look.hair, expr, closed, this.look.face);
     if (key === this.faceKey) return;
     this.faceKey = key;
     this.faceMat.map = getTexture(key);
@@ -623,8 +721,13 @@ export class FolkModel {
     this.shinL.rotation.x = p.kneeL;
     this.shinR.rotation.x = p.kneeR;
 
-    this.book.visible = f.anim === 'read';
-    this.handset.visible = f.anim === 'phone';
+    // bloco 5: o que está na mão vem da interação (ou da animação)
+    const hold = f.hold ?? (f.anim === 'read' ? 'book' : f.anim === 'phone' ? 'phone' : f.anim === 'scrub' ? 'rag' : undefined);
+    this.book.visible = hold === 'book';
+    this.handset.visible = hold === 'phone';
+    this.plate.visible = hold === 'plate';
+    this.rag.visible = hold === 'rag';
+    this.cup.visible = hold === 'cup';
     const lying = f.anim === 'sleep' || f.anim === 'collapsed';
     this.blob.visible = f.anim !== 'sleep' && f.anim !== 'sit';
     this.blob.scale.setScalar(f.anim === 'collapsed' ? 1.9 : 1);

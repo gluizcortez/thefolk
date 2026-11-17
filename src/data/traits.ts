@@ -5,10 +5,12 @@ import type { TraitDef } from '../sim/types';
 // traços dos outros o folk se dá bem ou tem atrito; `social` é o gosto por
 // cada tipo de conversa (amigável, romântica, profissional, maldosa).
 // `jealousy` e `gossip` multiplicam o ciúme e a vontade de passar fofoca.
+// `temper` diz para que lado o traço puxa o temperamento (bloco 5).
 // Para criar um traço, basta adicionar uma entrada aqui e o nome em i18n.
 export const TRAITS: Record<string, TraitDef> = {
   caseiro: {
     id: 'caseiro',
+    temper: { order: 2, outgoing: -2 },
     roomTaste: { full: 6, cozy: 3 },
     saver: 0.7,
     name: 'trait.caseiro',
@@ -22,6 +24,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   tagarela: {
     id: 'tagarela',
+    temper: { outgoing: 3, wit: 1 },
     roomTaste: { large: 5 },
     name: 'trait.tagarela',
     hint: 'traitHint.tagarela',
@@ -34,6 +37,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   agitado: {
     id: 'agitado',
+    temper: { pep: 3, order: -1 },
     roomTaste: { large: 4, small: -3, bright: 3 },
     saver: 0.2,
     name: 'trait.agitado',
@@ -46,6 +50,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   guloso: {
     id: 'guloso',
+    temper: { pep: -1, warmth: 1 },
     name: 'trait.guloso',
     hint: 'traitHint.guloso',
     needWeight: { hunger: 1.3 },
@@ -54,6 +59,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   brincalhao: {
     id: 'brincalhao',
+    temper: { wit: 3 },
     roomTaste: { bright: 3 },
     name: 'trait.brincalhao',
     hint: 'traitHint.brincalhao',
@@ -65,6 +71,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   romantico: {
     id: 'romantico',
+    temper: { warmth: 2 },
     roomTaste: { cozy: 7 },
     name: 'trait.romantico',
     hint: 'traitHint.romantico',
@@ -74,6 +81,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   esquentado: {
     id: 'esquentado',
+    temper: { warmth: -3, pep: 1 },
     name: 'trait.esquentado',
     hint: 'traitHint.esquentado',
     decay: { comfort: 1.15 },
@@ -84,6 +92,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   reservado: {
     id: 'reservado',
+    temper: { outgoing: -3 },
     roomTaste: { small: 6, large: -4 },
     name: 'trait.reservado',
     hint: 'traitHint.reservado',
@@ -96,6 +105,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   ambicioso: {
     id: 'ambicioso',
+    temper: { wit: -2, pep: 1 },
     saver: 0.6,
     name: 'trait.ambicioso',
     hint: 'traitHint.ambicioso',
@@ -105,6 +115,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   gentil: {
     id: 'gentil',
+    temper: { warmth: 3 },
     name: 'trait.gentil',
     hint: 'traitHint.gentil',
     likes: ['gentil', 'caseiro', 'romantico'],
@@ -117,6 +128,7 @@ export const TRAITS: Record<string, TraitDef> = {
   // fatia 5: ciúme e fofoca
   ciumento: {
     id: 'ciumento',
+    temper: { warmth: -1 },
     name: 'trait.ciumento',
     hint: 'traitHint.ciumento',
     likes: ['caseiro', 'reservado'],
@@ -126,6 +138,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   fofoqueiro: {
     id: 'fofoqueiro',
+    temper: { outgoing: 2 },
     name: 'trait.fofoqueiro',
     hint: 'traitHint.fofoqueiro',
     needWeight: { social: 1.2 },
@@ -137,6 +150,7 @@ export const TRAITS: Record<string, TraitDef> = {
   // bloco 1: casa viva
   caprichoso: {
     id: 'caprichoso',
+    temper: { order: 3 },
     roomTaste: { bare: 4 },
     saver: 0.9,
     name: 'trait.caprichoso',
@@ -149,6 +163,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   desleixado: {
     id: 'desleixado',
+    temper: { order: -3 },
     saver: 0.1,
     name: 'trait.desleixado',
     hint: 'traitHint.desleixado',
