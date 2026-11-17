@@ -10,7 +10,7 @@ import { NEUTRAL_TEMPER, fullLook, monthFor, temperFromTraits } from './temper';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 11;
+export const SAVE_VERSION = 12;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -184,7 +184,24 @@ const migrations: Record<number, Migration> = {
     }));
     return { ...save, world };
   },
+  // bloco 8: carreiras de 10 cargos (o cargo antigo n vira 2n), recompensas
+  // de carreira, chefes das carreiras novas e consequências do expediente
+  11: (save, ctx) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    const twice = (level: number) => Math.min(CAREER_LEVELS_V12 - 1, Math.max(0, Math.round(level)) * 2);
+    world.household = { ...world.household, unlocked: [...(world.household?.unlocked ?? [])] };
+    world.folks = (world.folks ?? []).map((f) => (f.job ? { ...f, job: { ...f.job, level: twice(f.job.level), chain: null } } : f));
+    world.neighbors = (world.neighbors ?? []).map((n) => (n.career ? { ...n, career: { ...n.career, level: twice(n.career.level) } } : n));
+    const before = new Set(world.neighbors.map((n) => n.career?.id).filter((x): x is string => !!x));
+    addMissingNeighbors(world, ctx);
+    const fresh = new Set(world.neighbors.map((n) => n.career?.id).filter((x): x is string => !!x && !before.has(x)));
+    seedWorkplaceTies(world, fresh);
+    return { ...save, world: world as unknown as Obj };
+  },
 };
+
+/** Cargos por carreira a partir do save v12. */
+const CAREER_LEVELS_V12 = 10;
 
 function addFree(world: World, defId: string, x: number, y: number, rot: WorldObject['rot']): void {
   world.objects.push({ id: world.nextId++, defId, x, y, rot, paid: 0, state: freshState() });

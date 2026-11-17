@@ -44,7 +44,10 @@ import { colorOf } from '../sim/furnish';
 import { wearOf } from '../sim/family';
 import { thoughtOf } from '../sim/will';
 import { stationDef } from '../sim/music';
-import type { Look, Wear } from '../sim/types';
+import type { Look, UniformDef, Wear } from '../sim/types';
+import { ridesWaiting, uniformOf, vehicleOf } from '../sim/career';
+import { buildVehicle, vehicleLength } from './art/vehicles';
+import type { VehicleModel } from './art/vehicles';
 import { buildScenery } from './art/scenery';
 import { getTexture } from './art/textures';
 import { WearFx, buildMess } from './art/upkeep';
@@ -135,8 +138,21 @@ interface Hover {
   folk?: Folk;
 }
 
-function lookKey(look: Look, wear: Wear): string {
-  return `${JSON.stringify(look)}|${wear}`;
+function lookKey(look: Look, wear: Wear, uniform?: UniformDef): string {
+  return `${JSON.stringify(look)}|${wear}|${uniform ? JSON.stringify(uniform) : ''}`;
+}
+
+/** Bloco 8: uma carona na rua. */
+interface RideView {
+  model: VehicleModel;
+  /** posição ao longo da rua (x do centro) e quanto já andou */
+  x: number;
+  dist: number;
+  /** chegando, parado esperando, parado deixando alguém, indo embora */
+  phase: 'in' | 'wait' | 'drop' | 'out';
+  /** segundos parado deixando quem voltou */
+  hold: number;
+  stopX: number;
 }
 
 /** O que a conversa em andamento pede de animação para este folk. */
@@ -211,6 +227,11 @@ export class GameView {
   private pointer = { down: false, x: 0, y: 0, startX: 0, startY: 0, dragged: false, building: false };
   private raycaster = new THREE.Raycaster();
   private tmp = new THREE.Vector3();
+  /** bloco 8: caronas na rua (chegando, esperando, indo embora) */
+  private rides = new Map<string, RideView>();
+  private rideRoot = new THREE.Group();
+  /** quem estava no trabalho no quadro anterior (para ver a volta para casa) */
+  private wasAway = new Set<number>();
 
   constructor(
     private readonly container: HTMLElement,
@@ -233,7 +254,7 @@ export class GameView {
       minFilter: THREE.NearestFilter,
     });
 
-    this.scene.add(this.hemi, this.sun, this.sun.target, this.worldRoot);
+    this.scene.add(this.hemi, this.sun, this.sun.target, this.worldRoot, this.rideRoot);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1024, 1024);
     this.sun.shadow.bias = -0.0012;
@@ -292,6 +313,9 @@ export class GameView {
     this.folks.clear();
     for (const p of this.pings) this.scene.remove(p.mesh);
     this.pings = [];
+    this.rideRoot.clear();
+    this.rides.clear();
+    this.wasAway = new Set(this.ctrl.world.folks.filter((f) => f.away).map((f) => f.id));
 
     const world = this.ctrl.world;
     const { grid } = world;
@@ -352,7 +376,7 @@ export class GameView {
     const world = this.ctrl.world;
     for (const folk of world.folks) {
       if (this.folks.has(folk.id)) continue;
-      const model = new FolkModel(folk.look, wearOf(folk));
+      const model = new FolkModel(folk.look, wearOf(folk), this.uniformFor(folk));
       model.group.userData.folkId = folk.id;
       const zzz: THREE.Sprite[] = [];
       for (let i = 0; i < 3; i++) {
@@ -371,7 +395,7 @@ export class GameView {
         zzz,
         icon,
         iconKey: 'soc:friendly',
-        lookKey: lookKey(folk.look, wearOf(folk)),
+        lookKey: lookKey(folk.look, wearOf(folk), this.uniformFor(folk)),
         gestureOf: -1,
         gestureT: 99,
       });
@@ -814,6 +838,7 @@ export class GameView {
 
     this.syncFolks();
     for (const folk of world.folks) this.updateFolk(folk, alpha, dt);
+    this.updateRides(dt);
     this.showOutcomes();
     this.updateMarkers(dt);
     this.updateGhost();
@@ -832,6 +857,88 @@ export class GameView {
       this.hudClock = 0;
       this.hud.update();
     }
+  }
+
+  /** Bloco 8: uniforme de quem está de roupa de trabalho (e tem emprego). */
+  private uniformFor(folk: Folk): UniformDef | undefined {
+    return folk.outfit === 'work' && folk.job ? uniformOf(this.ctrl.sim.catalog, folk.job) : undefined;
+  }
+
+  /**
+   * Bloco 8: caronas. Chegam pela esquerda e param na frente da saída
+   * enquanto esperam; vão embora pela direita quando o folk embarca ou o
+   * tempo acaba. Na volta do turno, uma carona encosta, deixa o folk e segue.
+   * Tudo aqui é só tela: quem decide é a simulação (rideFor).
+   */
+  private updateRides(dt: number): void {
+    const world = this.ctrl.world;
+    const catalog = this.ctrl.sim.catalog;
+    const stopX = world.exit.x + 0.5;
+    const laneZ = world.grid.h + 1 + 2.55;
+    const waiting = ridesWaiting(world, catalog);
+    const keys = new Set<string>();
+    for (const r of waiting) {
+      const key = `go:${r.folkId}:${r.arrived}`;
+      keys.add(key);
+      if (!this.rides.has(key)) {
+        // chegou agora (ou o jogo foi aberto com ela parada): entra pela esquerda
+        const fresh = world.tick - r.arrived < 3;
+        this.spawnRide(key, r.vehicle, stopX, fresh ? 'in' : 'wait', laneZ);
+      }
+    }
+    // quem voltou do trabalho: carona encosta, deixa e vai
+    for (const f of world.folks) {
+      if (f.away) this.wasAway.add(f.id);
+      else if (this.wasAway.has(f.id)) {
+        this.wasAway.delete(f.id);
+        const v = f.job && vehicleOf(catalog, f.job);
+        if (v) this.spawnRide(`back:${f.id}:${world.tick}`, v, stopX, 'in', laneZ);
+      }
+    }
+    const speed = 7;
+    for (const [key, ride] of this.rides) {
+      if (key.startsWith('go:') && !keys.has(key) && (ride.phase === 'wait' || ride.phase === 'in')) ride.phase = 'out';
+      let move = 0;
+      if (ride.phase === 'in') {
+        const left = ride.stopX - ride.x;
+        move = Math.min(left, Math.max(1.2, Math.min(speed, left * 1.6)) * dt);
+        if (left - move < 0.01) {
+          move = left;
+          ride.phase = key.startsWith('back:') ? 'drop' : 'wait';
+        }
+      } else if (ride.phase === 'drop') {
+        ride.hold += dt;
+        if (ride.hold > 1.6) ride.phase = 'out';
+      } else if (ride.phase === 'out') {
+        const out = ride.x - ride.stopX;
+        move = Math.min(speed * 1.4, 1.5 + out * 1.4) * dt;
+      }
+      ride.x += move;
+      ride.dist += move;
+      ride.model.group.position.x = ride.x;
+      ride.model.roll(ride.dist);
+      ride.model.tick(this.animTime);
+      if (ride.phase === 'out' && ride.x > ride.stopX + 45) {
+        this.rideRoot.remove(ride.model.group);
+        ride.model.group.traverse((o) => {
+          if (o instanceof THREE.Mesh) o.geometry.dispose();
+        });
+        this.rides.delete(key);
+      }
+    }
+  }
+
+  private spawnRide(key: string, def: Parameters<typeof buildVehicle>[0], stopX: number, phase: RideView['phase'], z: number): void {
+    const model = buildVehicle(def);
+    const stop = stopX + (vehicleLength(def.kind) > 5 ? 0.6 : 0);
+    const start = phase === 'in' ? stop - 40 : stop;
+    model.group.position.set(start, 0.02, z);
+    model.group.traverse((o) => {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    });
+    this.rideRoot.add(model.group);
+    this.rides.set(key, { model, x: start, dist: 0, phase, hold: 0, stopX: stop });
   }
 
   /** Bloco 7: som ligado solta notinhas coloridas no ritmo da estação. */
@@ -903,10 +1010,11 @@ export class GameView {
     const entry = it && action?.objectId !== undefined ? this.objects.get(seatId ?? action.objectId) : undefined;
     // bloco 5: trocou de roupa (pijama, roupão, guarda-roupa): monta o modelo de novo
     const wear = wearOf(folk, it);
-    const key = lookKey(folk.look, wear);
+    const uniform = wear === 'work' ? this.uniformFor(folk) : undefined;
+    const key = lookKey(folk.look, wear, uniform);
     if (key !== view.lookKey) {
       const old = view.model;
-      const fresh = new FolkModel(folk.look, wear);
+      const fresh = new FolkModel(folk.look, wear, uniform);
       fresh.group.userData.folkId = folk.id;
       fresh.group.position.copy(old.group.position);
       fresh.group.rotation.copy(old.group.rotation);

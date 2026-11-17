@@ -358,7 +358,7 @@ e miniatura da casa; o save antigo vira a vaga 1; jogo novo vai para uma
 vaga livre; exportar baixa um `.folk.json` e importar abre numa vaga livre,
 passando pelas migrações.
 
-## Bloco 8 — Carreiras completas e amigos da família (save v12)
+## Bloco 8 — Carreiras completas e amigos da família (save v12) — feito em 17/11/2026
 
 **Lacuna**: 3 carreiras de 5 cargos; promoção não pede amigos; amizades não
 esfriam com o tempo.
@@ -380,6 +380,24 @@ esfriam com o tempo.
 
 **Pronto quando**: 10 carreiras jogáveis; promoção barrada por falta de
 amigos; amizade cai sem contato; carona chega e vai embora; testes.
+
+**Como ficou**: dez carreiras (Repartição, Cozinha, Ateliê, Posto de saúde,
+Oficina, Trupe da Lona, Observatório, Câmara do bairro, Clube de várzea e
+Brigada de socorro) com dez cargos gerados a partir de curvas de salário,
+três habilidades e amigos (mais para as carreiras de muita gente); sete
+chefes e três colegas novos na vizinhança. Amigos da família = pessoas de
+fora com amizade 50+ de algum morador, contadas uma vez; amizade cai 2 por
+dia sem contato (x1,5 com Afeto 0, metade com Afeto 10, metade para melhores
+amigos) até zero, romance também esfria; relações só entre vizinhos não
+esfriam. Carona: chega uma hora antes, buzina (som próprio), buzina de novo
+15 min antes de partir e espera até 10 min depois da hora; o folk veste o
+uniforme ao ser chamado e tira depois do banho ou do sono. Dez tipos de
+veículo (carrinho a caminhão da brigada com escada) e uniformes em sete
+modelos com chapéu, por faixa de cargo (1-4, 5-7, 8-10). Recompensa de
+carreira no sexto cargo (dez objetos novos, trancados no catálogo até lá).
+Vinte e quatro eventos novos, sete deles consequências marcadas dias depois.
+Equipe muda aos domingos (promoção, demissão, novo chefe, recontratação).
+O jornal mostra quatro vagas por dia. Save v12.
 
 ## Bloco 9 — Vida social ampliada: festas, grupo e assuntos (save v13)
 

@@ -138,6 +138,7 @@ export function eligibleEvents(world: World, catalog: Catalog, folk: Folk): { de
   const mates = coworkersOf(world, folk).filter((c) => !c.folk || c.folk.away);
   const out: { def: WorkEventDef; actorId: number }[] = [];
   for (const def of Object.values(catalog.workEvents)) {
+    if (def.chained) continue;
     if (def.careers && !def.careers.includes(job.careerId)) continue;
     if ((def.minLevel ?? 0) > job.level) continue;
     let pool: Person[] = [];
@@ -163,6 +164,18 @@ export function eligibleEvents(world: World, catalog: Catalog, folk: Folk): { de
 export function startWorkEvent(world: World, catalog: Catalog, log: Logger, folk: Folk): boolean {
   const away = folk.away;
   if (!away || away.event) return false;
+  // bloco 8: uma consequência marcada vem antes de qualquer sorteio
+  const chain = folk.job?.chain;
+  if (chain && chain.day <= Math.floor(world.tick / MINUTES_PER_DAY) && catalog.workEvents[chain.defId]) {
+    folk.job!.chain = null;
+    const def = catalog.workEvents[chain.defId];
+    const actorOk = def.actor === 'none' || (chain.actorId > 0 && personOf(world, chain.actorId));
+    if (actorOk) {
+      away.event = { defId: def.id, actorId: def.actor === 'none' ? 0 : chain.actorId, deadline: world.tick + EVENT_WAIT };
+      log('log.workEvent', { name: folk.name });
+      return true;
+    }
+  }
   const options = eligibleEvents(world, catalog, folk);
   if (!options.length) return false;
   const total = options.reduce((s, o) => s + (o.def.weight ?? 1), 0);
@@ -264,6 +277,13 @@ export function resolveWorkEvent(
     createNews(world, catalog, log, out.news, about, other, seen.filter((id) => id !== about && id !== other));
   }
   if (out.romantic && actor) romanticAct(world, catalog, log, folk.id, actor.id, seen);
+  if (out.chain && catalog.workEvents[out.chain.event]) {
+    job.chain = {
+      defId: out.chain.event,
+      actorId: pending.actorId,
+      day: Math.floor(world.tick / MINUTES_PER_DAY) + out.chain.days,
+    };
+  }
   log(auto ? 'log.workAuto' : 'log.workResult', {
     name: folk.name,
     choice: choice.label,
@@ -345,4 +365,87 @@ export function bossFed(world: World, folk: Folk): boolean {
   if (!job || job.performance >= 20) return false;
   const boss = bossOf(world, job.careerId);
   return !!boss && (relationOf(world, boss.id, folk.id)?.respect ?? 0) <= BOSS_FIRES_AT;
+}
+
+/** Bloco 8: há uma consequência marcada para hoje (ou atrasada)? */
+export function chainDue(folk: Folk, tick: number): boolean {
+  const c = folk.job?.chain;
+  return !!c && c.day <= Math.floor(tick / MINUTES_PER_DAY);
+}
+
+// ---------- bloco 8: a equipe muda ----------
+
+/** chance por semana de um vizinho com emprego subir de cargo */
+export const STAFF_PROMOTE = 0.22;
+/** chance por semana de ser demitido (o chefe tem um pouco menos) */
+export const STAFF_FIRE = 0.05;
+export const BOSS_FIRE = 0.03;
+/** chance por semana de quem está sem emprego arrumar um */
+export const STAFF_HIRE = 0.5;
+
+/**
+ * Uma vez por semana a vida corre nos lugares de trabalho: colegas sobem de
+ * cargo, alguém é mandado embora (e arruma outra coisa depois), e quando o
+ * chefe cai o colega mais antigo assume. Moradores com emprego na área
+ * ficam sabendo pelo registro.
+ */
+export function staffShuffle(world: World, catalog: Catalog, log: Logger): void {
+  const careers = Object.keys(catalog.careers);
+  const watching = (careerId: string) => world.folks.some((f) => !f.visit && f.job?.careerId === careerId);
+  for (const n of world.neighbors) {
+    if (n.service) continue;
+    if (!n.career) {
+      // vizinho sem emprego (que já trabalhou um dia) procura outro
+      if (n.wasFired && nextFloat(world) < STAFF_HIRE) {
+        const id = careers[nextInt(world, careers.length)];
+        n.career = { id, level: 0 };
+        n.wasFired = false;
+        if (watching(id)) log('log.staffHired', { other: n.name, place: catalog.careers[id].workplace ?? '' });
+      }
+      continue;
+    }
+    const career = catalog.careers[n.career.id];
+    if (!career) continue;
+    const top = career.levels.length - 1;
+    const roll = nextFloat(world);
+    const fireAt = n.boss ? BOSS_FIRE : STAFF_FIRE;
+    if (roll < fireAt) {
+      const careerId = n.career.id;
+      const wasBoss = !!n.boss;
+      n.career = null;
+      n.boss = false;
+      n.wasFired = true;
+      createNews(world, catalog, log, 'fired', n.id, 0);
+      if (watching(careerId)) log(wasBoss ? 'log.bossFired' : 'log.staffFired', { other: n.name, place: career.workplace ?? '' });
+      if (wasBoss) promoteNewBoss(world, catalog, log, careerId);
+    } else if (roll < fireAt + STAFF_PROMOTE && n.career.level < top) {
+      // colega não passa o chefe: quem passaria vira chefe só quando o posto vagar
+      const boss = world.neighbors.find((x) => x.boss && x.career?.id === n.career!.id);
+      const cap = n.boss || !boss ? top : Math.max(0, (boss.career?.level ?? top) - 1);
+      if (n.career.level < cap) {
+        n.career.level++;
+        createNews(world, catalog, log, 'promoted', n.id, 0);
+        if (watching(n.career.id)) log('log.staffPromoted', { other: n.name, job: career.levels[n.career.level].title });
+      }
+    }
+  }
+}
+
+/** O posto de chefe vagou: o colega de cargo mais alto assume (se houver). */
+export function promoteNewBoss(world: World, catalog: Catalog, log: Logger, careerId: string): void {
+  const staff = world.neighbors
+    .filter((x) => !x.boss && x.career?.id === careerId)
+    .sort((a, b) => (b.career!.level - a.career!.level) || a.id - b.id);
+  const heir = staff[0];
+  if (!heir) return;
+  heir.boss = true;
+  heir.career!.level = Math.min(catalog.careers[careerId].levels.length - 1, heir.career!.level + 1);
+  // a equipe passa a respeitar o novo chefe
+  for (const mate of staff.slice(1)) {
+    const rel = relationOf(world, mate.id, heir.id);
+    if (rel) rel.respect = Math.max(rel.respect, 20);
+  }
+  if (world.folks.some((f) => !f.visit && f.job?.careerId === careerId)) {
+    log('log.newBoss', { other: heir.name, place: catalog.careers[careerId].workplace ?? '' });
+  }
 }

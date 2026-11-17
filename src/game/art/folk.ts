@@ -4,7 +4,7 @@ import type { Ring } from './build';
 import { PAL, SHIRT, SKIN, shade } from './palette';
 import { faceTextureName, getTexture } from './textures';
 import type { Expression } from './textures';
-import type { HeldProp, Look, Wear } from '../../sim/types';
+import type { HeldProp, Look, UniformDef, Wear } from '../../sim/types';
 
 // Folk em 3D: um adulto de proporção realista (cerca de sete cabeças de
 // altura), modelado com cascas suaves para tronco, braços e pernas, roupa e
@@ -400,23 +400,40 @@ export class FolkModel {
   constructor(
     private readonly look: FolkLook,
     readonly wear: Wear = 'day',
+    uniform?: UniformDef,
   ) {
     const skinColor = SKIN[look.skin % SKIN.length];
     const skin = texMat(`skin:${look.skin % SKIN.length}`, { gloss: 0.12 });
     // bloco 5: a roupa depende da ocasião
-    const kind = wear === 'formal' ? 'suit' : wear === 'sleep' ? 'pj' : wear === 'bath' ? 'robe' : wear === 'swim' ? 'swim' : null;
+    // bloco 8: uniforme da carreira (sem uniforme, vai com a roupa do dia)
+    const uni = wear === 'work' ? uniform : undefined;
+    const kind = uni
+      ? 'uni'
+      : wear === 'formal'
+        ? 'suit'
+        : wear === 'sleep'
+          ? 'pj'
+          : wear === 'bath'
+            ? 'robe'
+            : wear === 'swim'
+              ? 'swim'
+              : null;
     const tone = wear === 'formal' ? look.formal : wear === 'sleep' ? look.sleepwear : wear === 'swim' ? look.swimwear : 0;
-    const cloth = (part: string) => texMat(`${kind}:${part}:${tone}`);
+    const cloth = (part: string) =>
+      uni ? texMat(`uni:${part}:${uni.style}:${uni.top}:${uni.bottom}:${uni.accent}`) : texMat(`${kind}:${part}:${tone}`);
     const shirtMat = kind ? cloth('torso') : texMat(`shirt:${look.shirt}`);
     const sleeve = kind && kind !== 'swim' ? cloth('sleeve') : kind === 'swim' ? skin : texMat(`sleeve:${look.shirt}`);
-    const longSleeve = kind === 'suit' || kind === 'pj' || kind === 'robe';
+    const longSleeve = kind === 'suit' || kind === 'pj' || kind === 'robe' || (!!uni && uni.style !== 'shirt' && uni.style !== 'apron');
     const pants = kind === 'swim' ? skin : kind ? cloth('leg') : texMat(`pants:${look.pants}`);
     const shinMat = kind === 'robe' || kind === 'swim' ? skin : pants;
     const pelvis = kind ? cloth('hip') : texMat(`pelvis:${look.pants}`);
     const collar = colorMat(shade(SHIRT[look.shirt % SHIRT.length], 1.3));
     const hairMat = texMat(`hair:${look.hair}`, { gloss: 0.25 });
     const barefoot = kind === 'swim';
-    const shoe = colorMat(kind === 'pj' || kind === 'robe' ? 0x7a5a8a : kind === 'suit' ? 0x15110e : PAL.shoe, { gloss: kind === 'suit' ? 0.8 : 0.45 });
+    const shoe = colorMat(
+      kind === 'pj' || kind === 'robe' ? 0x7a5a8a : kind === 'suit' ? 0x15110e : uni?.style === 'track' ? 0xf4efdf : uni ? 0x2a1d14 : PAL.shoe,
+      { gloss: kind === 'suit' ? 0.8 : 0.45 },
+    );
     const sole = colorMat(0xd8d0bc);
     const lace = colorMat(0xf4efdf);
     const SIDES = 12;
@@ -442,7 +459,7 @@ export class FolkModel {
         ),
       ),
     );
-    if (!kind || kind === 'suit') {
+    if (!kind || kind === 'suit' || (uni && uni.style !== 'overall' && uni.style !== 'track')) {
       // cinto e fivela só com calça de verdade
       this.hips.add(
         widen(
@@ -566,6 +583,7 @@ export class FolkModel {
     );
     this.handset.visible = false;
     this.head.add(this.handset);
+    if (uni?.hat) this.head.add(hatFor(uni));
     this.head.position.y = 0.56;
     this.torso.add(this.head);
 
@@ -774,4 +792,48 @@ export class FolkModel {
     const expr: Expression = f.expr ?? (tired ? 'tired' : f.mood >= 62 ? 'happy' : f.mood >= 40 ? 'neutral' : 'sad');
     this.setFace(lying ? 'neutral' : expr, lying || blinking);
   }
+}
+
+/** Bloco 8: chapéu do uniforme, montado por cima do cabelo. */
+function hatFor(uni: UniformDef): THREE.Group {
+  const g = new THREE.Group();
+  const main = colorMat(uni.hat === 'toque' ? 0xf8f6f0 : uni.hat === 'top' ? 0x1a1a1f : uni.accent, { gloss: 0.35 });
+  const trim = colorMat(uni.hat === 'helmet' ? uni.accent : uni.top, { gloss: 0.5 });
+  switch (uni.hat) {
+    case 'cap': {
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 6, 0, Math.PI * 2, 0, Math.PI * 0.5), main);
+      dome.scale.set(0.112, 0.08, 0.122);
+      dome.position.set(0, 0.215, 0);
+      const brim = box(0.15, 0.012, 0.09, main, 0, 0.212, 0.1);
+      g.add(dome, brim);
+      break;
+    }
+    case 'toque':
+      g.add(cyl(0.1, 0.1, 0.05, 14, trim, 0, 0.21, 0), cyl(0.13, 0.1, 0.13, 14, main, 0, 0.255, 0), ball(0.13, 0.05, 0.13, main, 0, 0.39, 0, 12));
+      break;
+    case 'helmet': {
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 7, 0, Math.PI * 2, 0, Math.PI * 0.5), colorMat(uni.top === 0x2a2a33 ? 0x1f1f24 : uni.top, { gloss: 0.8 }));
+      dome.scale.set(0.125, 0.1, 0.135);
+      dome.position.set(0, 0.2, 0);
+      const ridge = box(0.02, 0.03, 0.24, trim, 0, 0.29, 0);
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.012, 16), colorMat(0x1f1f24, { gloss: 0.6 }));
+      brim.position.set(0, 0.2, -0.01);
+      brim.scale.z = 1.12;
+      g.add(dome, ridge, brim);
+      break;
+    }
+    case 'beret': {
+      const top = ball(0.13, 0.04, 0.12, main, -0.02, 0.255, 0, 12);
+      top.rotation.z = 0.18;
+      g.add(top, ball(0.012, 0.018, 0.012, main, -0.03, 0.3, 0, 6));
+      break;
+    }
+    case 'band':
+      g.add(cyl(0.107, 0.107, 0.03, 16, main, 0, 0.19, 0, true));
+      break;
+    case 'top':
+      g.add(cyl(0.16, 0.16, 0.012, 16, main, 0, 0.215, 0), cyl(0.085, 0.09, 0.17, 14, main, 0, 0.22, 0), cyl(0.091, 0.091, 0.03, 14, trim, 0, 0.23, 0, true));
+      break;
+  }
+  return g;
 }

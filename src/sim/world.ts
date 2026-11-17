@@ -123,7 +123,7 @@ export function firstBillAfter(tick: number): number {
 
 /** Despensa, correio e serviços de uma casa nova (bloco 2). */
 export function freshHousehold(pantry: number): Omit<World['household'], 'funds' | 'nextBills'> {
-  return { lastBill: 0, pantry, takeout: 0, bills: [], orders: [], maid: false, paperDay: -1, readDay: -1, lightMinutes: 0 };
+  return { lastBill: 0, pantry, takeout: 0, bills: [], orders: [], maid: false, paperDay: -1, readDay: -1, lightMinutes: 0, unlocked: [] };
 }
 
 /** Vizinhos com ids novos a partir de `nextId`. */
@@ -149,10 +149,10 @@ export function isServiceNeighbor(n: Neighbor): boolean {
  * Colegas da vizinhança já se conhecem pelo serviço: amizade morna e
  * respeito; o chefe é respeitado pela equipe.
  */
-export function seedWorkplaceTies(world: World): void {
+export function seedWorkplaceTies(world: World, only?: Set<string>): void {
   const byCareer = new Map<string, Neighbor[]>();
   for (const n of world.neighbors) {
-    if (!n.career) continue;
+    if (!n.career || (only && !only.has(n.career.id))) continue;
     if (!byCareer.has(n.career.id)) byCareer.set(n.career.id, []);
     byCareer.get(n.career.id)!.push(n);
   }

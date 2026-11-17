@@ -109,7 +109,7 @@ export type TemperAxis = 'order' | 'outgoing' | 'pep' | 'wit' | 'warmth';
 export type Temper = Record<TemperAxis, number>;
 
 /** Roupa de sempre, escolhida no guarda-roupa. */
-export type Outfit = 'day' | 'formal' | 'sleep' | 'swim';
+export type Outfit = 'day' | 'formal' | 'sleep' | 'swim' | 'work';
 /** O que o folk pode estar vestindo: a roupa de sempre ou o roupão do banho. */
 export type Wear = Outfit | 'bath';
 /** Coisa que aparece na mão do folk. */
@@ -292,6 +292,8 @@ export interface ObjectDef {
   colors?: string[];
   /** bloco 4: mesa, lugar para sentar à mesa, ou os dois (mesa com cadeiras) */
   dining?: Dining;
+  /** bloco 8: só entra no catálogo quando alguém da casa chega a este cargo */
+  reward?: { career: string; level: number };
 }
 
 export type ObjectLayer = 'wall' | 'floor' | 'ceiling';
@@ -314,6 +316,33 @@ export interface CareerLevel {
   days: number[];
   /** níveis de habilidade exigidos para chegar a este cargo */
   requires: Record<string, number>;
+  /** bloco 8: amigos da família exigidos para chegar a este cargo */
+  friends: number;
+}
+
+/** Bloco 8: forma do veículo da carona. */
+export type VehicleKind = 'compact' | 'sedan' | 'wagon' | 'van' | 'minibus' | 'pickup' | 'jeep' | 'limo' | 'truck' | 'sport';
+
+/** Bloco 8: a carona de uma faixa de cargos. */
+export interface VehicleDef {
+  kind: VehicleKind;
+  /** cor da lataria e da faixa */
+  color: number;
+  stripe: number;
+  /** o que vai no teto */
+  roof?: 'lights' | 'rack' | 'ladder' | 'sign' | 'horn';
+}
+
+/** Bloco 8: modelo do uniforme. */
+export type UniformStyle = 'shirt' | 'coat' | 'overall' | 'apron' | 'jacket' | 'track' | 'sash';
+
+/** Bloco 8: uniforme de uma faixa de cargos. */
+export interface UniformDef {
+  style: UniformStyle;
+  top: number;
+  bottom: number;
+  accent: number;
+  hat?: 'cap' | 'toque' | 'helmet' | 'beret' | 'band' | 'top';
 }
 
 export interface CareerDef {
@@ -326,6 +355,9 @@ export interface CareerDef {
   levels: CareerLevel[];
   /** chave de texto com o nome do lugar de trabalho */
   workplace?: string;
+  /** bloco 8: carona e uniforme por faixa de cargos (veja `tierOfLevel`) */
+  vehicles: VehicleDef[];
+  uniforms: UniformDef[];
 }
 
 // ---------- Fatia 5: dia de trabalho, frilas, negócio, fofoca ----------
@@ -361,6 +393,8 @@ export interface WorkOutcome {
   newsAboutActor?: boolean;
   /** é um gesto romântico com o ator (vale ciúme e traição) */
   romantic?: boolean;
+  /** bloco 8: evento que volta dias depois como consequência */
+  chain?: { event: string; days: number };
 }
 
 export interface WorkChoiceDef {
@@ -391,6 +425,8 @@ export interface WorkEventDef {
   weight?: number;
   /** só sai quando o folk vê o ator dentro destes limites de amizade */
   requires?: { friendshipBelow?: number; friendshipAbove?: number };
+  /** bloco 8: só acontece como consequência de outro evento (nunca no sorteio) */
+  chained?: boolean;
   choices: WorkChoiceDef[];
 }
 
@@ -586,6 +622,8 @@ export interface Neighbor {
   career: { id: string; level: number } | null;
   /** manda no lugar onde trabalha */
   boss?: boolean;
+  /** bloco 8: perdeu o emprego e procura outro */
+  wasFired?: boolean;
 }
 
 export interface Visit {
@@ -931,6 +969,10 @@ export interface Job {
   raisePending: boolean;
   /** último dia em que pediu aumento (-99 = nunca) */
   lastRaiseDay: number;
+  /** bloco 8: consequência marcada para um turno futuro */
+  chain?: { defId: string; actorId: number; day: number } | null;
+  /** bloco 8: a carona buzinou de novo (dia) */
+  honkDay?: number;
 }
 
 /** Acontecimento do expediente esperando uma escolha. */
@@ -1019,6 +1061,8 @@ export interface Household {
   readDay: number;
   /** bloco 3: minutos de lâmpada acesa desde a última conta */
   lightMinutes: number;
+  /** bloco 8: recompensas de carreira liberadas no catálogo (ids de objeto) */
+  unlocked: string[];
 }
 
 export interface LogEntry {

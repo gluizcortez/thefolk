@@ -340,6 +340,33 @@ npm run preview  # serve o dist/ localmente
   convertidos). O jogo salva sozinho a cada 30 segundos na vaga em uso e
   continua de onde parou ao reabrir; o save de antes do bloco 7 vira a vaga 1.
 
+- **Dez carreiras (bloco 8)**: Repartição, Cozinha de restaurante, Ateliê
+  gráfico, Posto de saúde, Oficina de reparos, Trupe da Lona, Observatório do
+  morro, Câmara do bairro, Clube de várzea e Brigada de socorro, cada uma com
+  dez cargos, horário, dias, salário e exigências de três habilidades **e de
+  amigos da família**. O jornal traz quatro vagas por dia.
+- **Amigos da família (bloco 8)**: gente de fora de quem alguém da casa gosta
+  de verdade (amizade 50 ou mais), contada uma vez só. Aparece no cartão de
+  relações (com ★ em quem conta) e nas exigências do próximo cargo. Amizade e
+  romance **esfriam** a cada dia sem contato, mais depressa para quem tem pouco
+  Afeto; quem está esfriando ganha a marca "esfriando".
+- **Carona (bloco 8)**: uma hora antes do turno a carona da carreira encosta na
+  calçada e buzina; o folk veste o uniforme e vai. Ela buzina de novo quinze
+  minutos antes de partir e vai embora dez minutos depois da hora: quem não
+  embarcou perde o turno. Na volta, a carona deixa o folk na calçada. Carona e
+  uniforme (com chapéu, capacete, touca de chef...) mudam nos cargos 5 e 8.
+  Depois do banho ou do sono o uniforme vai para o cabide.
+- **Recompensas de carreira (bloco 8)**: no sexto cargo cada carreira libera um
+  objeto no catálogo (ábaco, carrinho de temperos, prensa de gravura,
+  esqueleto, torno, monociclo, planetário de mesa, púlpito, barra fixa, painel
+  de nós) que treina uma habilidade da área mais depressa. Antes disso aparece
+  trancado, dizendo onde se libera.
+- **Expediente mais vivo (bloco 8)**: eventos próprios das carreiras novas e
+  **eventos em cadeia** (um empréstimo cobrado dias depois, um atalho que cai
+  numa conferência, um cometa a confirmar, uma promessa de campanha cobrada).
+  Toda semana colegas sobem de cargo, alguém é demitido e arruma outro
+  emprego, e chefe demitido é substituído pelo colega mais graduado.
+
 ## Deploy na Vercel
 
 O jogo é um site estático, sem backend.
@@ -516,6 +543,18 @@ Decisões principais do núcleo:
   `art/textures.ts` (desenho dos ícones em `ui/icons.ts`, `ICON_PATHS`),
   gestos `refuse`/`cheer` e cara `tired` em `art/folk.ts`, cartões de aviso
   por `noticeIcon` em `game/controller.ts`. Save v11.
+- **Carreiras e amigos (bloco 8)**: carreiras em `data/careers.ts`
+  (gerador com exigências, `friends`, `vehicles` e `uniforms` por faixa);
+  `sim/career.ts` ganhou `familyFriends`, `missingFriends`, `FRIEND_AT`,
+  `tierOfLevel`, `vehicleOf`, `uniformOf`, `rideFor`/`ridesWaiting`
+  (`RIDE_GRACE`, `HONK_AGAIN`) e `adsOfDay`. `coolRelations` em
+  `sim/relations.ts` usa `coolFactor(Afeto)`. `sim/work.ts`: eventos com
+  `chained` e resultado com `chain` (fica em `Job.chain`), `staffShuffle` e
+  `promoteNewBoss`. Recompensas em `data/rewards.ts` (`ObjectDef.reward`,
+  `household.unlocked`, problema `locked`) com arte em `game/art/rewards.ts`;
+  caronas em `game/art/vehicles.ts` (tela em `GameView.updateRides`);
+  uniforme em `FolkModel(look, wear, uniform)` com texturas `uni:...`.
+  `Outfit` ganhou 'work'. Save v12 (cargo antigo x2, chefes novos).
 - **Som, música e saves (bloco 7)**: a parte pura do som de casa fica em
   `sim/music.ts` (`STATIONS`, `favoriteStation`, `danceBonus`, `pressTune`,
   `stereosIn`, `playing`); `WorldObject.tune` é opcional (sem save novo) e
@@ -679,7 +718,22 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
   por modo, fala inventada com voz e entonação, rádio com três estações que
   tocam de verdade, volume e mudo, três vagas de save com miniatura,
   exportar e importar (sem save novo).
-- Próximo: bloco 8, carreiras completas e amigos da família.
+- **Bloco 8 (feito)**: dez carreiras de dez cargos, amigos da família exigidos
+  na promoção, amizade que esfria (pelo Afeto), carona com buzina e uniforme
+  por faixa de cargo, recompensas de carreira, eventos em cadeia e equipe que
+  sobe e é demitida (save v12).
+- Próximo: bloco 9, festas, conversa em grupo e assuntos.
+
+## Limitações conhecidas do bloco 8
+
+- A carona é só cenário: não desvia de nada e várias caronas no mesmo
+  horário param no mesmo lugar, uma em cima da outra.
+- Ainda não dá para ligar para os amigos (o telefone social é do bloco 9);
+  amizade se mantém com visita, convite ou conversa no trabalho.
+- Colegas e chefes sobem e caem só aos domingos de madrugada, por sorteio;
+  o turno deles não é simulado.
+- Os cargos dos saves antigos dobram (cargo 3 de 5 vira 5 de 10, por
+  exemplo); quem estava no topo fica no nono cargo.
 
 ## Limitações conhecidas do bloco 7
 

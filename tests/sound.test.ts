@@ -224,7 +224,7 @@ describe('som de cada coisa (bloco 7)', () => {
 
   it('campainha, telefone, caixa registradora e passos pelo piso', () => {
     expect(logSound('log.ring.courier')).toBe('bell');
-    expect(logSound('log.workCall')).toBe('phone');
+    expect(logSound('log.workCall')).toBe('honk');
     expect(logSound('log.nada')).toBeNull();
     expect(commandSound({ type: 'buy', defId: 'chair', x: 0, y: 0, rot: 0 }, true)).toBe('register');
     expect(commandSound({ type: 'sell', objectId: 1 }, true)).toBe('coins');

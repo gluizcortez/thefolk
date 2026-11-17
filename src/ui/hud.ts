@@ -19,7 +19,13 @@ import {
   NEED_IDS,
   PROMOTE_AT,
   billAmount,
+  FRIEND_AT,
+  adsOfDay,
   careerOf,
+  familyFriends,
+  missingFriends,
+  rideFor,
+  vehicleOf,
   clockOf,
   formatClock,
   formatMoney,
@@ -1185,6 +1191,10 @@ export class Hud {
     };
     people.sort((a, b) => score(b.id) - score(a.id) || a.id - b.id);
     this.renderFame(folk);
+    // bloco 8: amigos da família (contam para as promoções)
+    const ff = el('div', 'panel-note family-friends', t('rel.familyFriends', { n: familyFriends(world).length }));
+    ff.title = t('rel.familyFriendsTip');
+    this.panelEl.append(ff);
     if (people.length === 0) {
       this.panelEl.append(el('div', 'panel-note', t('rel.none', { name: first(folk.name) })));
       return;
@@ -1222,6 +1232,8 @@ export class Hud {
       for (const axis of ['friendship', 'romance', 'respect'] as const) bars.append(this.relBar(axis, mine[axis]));
       row.append(bars);
       const tags = [t(friendshipLabel(mine))];
+      if (mine.friendship >= FRIEND_AT) tags[0] = `★ ${tags[0]}`;
+      if (world.tick - mine.last >= 1440 && mine.friendship > 0 && !p.where.startsWith('rel.home')) tags.push(t('rel.cooling'));
       const rom = romanceLabel(mine);
       if (rom) tags.push(t(rom));
       const res = respectLabel(mine);
@@ -1459,6 +1471,15 @@ export class Hud {
             return shift ? t('job.nextShift', { when: whenText(shift.start) }) : '';
           })();
       if (status) box.append(el('div', 'job-line strong', status));
+      // bloco 8: a carona (muda com o cargo) e se ela está esperando agora
+      const vehicle = vehicleOf(catalog, job);
+      if (vehicle) box.append(el('div', 'job-line', t('job.ride', { ride: t(`ride.${vehicle.kind}`) })));
+      const ride = rideFor(catalog, folk, world.tick);
+      if (ride) box.append(el('div', 'job-line strong', t('job.rideWaiting', { time: formatClock(ride.leaves) })));
+      const prize = Object.values(catalog.objects).find((o) => o.reward?.career === career.id);
+      if (prize?.reward && job.level < prize.reward.level) {
+        box.append(el('div', 'panel-note', t('job.reward', { title: t(career.levels[prize.reward.level].title), object: t(prize.name) })));
+      }
       // bloco 6: despertador na cama, antes do turno
       const alarm = el('label', 'autonomy alarm');
       const input = el('input');
@@ -1486,9 +1507,18 @@ export class Hud {
           const have = skillLevel(folk, id);
           req.append(el('span', `req ${id in missing ? 'miss' : 'ok'}`, `${t(`skill.${id}`)} ${have}/${need}`));
         }
-        if (Object.keys(next.requires).length) box.append(req);
+        // bloco 8: amigos da família
+        const friendsShort = missingFriends(world, next);
+        if (next.friends > 0) {
+          const chip = el('span', `req ${friendsShort > 0 ? 'miss' : 'ok'}`, t('job.friendsReq', { have: familyFriends(world).length, need: next.friends }));
+          chip.title = t('rel.familyFriendsTip');
+          req.append(chip);
+        }
+        if (Object.keys(next.requires).length || next.friends > 0) box.append(req);
         const boss = bossOf(world, job.careerId);
-        if (boss && bossBlocks(world, folk, job.level + 1) > 0) {
+        if (Object.keys(missing).length === 0 && friendsShort > 0) {
+          box.append(el('div', 'panel-note', t('job.needFriends', { n: friendsShort })));
+        } else if (boss && bossBlocks(world, folk, job.level + 1) > 0) {
           const have = Math.round(relationOf(world, boss.id, folk.id)?.respect ?? 0);
           box.append(el('div', 'panel-note', t('job.bossNeeds', { boss: first(boss.name), need: bossRespectFor(job.level + 1), have })));
         } else if (Object.keys(missing).length === 0) box.append(el('div', 'panel-note', t('job.ready')));
@@ -1534,11 +1564,10 @@ export class Hud {
       this.panelEl.append(el('div', 'panel-note', t('job.needPaper')));
       return;
     }
+    // bloco 8: com dez carreiras, o jornal traz só algumas vagas por dia
     const ads = el('div', 'ads');
-    for (const c of Object.values(catalog.careers)) {
-      if (c.id === job?.careerId) continue;
-      ads.append(this.adFor(c, folk));
-    }
+    this.panelEl.append(el('div', 'panel-note', t('job.adsToday')));
+    for (const c of adsOfDay(catalog, Math.floor(world.tick / 1440), job?.careerId)) ads.append(this.adFor(c, folk));
     this.panelEl.append(ads);
   }
 
@@ -1883,7 +1912,7 @@ export class Hud {
     const funds = this.ctrl.world.household.funds;
     const placing = this.ctrl.placing;
     const depth = this.ctrl.sim.buyUndoDepth;
-    const sig = `${this.category}|${this.tierFilter}|${funds}|${placing?.defId ?? ''}|${placing?.moveId ?? ''}|${placing?.color ?? ''}|${depth}`;
+    const sig = `${(this.ctrl.world.household.unlocked ?? []).length}|${this.category}|${this.tierFilter}|${funds}|${placing?.defId ?? ''}|${placing?.moveId ?? ''}|${placing?.color ?? ''}|${depth}`;
     if (sig === this.catalogSig) return;
     this.catalogSig = sig;
     for (const b of this.catalogTabs.children) {
@@ -1934,7 +1963,11 @@ export class Hud {
   private catalogItem(def: ObjectDef, funds: number): HTMLElement {
     const item = el('button', 'item');
     const affordable = funds >= def.price;
-    item.classList.toggle('poor', !affordable);
+    // bloco 8: recompensa de carreira ainda trancada
+    const catalog = this.ctrl.sim.catalog;
+    const locked = !!def.reward && !(this.ctrl.world.household.unlocked ?? []).includes(def.id);
+    item.classList.toggle('poor', !affordable || locked);
+    item.classList.toggle('locked', locked);
     item.classList.toggle('on', this.ctrl.placing?.defId === def.id && this.ctrl.placing.moveId === undefined);
     const img = el('img', 'item-img');
     img.alt = '';
@@ -1952,10 +1985,21 @@ export class Hud {
     if (def.interactions.some((i) => i.duo)) tip.push(t('buy.duo'));
     if (def.dining) tip.push(t('buy.table'));
     if (!affordable) tip.push(t('buy.cantAfford'));
+    const lockText = def.reward
+      ? t('buy.locked', {
+          title: t(catalog.careers[def.reward.career]?.levels[def.reward.level]?.title ?? ''),
+          career: t(catalog.careers[def.reward.career]?.name ?? ''),
+        })
+      : '';
+    if (def.reward) tip.push(lockText);
     item.title = tip.join(' · ');
-    const badge = el('span', `item-tier tier-${tier}`, '⟡'.repeat(tier + 1));
-    item.append(badge, img, el('span', 'item-name', t(def.name)), el('span', 'item-price', formatMoney(def.price)));
+    const badge = el('span', `item-tier tier-${tier}`, def.reward ? '★' : '⟡'.repeat(tier + 1));
+    item.append(badge, img, el('span', 'item-name', t(def.name)), el('span', 'item-price', locked ? t('buy.lockedShort') : formatMoney(def.price)));
     item.addEventListener('click', () => {
+      if (locked) {
+        this.ctrl.toast(lockText);
+        return;
+      }
       if (!affordable) {
         this.ctrl.toast(t('problem.funds'));
         return;

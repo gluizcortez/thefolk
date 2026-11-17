@@ -94,5 +94,5 @@ export function wearOf(folk: Pick<Folk, 'outfit'>, using?: Pick<InteractionDef, 
 
 /** Roupa com que o folk sai de casa para o trabalho. */
 export function streetOutfit(outfit: Outfit): Outfit {
-  return outfit === 'formal' ? 'formal' : 'day';
+  return outfit === 'formal' || outfit === 'work' ? outfit : 'day';
 }

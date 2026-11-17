@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { CATALOG } from '../src/data/catalog';
 import {
   EVENT_WAIT,
+  formatMoney,
+  payFor,
   MINUTES_PER_DAY,
   PROMOTE_AT,
   Sim,
@@ -185,7 +187,10 @@ describe('promoção, demissão e aumento', () => {
         const next = toWork(sim, folk);
         const mid = sim.world.household.funds;
         until(sim, next);
-        expect(sim.world.household.funds - mid).toBeGreaterThanOrEqual(Math.round(CATALOG.careers.office.levels[0].pay * 1.1) - 50);
+        expect(payFor(CATALOG, folk.job!)).toBe(Math.round(CATALOG.careers.office.levels[0].pay * 1.1));
+        const paid = [...sim.world.log].reverse().find((l) => l.key === 'log.backFromWork');
+        expect(paid?.params?.pay).toBe(formatMoney(payFor(CATALOG, folk.job!)));
+        expect(sim.world.household.funds).not.toBe(mid);
         expect(sim.world.household.funds).toBeGreaterThan(funds);
       }
     }

@@ -109,7 +109,7 @@ describe('migração da fatia 5', () => {
       }
     }
     const world = deserialize(v4, { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES }).world;
-    expect(world.neighbors.filter((n) => n.boss).map((n) => n.name)).toEqual(bosses.slice(0, 3));
+    expect(world.neighbors.filter((n) => n.boss && bosses.includes(n.name)).map((n) => n.name)).toEqual(bosses.slice(0, 3));
     expect(world.folks[0].job).toMatchObject({ raise: 0, raisePending: false, lastRaiseDay: -99 });
     expect(world.folks.every((f) => f.gig === null && f.business === null)).toBe(true);
     expect(world.news).toEqual([]);

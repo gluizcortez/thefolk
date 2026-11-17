@@ -42,7 +42,8 @@ export type SfxName =
   | 'splash'
   | 'punch'
   | 'yawn'
-  | 'alarm';
+  | 'alarm'
+  | 'honk';
 
 /** Sons que duram enquanto a ação dura. */
 export type LoopName = 'water' | 'sizzle' | 'tv' | 'typing' | 'scrub' | 'clink' | 'pedal' | 'game' | 'bubbles' | 'saw';
@@ -405,6 +406,13 @@ export class AudioEngine {
         break;
       case 'yawn':
         this.blip(t, 'sawtooth', 260, 0.9, 0.025, d, 150, 0.2);
+        break;
+      case 'honk':
+        // bloco 8: buzina de carona, dois toques em terça
+        for (const [at, len] of [[0, 0.16], [0.24, 0.42]] as const) {
+          this.blip(t + at, 'square', 392, len, 0.05, d);
+          this.blip(t + at, 'square', 494, len, 0.04, d);
+        }
         break;
     }
   }

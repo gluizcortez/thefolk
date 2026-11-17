@@ -125,7 +125,8 @@ describe('exportar e importar (bloco 7)', () => {
 
   it('arquivo de versão antiga passa pelas migrações', () => {
     const w = serialize(playedWorld(7, 100), 5);
-    const old = { ...w, version: SAVE_VERSION - 1, format: EXPORT_FORMAT, name: 'Antigo' };
+    // v10: antes dos campos do bloco 6 (o bloco 8 levou o save para v12)
+    const old = { ...w, version: 10, format: EXPORT_FORMAT, name: 'Antigo' };
     // a v10 não tinha os campos do bloco 6: a migração precisa repor
     for (const f of old.world.folks as unknown as Record<string, unknown>[]) {
       delete f.thought;
@@ -133,7 +134,7 @@ describe('exportar e importar (bloco 7)', () => {
       delete f.spark;
     }
     const back = importSave(JSON.stringify(old), CTX);
-    expect(back.version).toBe(SAVE_VERSION - 1);
+    expect(back.version).toBe(10);
     expect(back.world.folks.every((f) => Array.isArray(f.wishes))).toBe(true);
   });
 

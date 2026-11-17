@@ -140,17 +140,39 @@ export function setDating(world: World, a: number, b: number, on: boolean): void
   world.relations[relKey(b, a)].dating = on;
 }
 
+/** Bloco 8: quanto a amizade cai por dia sem contato (Afeto 5). */
+export const FRIEND_COOL = 2;
+/** romance esfria assim por dia sem contato; namoro esfria a um terço disso */
+export const ROMANCE_COOL = 1.5;
+
 /**
- * Uma vez por dia: sem contato, a amizade e o romance esfriam devagar
- * (namoro esfria mais devagar). Respeito não esfria.
+ * Bloco 8: quem tem pouco Afeto esquece os outros mais depressa. Afeto 0
+ * esfria 1,5x; 5, normal; 10, metade.
+ */
+export function coolFactor(warmth: number | undefined): number {
+  return Math.max(0.5, 1.5 - 0.1 * (warmth ?? 5));
+}
+
+/**
+ * Uma vez por dia: sem contato há mais de um dia, a amizade e o romance de
+ * quem mora na casa (e por quem mora na casa) esfriam. Melhores amigos
+ * esfriam pela metade; namoro esfria devagar; respeito não esfria. Relações
+ * só entre vizinhos ficam como estão (eles se veem fora da tela).
  */
 export function coolRelations(world: World): void {
   const day = 24 * 60;
-  for (const rel of Object.values(world.relations)) {
+  const home = new Set(world.folks.filter((f) => !f.visit).map((f) => f.id));
+  const warmth = new Map<number, number>();
+  for (const f of world.folks) warmth.set(f.id, f.temper?.warmth ?? 5);
+  for (const n of world.neighbors) if (!warmth.has(n.id)) warmth.set(n.id, n.temper?.warmth ?? 5);
+  for (const [key, rel] of Object.entries(world.relations)) {
     if (world.tick - rel.last < day) continue;
-    if (rel.friendship > 10) rel.friendship = Math.max(10, rel.friendship - 1);
+    const [from, to] = key.split('>').map(Number);
+    if (!home.has(from) && !home.has(to)) continue;
+    const k = coolFactor(warmth.get(from));
+    if (rel.friendship > 0) rel.friendship = Math.max(0, rel.friendship - FRIEND_COOL * k * (rel.friendship >= 75 ? 0.5 : 1));
     else if (rel.friendship < -10) rel.friendship = Math.min(-10, rel.friendship + 1);
-    if (rel.romance > 0) rel.romance = Math.max(0, rel.romance - (rel.dating ? 0.5 : 1.5));
+    if (rel.romance > 0) rel.romance = Math.max(0, rel.romance - ROMANCE_COOL * k * (rel.dating ? 1 / 3 : 1));
   }
 }
 

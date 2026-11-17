@@ -1413,6 +1413,78 @@ function outfitTex(kind: string, part: string, idx: number): Painter {
   };
 }
 
+/**
+ * Bloco 8: uniformes. Nome: uni:peça:modelo:cima:baixo:detalhe (cores em
+ * decimal). Jaleco e dólmã têm botões e bolso; macacão tem alças e bolso
+ * no peito; avental cobre a frente; agasalho tem listras nas mangas e nas
+ * pernas; faixa atravessa o peito; camisa tem crachá.
+ */
+function uniformTex(part: string, style: string, top: number, bottom: number, accent: number): Painter {
+  return (c, w, h, rnd) => {
+    const lower = part === 'leg' || part === 'hip';
+    const base = lower ? bottom : top;
+    fill(c, base);
+    for (let i = 0; i < 5; i++) {
+      const x = rnd() * w;
+      line(c, x, rnd() * h, x + rnd() * 4 - 2, h, shade(base, 0.75), 0.25, 1.5);
+    }
+    wrapShade(c, w, h, 0.3);
+    const cx = w / 2;
+    if (part === 'torso') {
+      if (style === 'coat') {
+        line(c, cx + 2, 0, cx + 2, h, shade(base, 0.6), 0.8, 1);
+        for (const y of [12, 26, 40, 54]) fill(c, accent, cx + 4, y, 3, 3);
+        fill(c, shade(base, 0.85), cx - 18, 30, 10, 9);
+        line(c, cx - 18, 30, cx - 8, 30, accent, 0.9, 1);
+      } else if (style === 'overall') {
+        // camiseta por baixo (cor do detalhe) e o peitilho com alças
+        fill(c, accent, 0, 0, w, 14);
+        fill(c, shade(accent, 0.8), cx - 9, 0, 18, 4);
+        fill(c, base, cx - 14, 14, 28, h - 14);
+        for (const sx of [-1, 1]) fill(c, base, cx + sx * 12 - 3, 0, 6, 16);
+        fill(c, shade(base, 0.8), cx - 7, 22, 14, 10);
+        for (const sx of [-1, 1]) fill(c, 0xd8c070, cx + sx * 12 - 1, 14, 3, 3);
+      } else if (style === 'apron') {
+        fill(c, accent, cx - 13, 6, 26, h - 6);
+        line(c, cx - 13, 6, cx - 18, 0, accent, 1, 2);
+        line(c, cx + 13, 6, cx + 18, 0, accent, 1, 2);
+        fill(c, shade(accent, 0.8), cx - 8, 34, 16, 10);
+      } else if (style === 'jacket') {
+        c.fillStyle = css(0xf4efdf);
+        c.beginPath();
+        c.moveTo(cx - 8, 0);
+        c.lineTo(cx, 20);
+        c.lineTo(cx + 8, 0);
+        c.fill();
+        fill(c, accent, cx - 2, 2, 4, 18);
+        line(c, cx - 8, 0, cx, 22, shade(base, 0.5), 1, 1.5);
+        line(c, cx + 8, 0, cx, 22, shade(base, 0.5), 1, 1.5);
+        fill(c, accent, cx + 10, 18, 8, 3);
+      } else if (style === 'track') {
+        fill(c, accent, cx - 1, 0, 2, h);
+        fill(c, accent, 0, 0, w, 3);
+        fill(c, shade(base, 1.25), cx - 16, 14, 10, 10, 0.8);
+      } else if (style === 'sash') {
+        line(c, cx - 22, 0, cx + 22, h, accent, 1, 7);
+        fill(c, 0xe8c040, cx + 6, 20, 5, 5);
+      } else {
+        // camisa de trabalho: bolso e crachá
+        fill(c, shade(base, 0.85), cx + 6, 18, 12, 10);
+        fill(c, 0xf4efdf, cx - 18, 20, 10, 6);
+        fill(c, accent, cx - 18, 20, 10, 2);
+        line(c, cx, 0, cx, h, shade(base, 0.7), 0.6, 1);
+      }
+    } else if (part === 'sleeve') {
+      if (style === 'track') fill(c, accent, 0, 0, 2, h);
+      else if (style === 'overall') fill(c, accent);
+      fill(c, shade(base, 0.6), 0, h - 3, w, 3, 0.6);
+    } else if (part === 'leg' && style === 'track') {
+      fill(c, accent, 0, 0, 2, h);
+    }
+    vshade(c, w, h, 0.05, 0.2);
+  };
+}
+
 /** Camisa que envolve o tronco (u = 0.5 é o centro do peito; a gola fica em cima). */
 function clothPattern(c: Ctx, w: number, h: number, idx: number): number {
   const base = SHIRT[idx % SHIRT.length];
@@ -1731,6 +1803,16 @@ function specFor(name: string): Spec | undefined {
   switch (parts[0]) {
     case 'face':
       return { w: 128, h: 64, paint: face(n, Number(parts[2]), parts[3] as Expression, parts[4] === '1', Number(parts[5] ?? 0)), grain: 3 };
+    case 'uni': {
+      const part = parts[1];
+      const big = part === 'torso';
+      return {
+        w: big ? 64 : 32,
+        h: big ? 64 : part === 'sleeve' ? 16 : 32,
+        paint: uniformTex(part, parts[2], Number(parts[3]), Number(parts[4]), Number(parts[5])),
+        grain: 7,
+      };
+    }
     case 'suit':
     case 'pj':
     case 'robe':

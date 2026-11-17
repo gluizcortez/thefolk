@@ -2,6 +2,7 @@ import type { ObjectDef } from '../sim/types';
 
 import { admire, clean, dishes, lightOff, lightOn, repair, service, tuning } from './interactions';
 import { FURNITURE } from './furniture';
+import { REWARDS } from './rewards';
 
 // Catálogo de objetos. Tudo aqui é dado: para criar um objeto novo, adicione
 // uma entrada, os textos em i18n e (opcional) um modelo em game/art/furniture.ts
@@ -776,4 +777,4 @@ const list: ObjectDef[] = [
   },
 ];
 
-export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries([...list, ...FURNITURE].map((o) => [o.id, o]));
+export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries([...list, ...FURNITURE, ...REWARDS].map((o) => [o.id, o]));

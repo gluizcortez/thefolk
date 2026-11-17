@@ -255,6 +255,340 @@ const list: WorkEventDef[] = [
       { traits: { esquentado: 1 }, success: { actor: { respect: -8, friendship: -6 }, performance: -4, memory: { actor: 'insulted' } } },
     ],
   }),
+  // ---------- bloco 8: carreiras novas e eventos em cadeia ----------
+  // Uma escolha com `chain` marca outro evento (com `chained: true`, que nunca
+  // sai no sorteio) para o primeiro turno a partir de tantos dias depois.
+  ev({
+    id: 'loan',
+    actor: 'coworker',
+    requires: { friendshipAbove: 0 },
+    weight: 0.7,
+    choices: [
+      { traits: { gentil: 1.5, tagarela: 0.3 }, success: { money: -60, actor: { friendship: 8 }, chain: { event: 'loanBack', days: 3 } } },
+      { traits: { reservado: 1, ambicioso: 0.5 }, success: { actor: { friendship: -4 } } },
+    ],
+  }),
+  ev({
+    id: 'loanBack',
+    actor: 'coworker',
+    chained: true,
+    choices: [
+      {
+        traits: { gentil: 1 },
+        check: { base: 0.7, actorRespect: true },
+        success: { money: 80, actor: { friendship: 6, respect: 4 }, self: { friendship: 6 }, memory: { self: 'helpedOut' } },
+        fail: { self: { friendship: -12 }, memory: { self: 'tookCredit' }, needs: { comfort: -10 } },
+      },
+      { traits: { esquentado: 1 }, success: { money: 60, actor: { friendship: -6 }, self: { friendship: -2 } } },
+    ],
+  }),
+  ev({
+    id: 'secretProject',
+    actor: 'boss',
+    minLevel: 2,
+    weight: 0.7,
+    choices: [
+      { traits: { ambicioso: 1.5 }, success: { needs: { energy: -12, fun: -8 }, actor: { respect: 4 }, chain: { event: 'projectReview', days: 4 } } },
+      { traits: { caseiro: 1, reservado: 0.5 }, success: { actor: { respect: -2 } } },
+    ],
+  }),
+  ev({
+    id: 'projectReview',
+    actor: 'boss',
+    chained: true,
+    choices: [
+      {
+        traits: { ambicioso: 1 },
+        check: { skill: 'career', base: 0.35, perLevel: 0.07, mood: true },
+        success: { performance: 20, actor: { respect: 12 }, news: 'workHero', xp: { id: 'career', amount: 40 } },
+        fail: { performance: -10, actor: { respect: -8 } },
+      },
+      { traits: { gentil: 1, reservado: 0.5 }, success: { performance: 5, actor: { respect: 3 }, coworkers: { friendship: 4 } } },
+    ],
+  }),
+  ev({
+    id: 'shortcut',
+    actor: 'none',
+    weight: 0.7,
+    choices: [
+      { traits: { brincalhao: 1, desleixado: 1, ambicioso: 0.5 }, success: { performance: 7, needs: { fun: 5 }, chain: { event: 'audit', days: 5 } } },
+      { traits: { caprichoso: 1.5, gentil: 0.5 }, success: { performance: 1, needs: { energy: -6 } } },
+    ],
+  }),
+  ev({
+    id: 'audit',
+    actor: 'boss',
+    chained: true,
+    choices: [
+      { traits: { gentil: 1.5 }, success: { performance: -6, actor: { respect: 2 } } },
+      {
+        traits: { esquentado: 0.5, ambicioso: 1 },
+        check: { skill: 'charisma', base: 0.3, perLevel: 0.07, actorRespect: true },
+        success: { performance: 2 },
+        fail: { performance: -16, actor: { respect: -12 }, news: 'scandal' },
+      },
+    ],
+  }),
+  // posto de saúde
+  ev({
+    id: 'nightPatient',
+    actor: 'none',
+    careers: ['clinic'],
+    weight: 1.4,
+    choices: [
+      {
+        traits: { gentil: 1.5, caprichoso: 0.5 },
+        check: { skill: 'logic', base: 0.45, perLevel: 0.06 },
+        success: { performance: 8, needs: { energy: -10 }, chain: { event: 'thankYou', days: 3 } },
+        fail: { performance: -4, needs: { energy: -12, comfort: -8 } },
+      },
+      { traits: { reservado: 1, caseiro: 0.5 }, success: { performance: 1 } },
+    ],
+  }),
+  ev({
+    id: 'thankYou',
+    actor: 'none',
+    careers: ['clinic'],
+    chained: true,
+    choices: [
+      { traits: { gentil: 1, tagarela: 1 }, success: { needs: { fun: 15, social: 15 }, news: 'kindness', boss: { respect: 4 } } },
+      { traits: { reservado: 1 }, success: { needs: { comfort: 10 }, performance: 3 } },
+    ],
+  }),
+  ev({
+    id: 'outbreak',
+    actor: 'none',
+    careers: ['clinic'],
+    minLevel: 2,
+    choices: [
+      {
+        traits: { ambicioso: 1, gentil: 1 },
+        check: { skill: 'tidiness', base: 0.45, perLevel: 0.06 },
+        success: { performance: 12, needs: { energy: -18, hygiene: -10 }, boss: { respect: 6 }, news: 'workHero' },
+        fail: { performance: 2, needs: { energy: -20, hunger: -15 } },
+      },
+      { traits: { caseiro: 1 }, success: { performance: -3, needs: { comfort: 5 } } },
+    ],
+  }),
+  // oficina
+  ev({
+    id: 'stuckBolt',
+    actor: 'none',
+    careers: ['workshop'],
+    weight: 1.4,
+    choices: [
+      {
+        traits: { esquentado: 1, agitado: 1 },
+        check: { skill: 'fitness', base: 0.4, perLevel: 0.07 },
+        success: { performance: 6, needs: { hygiene: -12 } },
+        fail: { performance: -3, needs: { comfort: -15, hygiene: -10 } },
+      },
+      {
+        traits: { caprichoso: 1, reservado: 0.5 },
+        check: { skill: 'handiness', base: 0.5, perLevel: 0.06 },
+        success: { performance: 8, xp: { id: 'handiness', amount: 25 } },
+        fail: { performance: -2, needs: { fun: -8 } },
+      },
+    ],
+  }),
+  ev({
+    id: 'oddMachine',
+    actor: 'none',
+    careers: ['workshop'],
+    minLevel: 2,
+    choices: [
+      {
+        traits: { brincalhao: 1, ambicioso: 0.5 },
+        check: { skill: 'logic', base: 0.35, perLevel: 0.07 },
+        success: { performance: 12, money: 50, news: 'workHero' },
+        fail: { performance: -5, needs: { hygiene: -15, fun: 5 } },
+      },
+      { traits: { caseiro: 1, reservado: 1 }, success: { performance: 1 } },
+    ],
+  }),
+  // trupe
+  ev({
+    id: 'fallNet',
+    actor: 'coworker',
+    careers: ['circus'],
+    choices: [
+      { traits: { gentil: 1.5, caprichoso: 1 }, success: { performance: 3, actor: { friendship: 10, respect: 6 }, memory: { actor: 'helpedOut' } } },
+      {
+        traits: { brincalhao: 1, agitado: 1 },
+        check: { skill: 'fitness', base: 0.45, perLevel: 0.06 },
+        success: { performance: 10, needs: { fun: 15 }, news: 'workHero' },
+        fail: { performance: -8, needs: { comfort: -25, energy: -10 } },
+      },
+    ],
+  }),
+  ev({
+    id: 'rainShow',
+    actor: 'none',
+    careers: ['circus'],
+    weight: 1.3,
+    choices: [
+      {
+        traits: { brincalhao: 1.5, tagarela: 1 },
+        check: { skill: 'creativity', base: 0.4, perLevel: 0.07, mood: true },
+        success: { performance: 10, needs: { fun: 15 }, coworkers: { friendship: 3 } },
+        fail: { performance: -4, needs: { hygiene: -15, fun: -5 } },
+      },
+      { traits: { caseiro: 1 }, success: { performance: -1, needs: { comfort: 8 } } },
+    ],
+  }),
+  // observatório
+  ev({
+    id: 'blip',
+    actor: 'none',
+    careers: ['observatory'],
+    weight: 1.2,
+    choices: [
+      { traits: { ambicioso: 1, agitado: 0.5 }, success: { needs: { energy: -10 }, chain: { event: 'blipCheck', days: 3 } } },
+      { traits: { reservado: 1, caseiro: 0.5 }, success: { performance: 2 } },
+    ],
+  }),
+  ev({
+    id: 'blipCheck',
+    actor: 'none',
+    careers: ['observatory'],
+    chained: true,
+    choices: [
+      {
+        traits: { ambicioso: 1 },
+        check: { skill: 'logic', base: 0.35, perLevel: 0.07 },
+        success: { performance: 18, news: 'workHero', xp: { id: 'logic', amount: 40 }, boss: { respect: 8 } },
+        fail: { performance: -6, needs: { fun: -10 }, news: 'workSlacker' },
+      },
+      { traits: { gentil: 1, reservado: 1 }, success: { performance: 4, coworkers: { respect: 3 } } },
+    ],
+  }),
+  ev({
+    id: 'cloudy',
+    actor: 'none',
+    careers: ['observatory'],
+    choices: [
+      { traits: { reservado: 1, ambicioso: 0.5 }, success: { xp: { id: 'career', amount: 35 }, needs: { fun: -5 } } },
+      { traits: { tagarela: 1, brincalhao: 1 }, success: { needs: { fun: 12, social: 12 }, coworkers: { friendship: 3 } } },
+    ],
+  }),
+  // câmara do bairro
+  ev({
+    id: 'promise',
+    actor: 'none',
+    careers: ['townhall'],
+    weight: 1.2,
+    choices: [
+      { traits: { tagarela: 1.5, ambicioso: 1 }, success: { performance: 8, needs: { fun: 8 }, chain: { event: 'promiseDue', days: 4 } } },
+      { traits: { reservado: 1, gentil: 0.5 }, success: { performance: 2 } },
+    ],
+  }),
+  ev({
+    id: 'promiseDue',
+    actor: 'none',
+    careers: ['townhall'],
+    chained: true,
+    choices: [
+      {
+        traits: { ambicioso: 1, gentil: 0.5 },
+        check: { skill: 'logic', base: 0.4, perLevel: 0.06 },
+        success: { performance: 12, news: 'workHero', boss: { respect: 6 } },
+        fail: { performance: -10, news: 'scandal' },
+      },
+      {
+        traits: { tagarela: 1, brincalhao: 0.5 },
+        check: { skill: 'charisma', base: 0.4, perLevel: 0.07 },
+        success: { performance: 2 },
+        fail: { performance: -12, boss: { respect: -6 }, news: 'workSlacker' },
+      },
+    ],
+  }),
+  ev({
+    id: 'debate',
+    actor: 'none',
+    careers: ['townhall'],
+    minLevel: 3,
+    choices: [
+      {
+        traits: { ambicioso: 1, esquentado: 0.5, tagarela: 1 },
+        check: { skill: 'charisma', base: 0.3, perLevel: 0.08, mood: true },
+        success: { performance: 15, xp: { id: 'charisma', amount: 30 }, news: 'workHero' },
+        fail: { performance: -8, needs: { comfort: -15 }, news: 'workSlacker' },
+      },
+      { traits: { reservado: 1 }, success: { performance: -2 } },
+    ],
+  }),
+  // clube
+  ev({
+    id: 'bigMatch',
+    actor: 'none',
+    careers: ['club'],
+    minLevel: 2,
+    weight: 1.2,
+    choices: [
+      {
+        traits: { ambicioso: 1, agitado: 1 },
+        check: { skill: 'fitness', base: 0.35, perLevel: 0.07, mood: true },
+        success: { performance: 15, needs: { fun: 20, energy: -15 }, news: 'workHero', coworkers: { friendship: 4 } },
+        fail: { performance: -6, needs: { fun: -10, energy: -15 } },
+      },
+      { traits: { gentil: 1, reservado: 0.5 }, success: { performance: 3, coworkers: { friendship: 5, respect: 3 } } },
+    ],
+  }),
+  ev({
+    id: 'sprain',
+    actor: 'none',
+    careers: ['club', 'circus', 'brigade'],
+    weight: 0.6,
+    choices: [
+      { traits: { caseiro: 1, reservado: 0.5 }, success: { performance: -3, needs: { comfort: 10 } } },
+      {
+        traits: { ambicioso: 1, esquentado: 0.5 },
+        check: { skill: 'fitness', base: 0.5, perLevel: 0.05 },
+        success: { performance: 6, needs: { comfort: -10 } },
+        fail: { performance: -10, needs: { comfort: -30, energy: -15 } },
+      },
+    ],
+  }),
+  // brigada
+  ev({
+    id: 'catTree',
+    actor: 'none',
+    careers: ['brigade'],
+    weight: 1.3,
+    choices: [
+      {
+        traits: { gentil: 1.5, agitado: 0.5 },
+        check: { skill: 'fitness', base: 0.5, perLevel: 0.05 },
+        success: { performance: 6, needs: { fun: 10 }, chain: { event: 'catOwner', days: 2 } },
+        fail: { performance: 1, needs: { comfort: -15, hygiene: -10 } },
+      },
+      { traits: { caseiro: 1, reservado: 0.5 }, success: { performance: -1 } },
+    ],
+  }),
+  ev({
+    id: 'catOwner',
+    actor: 'none',
+    careers: ['brigade'],
+    chained: true,
+    choices: [
+      { traits: { guloso: 1.5, gentil: 1 }, success: { needs: { hunger: 25, fun: 10, social: 15 }, coworkers: { friendship: 4 }, news: 'kindness' } },
+      { traits: { reservado: 1, ambicioso: 0.5 }, success: { performance: 4, boss: { respect: 3 } } },
+    ],
+  }),
+  ev({
+    id: 'drill',
+    actor: 'boss',
+    careers: ['brigade'],
+    choices: [
+      {
+        traits: { ambicioso: 1, caprichoso: 1 },
+        check: { skill: 'handiness', base: 0.4, perLevel: 0.07 },
+        success: { performance: 10, actor: { respect: 8 } },
+        fail: { performance: -6, actor: { respect: -5 }, needs: { comfort: -10 } },
+      },
+      { traits: { brincalhao: 1.5 }, check: { base: 0.5 }, success: { needs: { fun: 15 }, coworkers: { friendship: 3 } }, fail: { performance: -8, actor: { respect: -8 } } },
+    ],
+  }),
 ];
 
 export const WORK_EVENTS: Record<string, WorkEventDef> = Object.fromEntries(list.map((e) => [e.id, e]));

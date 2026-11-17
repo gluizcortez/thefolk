@@ -327,7 +327,8 @@ export function buildScenery(grid: Grid, free: (x: number, y: number) => boolean
 
   // rua e calçada: carros, postes, lixeira e hidrante
   g.add(
-    car(w / 2 + 5.5, front + 2.6, 0x2f8a86),
+    // bloco 8: a faixa da frente fica livre para as caronas
+    car(w / 2 + 9, front + 5.2, 0x2f8a86),
     car(w / 2 - 12, front + 5.2, 0xc9382f),
     streetLamp(w / 2 - 6, front + 0.9),
     streetLamp(w / 2 + 11, front + 0.9),

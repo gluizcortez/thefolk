@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { ball, box, colorMat, cyl, fronted, lathe, rbox, rod, setShadows, texMat, tileUV } from './build';
 import { PAL, mix, seeded, shade } from './palette';
 import { FURNITURE4 } from './furniture4';
+import { REWARD_ART } from './rewards';
 import { getTexture } from './textures';
 
 // Modelos 3D dos objetos. As formas são arredondadas, com esmalte, vinil e
@@ -1340,7 +1341,7 @@ const SPECS: Record<string, FurnitureSpec> = {
 };
 
 export function furnitureSpec(art: string): FurnitureSpec {
-  return SPECS[art] ?? FURNITURE4[art] ?? fallback;
+  return SPECS[art] ?? FURNITURE4[art] ?? REWARD_ART[art] ?? fallback;
 }
 
 export function buildFurniture(art: string, seed: number, paint?: number): FurnitureModel {

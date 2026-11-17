@@ -5,12 +5,14 @@ import {
   AWAY_DECAY,
   CALL_AHEAD,
   FIRE_AT,
-  LATE_LIMIT,
+  HONK_AGAIN,
   MISSED_PENALTY,
+  RIDE_GRACE,
   PERFORMANCE_AFTER_PROMOTION,
   PROMOTE_AT,
   careerOf,
   levelOfJob,
+  missingFriends,
   missingSkills,
   newJob,
   payFor,
@@ -48,10 +50,12 @@ import {
   bossBlocks,
   bossFed,
   canAskRaise,
+  chainDue,
   meetWorkplace,
   planEvent,
   resolveRaise,
   resolveWorkEvent,
+  staffShuffle,
   startWorkEvent,
   transferLevel,
   workRelationTerm,
@@ -70,7 +74,6 @@ import { nextFloat, nextInt } from './rng';
 import { addMemory, affinity, applyDelta, coolRelations, ensureRelation, relationOf, setDating, touch } from './relations';
 import { skillLevel, trainSkill } from './skills';
 import { HABIT_PERIOD_DAYS, countHabit, settleHabits } from './temper';
-import { streetOutfit } from './family';
 import {
   THINK_EVERY,
   INSPIRED_TRAINING,
@@ -198,7 +201,8 @@ export type CommandProblem =
   | 'daytime'
   | 'undoBuyBlocked'
   | 'refused'
-  | 'noSpark';
+  | 'noSpark'
+  | 'locked';
 
 /** Resultado de uma conversa, para a tela mostrar o que mudou (não vai no save). */
 export interface SocialOutcome {
@@ -614,6 +618,7 @@ export class Sim {
   private buy(defId: string, x: number, y: number, rot: WorldObject['rot'], color?: string): boolean {
     const def = this.catalog.objects[defId];
     if (!def || def.buyable === false) return false;
+    if (def.reward && !(this.world.household.unlocked ?? []).includes(def.id)) return this.fail('locked');
     if (this.world.household.funds < def.price) return this.fail('funds');
     const check = checkPlacement(this.world, this.catalog, defId, x, y, rot);
     if (!check.ok) return this.fail(check.problem ?? 'invalid');
@@ -785,6 +790,8 @@ export class Sim {
       // fofoca anda pela vizinhança; namoros apagados terminam
       spreadNews(world, this.catalog, this.logger);
       dailyHearts(world, this.catalog, this.logger);
+      // bloco 8: no domingo de madrugada a vida corre nos lugares de trabalho
+      if (Math.floor(world.tick / MINUTES_PER_DAY) % 7 === 6) staffShuffle(world, this.catalog, this.logger);
     }
     if (minute === BOARD_HOUR * 60) refreshBoard(world, this.catalog);
     if (minute === 0 && Math.floor(world.tick / MINUTES_PER_DAY) % HABIT_PERIOD_DAYS === 0) this.settleTempers();
@@ -945,7 +952,9 @@ export class Sim {
       const shift = shiftOn(level, d);
       if (!shift || job.doneDay >= d) continue;
       if (tick === shift.start - CALL_AHEAD && job.calledDay !== d) {
+        // bloco 8: a carona encosta na calçada e buzina; o folk veste o uniforme
         job.calledDay = d;
+        job.honkDay = -1;
         if (folk.collapsed === 0) {
           folk.queue = folk.queue.filter((a) => a.source !== 'auto');
           const cur = folk.queue[0];
@@ -953,10 +962,15 @@ export class Sim {
           folk.path = [];
           folk.queue.unshift(this.makeAction({ kind: 'work' }, 'player'));
           if (folk.queue.length > MAX_QUEUE) folk.queue.length = MAX_QUEUE;
+          folk.outfit = 'work';
         }
         this.log('log.workCall', { name: folk.name });
       }
-      if (job.calledDay === d && tick > shift.start + LATE_LIMIT) {
+      if (job.calledDay === d && job.honkDay !== d && tick === shift.start + RIDE_GRACE - HONK_AGAIN) {
+        job.honkDay = d;
+        this.log('log.rideHonk', { name: folk.name });
+      }
+      if (job.calledDay === d && tick > shift.start + RIDE_GRACE) {
         job.doneDay = d;
         this.dropWork(folk);
         job.performance = Math.max(-100, job.performance - MISSED_PENALTY);
@@ -981,8 +995,8 @@ export class Sim {
       return;
     }
     job.doneDay = job.calledDay;
-    // bloco 5: ninguém vai trabalhar de pijama
-    folk.outfit = streetOutfit(folk.outfit);
+    // bloco 8: vai de uniforme
+    folk.outfit = 'work';
     const start = Math.max(tick, shift.start);
     folk.away = {
       until: shift.end,
@@ -991,6 +1005,8 @@ export class Sim {
       event: null,
       nextEvent: planEvent(this.world, start, shift.end, EVENT_CHANCE),
     };
+    // bloco 8: consequência marcada para hoje sempre acontece
+    if (chainDue(folk, start) && folk.away.nextEvent < 0) folk.away.nextEvent = start + 30;
     meetWorkplace(this.world, this.catalog, this.logger, folk);
     folk.queue = [];
     folk.path = [];
@@ -1073,6 +1089,9 @@ export class Sim {
       const blocked = bossBlocks(this.world, folk, job.level + 1);
       if (Object.keys(missingSkills(folk, next)).length > 0) {
         this.log('log.needSkills', { name: folk.name });
+      } else if (missingFriends(this.world, next) > 0) {
+        // bloco 8: sem amigos da família, a promoção não sai
+        this.log('log.needFriends', { name: folk.name, n: missingFriends(this.world, next) });
       } else if (blocked > 0) {
         this.log('log.bossHeldBack', { name: folk.name });
       } else {
@@ -1081,9 +1100,24 @@ export class Sim {
         job.raise = 0;
         this.log('log.promoted', { name: folk.name, job: next.title, pay: formatMoney(next.pay) });
         createNews(this.world, this.catalog, this.logger, 'promoted', folk.id, 0);
+        this.unlockRewards(folk);
       }
     }
     this.checkFired(folk);
+  }
+
+  /** Bloco 8: o cargo novo libera objetos de recompensa no catálogo. */
+  private unlockRewards(folk: Folk): void {
+    const job = folk.job;
+    if (!job) return;
+    const h = this.world.household;
+    h.unlocked ??= [];
+    for (const def of Object.values(this.catalog.objects)) {
+      const r = def.reward;
+      if (!r || r.career !== job.careerId || job.level < r.level || h.unlocked.includes(def.id)) continue;
+      h.unlocked.push(def.id);
+      this.log('log.rewardUnlocked', { name: folk.name, object: def.name });
+    }
   }
 
   private checkFired(folk: Folk): void {
@@ -1294,8 +1328,10 @@ export class Sim {
   }
 
   private finish(folk: Folk): void {
-    folk.queue.shift();
+    const done = folk.queue.shift();
     folk.path = [];
+    // bloco 8: depois do banho ou do sono, o uniforme fica no cabide
+    if (folk.outfit === 'work' && done?.phase === 'using' && this.interactionOf(done)?.wear) folk.outfit = 'day';
   }
 
   /** Anda um tile pelo caminho. 'moved' = andou; 'blocked' = o mundo mudou; 'arrived' = sem caminho a andar. */
