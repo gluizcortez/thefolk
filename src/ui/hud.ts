@@ -121,7 +121,12 @@ export class Hud {
         fresh.classList.remove('armed');
       }, 3500);
     });
-    bar.append(save, load, fresh);
+    const walls = el('button', 'btn', t(`hud.walls.${this.ctrl.wallMode}`));
+    walls.title = t('hud.wallsTip');
+    walls.addEventListener('click', () => {
+      walls.textContent = t(`hud.walls.${this.ctrl.cycleWallMode()}`);
+    });
+    bar.append(walls, save, load, fresh);
     this.root.append(bar);
   }
 

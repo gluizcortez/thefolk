@@ -75,6 +75,10 @@ export const ptBR: Record<string, string> = {
   'hud.load': 'Carregar',
   'hud.new': 'Novo jogo',
   'hud.newConfirm': 'Apagar e recomeçar?',
+  'hud.walls.cutaway': 'Paredes: em corte',
+  'hud.walls.down': 'Paredes: baixas',
+  'hud.walls.up': 'Paredes: inteiras',
+  'hud.wallsTip': 'Muda como as paredes aparecem',
   'hud.help':
     'Clique em um objeto para dar uma ordem. Arraste para mover a câmera, role para aproximar.',
 

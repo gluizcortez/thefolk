@@ -4,7 +4,7 @@ import { TICKS_PER_SECOND, clockOf, footprint, nearestFootprintTile } from '../s
 import type { Folk, NeedId, Speed, WorldObject } from '../sim';
 import { NEED_IDS } from '../sim';
 import type { Hud } from '../ui/hud';
-import { paintFolk } from './art/folk';
+import { FOLK_HEIGHT, paintFolk } from './art/folk';
 import type { FolkPose } from './art/folk';
 import { painterFor, seatHeight } from './art/objects';
 import { PAL } from './art/palette';
@@ -27,6 +27,7 @@ interface Ping {
  */
 export class HouseScene extends Phaser.Scene {
   private builtVersion = -1;
+  private builtView = -1;
   private staticArt: Phaser.GameObjects.Graphics[] = [];
   private hoverG!: Phaser.GameObjects.Graphics;
   private ringG!: Phaser.GameObjects.Graphics;
@@ -100,7 +101,7 @@ export class HouseScene extends Phaser.Scene {
     paintDoorstep(floor, grid);
     this.staticArt.push(floor);
 
-    for (const piece of wallPieces(grid)) {
+    for (const piece of wallPieces(grid, this.ctrl.wallMode)) {
       const g = this.add.graphics().setDepth(piece.depth);
       piece.paint(g);
       this.staticArt.push(g);
@@ -121,12 +122,15 @@ export class HouseScene extends Phaser.Scene {
     this.nightG.fillStyle(PAL.night, 1);
     this.nightG.fillRect(a.x - 3000, -3000, b.x - a.x + 6000, c.y + 6000);
 
-    const center = iso(grid.w / 2, grid.h / 2 - 0.5);
-    this.cameras.main.centerOn(center.x, center.y);
-    this.builtVersion = this.ctrl.worldVersion;
-    this.acc = 0;
-    this.pings = [];
-    this.hud.closeMenu();
+    this.builtView = this.ctrl.viewVersion;
+    if (this.builtVersion !== this.ctrl.worldVersion) {
+      const center = iso(grid.w / 2, grid.h / 2 - 2.2);
+      this.cameras.main.centerOn(center.x, center.y);
+      this.builtVersion = this.ctrl.worldVersion;
+      this.acc = 0;
+      this.pings = [];
+      this.hud.closeMenu();
+    }
   }
 
   private objectDepth(obj: WorldObject): number {
@@ -197,7 +201,9 @@ export class HouseScene extends Phaser.Scene {
   // ---------- quadro a quadro ----------
 
   update(_time: number, deltaMs: number): void {
-    if (this.builtVersion !== this.ctrl.worldVersion) this.rebuild();
+    if (this.builtVersion !== this.ctrl.worldVersion || this.builtView !== this.ctrl.viewVersion) {
+      this.rebuild();
+    }
     const world = this.ctrl.world;
     const dt = Math.min(deltaMs, 250) / 1000;
 
@@ -288,7 +294,7 @@ export class HouseScene extends Phaser.Scene {
           lieY = along.y / len;
         } else {
           const seat = nearestFootprintTile(obj, def, folk);
-          pos = iso(seat.x + 0.5, seat.y + 0.62, z);
+          pos = iso(seat.x + 0.5, seat.y + 0.56, z);
           faceX = -1;
           faceY = 1;
         }
@@ -306,7 +312,7 @@ export class HouseScene extends Phaser.Scene {
     ring.clear();
     if (selected && !(it?.onObject)) {
       ring.setPosition(ground.x, ground.y).setScale(1, 0.5);
-      const r = 19 + Math.sin(this.time.now / 300) * 1.5;
+      const r = 22 + Math.sin(this.time.now / 300) * 1.5;
       const rot = this.time.now / 700;
       ring.lineStyle(3, PAL.mustard, 0.95);
       for (const off of [0, Math.PI]) {
@@ -320,7 +326,10 @@ export class HouseScene extends Phaser.Scene {
 
     // balão com o que o folk está fazendo (HTML, por cima do canvas)
     const cam = this.cameras.main;
-    const headY = pose === 'lie' || pose === 'collapsed' ? pos.y - 26 : pos.y - 52;
+    const headY =
+      pose === 'lie' || pose === 'collapsed'
+        ? pos.y - 30
+        : pos.y - (pose === 'sit' ? FOLK_HEIGHT - 26 : FOLK_HEIGHT) - 8;
     const sx = (pos.x - cam.worldView.x) * cam.zoom;
     const sy = (headY - cam.worldView.y) * cam.zoom;
     this.hud.setBubble(selected ? sx : -999, sy, bubbleIcon(folk, it?.effects));
@@ -343,7 +352,7 @@ export class HouseScene extends Phaser.Scene {
         const k = (tt * 0.5 + i / 3) % 1;
         const s = 3 + k * 4;
         const x = pos.x + 6 + k * 14 + Math.sin(k * 6) * 2;
-        const y = pos.y - 24 - k * 26;
+        const y = pos.y - 30 - k * 26;
         g.lineStyle(2, PAL.cream, 1 - k);
         g.beginPath();
         g.moveTo(x - s, y - s);
@@ -353,11 +362,11 @@ export class HouseScene extends Phaser.Scene {
         g.strokePath();
       }
     } else if (showering) {
-      g.lineStyle(1.5, PAL.sky, 0.9);
+      g.lineStyle(1.5, PAL.glassHi, 0.9);
       for (let i = 0; i < 9; i++) {
         const k = (tt * 2.2 + i * 0.37) % 1;
         const x = pos.x - 12 + ((i * 7) % 24);
-        const y = pos.y - 52 + k * 46;
+        const y = pos.y - 76 + k * 70;
         g.lineBetween(x, y, x - 1, y + 5);
       }
     }

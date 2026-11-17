@@ -4,8 +4,10 @@ Jogo de simulação de vida para navegador. Você cuida de pessoas (os **folks**
 uma casa isométrica: elas têm necessidades que caem com o tempo, agem sozinhas
 quando ninguém manda e obedecem a uma fila de ações que você monta.
 
-Identidade, nomes, interface e arte são originais. Toda a arte é desenhada por
-código, sem assets externos.
+Identidade, nomes, interface e arte são originais. O visual segue a tradição das
+casas de bonecas isométricas do fim dos anos 90 (proporções realistas, paredes
+em corte, móveis detalhados), mas toda a arte é desenhada por código, sem
+assets externos e sem copiar nenhum jogo.
 
 **Estado atual: fatia 1** (um folk, casa pronta, necessidades, IA autônoma,
 fila de ações, pathfinding, relógio com velocidades e save/load).
@@ -30,6 +32,7 @@ npm run preview  # serve o dist/ localmente
   Itens tracejados são decisões do próprio folk.
 - **Relógio** no topo: pausa e três velocidades. Atalhos: `Espaço`, `1`, `2`, `3`.
 - **Arraste** para mover a câmera, **role** para aproximar. `Esc` fecha o menu.
+- O botão **Paredes** alterna entre em corte, baixas e inteiras.
 - A chave "Age por conta própria" liga e desliga a IA do folk.
 - **Salvar / Carregar / Novo jogo** no canto superior direito. O jogo também
   salva sozinho a cada 30 segundos e continua de onde parou ao reabrir.

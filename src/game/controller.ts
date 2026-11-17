@@ -4,6 +4,7 @@ import { t } from '../i18n';
 import { readSave, writeSave } from '../platform/saveStore';
 import { Sim, createWorld, deserialize, serialize } from '../sim';
 import type { Command, Folk, World } from '../sim';
+import type { WallMode } from './art/terrain';
 
 const SLOT = 'principal';
 
@@ -16,6 +17,10 @@ export class GameController {
   selectedFolkId: number;
   /** muda quando o mundo inteiro é trocado (novo jogo ou carregar) */
   worldVersion = 0;
+  /** como as paredes são mostradas (só visual, não entra no save) */
+  wallMode: WallMode = 'cutaway';
+  /** muda quando algo só visual precisa ser redesenhado */
+  viewVersion = 0;
   private toastListeners: ((text: string) => void)[] = [];
   private seenLog = 0;
 
@@ -44,6 +49,13 @@ export class GameController {
       if (entry.tick > this.seenLog) this.toast(t(entry.key, entry.params));
     }
     if (log.length > 0) this.seenLog = Math.max(this.seenLog, log[log.length - 1].tick);
+  }
+
+  cycleWallMode(): WallMode {
+    const order: WallMode[] = ['cutaway', 'down', 'up'];
+    this.wallMode = order[(order.indexOf(this.wallMode) + 1) % order.length];
+    this.viewVersion++;
+    return this.wallMode;
   }
 
   onToast(cb: (text: string) => void): void {
