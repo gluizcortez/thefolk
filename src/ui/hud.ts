@@ -40,6 +40,7 @@ export class Hud {
   private toastsEl = el('div', 'toasts');
   private menuEl = el('div', 'menu card');
   private bubbleEl = el('div', 'bubble');
+  private tooltipEl = el('div', 'tooltip');
   private bubbleIcon: string | null = null;
   private menuOpen = false;
   private lastPausedSpeed: Speed = 1;
@@ -50,10 +51,12 @@ export class Hud {
   ) {
     this.buildClock();
     this.buildSystem();
+    this.buildViewBar();
     this.buildFolkCard();
     this.buildNeeds();
     this.buildQueue();
-    this.root.append(this.toastsEl, this.menuEl, this.bubbleEl, el('div', 'help', t('hud.help')));
+    this.root.append(this.toastsEl, this.menuEl, this.bubbleEl, this.tooltipEl);
+    this.tooltipEl.hidden = true;
     this.menuEl.hidden = true;
     this.bubbleEl.hidden = true;
     ctrl.onToast((text) => this.showToast(text));
@@ -121,13 +124,27 @@ export class Hud {
         fresh.classList.remove('armed');
       }, 3500);
     });
+    bar.append(save, load, fresh);
+    this.root.append(bar);
+  }
+
+  /** Controles de câmera e de paredes, no canto superior esquerdo. */
+  private buildViewBar(): void {
+    const bar = el('div', 'viewbar');
+    const turn = (glyph: string, tip: string, dir: number) => {
+      const b = el('button', 'btn btn-icon', glyph);
+      b.title = t(tip);
+      b.setAttribute('aria-label', t(tip));
+      b.addEventListener('click', () => this.ctrl.rotateCamera(dir));
+      return b;
+    };
     const walls = el('button', 'btn', t(`hud.walls.${this.ctrl.wallMode}`));
     walls.title = t('hud.wallsTip');
     walls.addEventListener('click', () => {
       walls.textContent = t(`hud.walls.${this.ctrl.cycleWallMode()}`);
     });
-    bar.append(walls, save, load, fresh);
-    this.root.append(bar);
+    bar.append(turn('⟲', 'hud.turnLeft', -1), turn('⟳', 'hud.turnRight', 1), walls);
+    this.root.append(bar, el('div', 'help', t('hud.help')));
   }
 
   private buildFolkCard(): void {
@@ -344,6 +361,16 @@ export class Hud {
     }
     this.bubbleEl.hidden = false;
     this.bubbleEl.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) translate(-50%, -100%)`;
+  }
+
+  setTooltip(x: number, y: number, text: string | null): void {
+    if (!text || this.menuOpen) {
+      if (!this.tooltipEl.hidden) this.tooltipEl.hidden = true;
+      return;
+    }
+    if (this.tooltipEl.textContent !== text) this.tooltipEl.textContent = text;
+    this.tooltipEl.hidden = false;
+    this.tooltipEl.style.transform = `translate(${Math.round(x + 14)}px, ${Math.round(y + 16)}px)`;
   }
 
   private showToast(text: string): void {

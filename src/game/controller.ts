@@ -4,7 +4,7 @@ import { t } from '../i18n';
 import { readSave, writeSave } from '../platform/saveStore';
 import { Sim, createWorld, deserialize, serialize } from '../sim';
 import type { Command, Folk, World } from '../sim';
-import type { WallMode } from './art/terrain';
+import type { WallMode } from './art/house';
 
 const SLOT = 'principal';
 
@@ -19,8 +19,8 @@ export class GameController {
   worldVersion = 0;
   /** como as paredes são mostradas (só visual, não entra no save) */
   wallMode: WallMode = 'cutaway';
-  /** muda quando algo só visual precisa ser redesenhado */
-  viewVersion = 0;
+  /** quartos de volta da câmera a partir da vista inicial */
+  camQuarter = 0;
   private toastListeners: ((text: string) => void)[] = [];
   private seenLog = 0;
 
@@ -54,8 +54,12 @@ export class GameController {
   cycleWallMode(): WallMode {
     const order: WallMode[] = ['cutaway', 'down', 'up'];
     this.wallMode = order[(order.indexOf(this.wallMode) + 1) % order.length];
-    this.viewVersion++;
     return this.wallMode;
+  }
+
+  /** Gira a câmera um quarto de volta (dir = -1 ou 1). */
+  rotateCamera(dir: number): void {
+    this.camQuarter += dir;
   }
 
   onToast(cb: (text: string) => void): void {

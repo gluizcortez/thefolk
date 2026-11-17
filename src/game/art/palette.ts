@@ -1,61 +1,58 @@
-// Paleta do thefolk: tons naturais e sóbrios, com cara de maquete iluminada.
-// Toda cor do jogo sai daqui.
+// Paleta do thefolk em 3D: cores quentes, vivas e acolhedoras, com paredes
+// claras e móveis coloridos. Toda cor do jogo sai daqui.
 export const PAL = {
-  night: 0x141b33,
-  bg: 0x23201e,
+  sky: 0x8ecbf0,
+  nightSky: 0x0f1630,
+  sun: 0xfff1d6,
+  moon: 0x8fa3d9,
   ink: 0x1f1b19,
-  white: 0xf3f1ea,
-  cream: 0xece4d0,
-  paper: 0xdccfb4,
-  mustard: 0xd9a441,
-  terracotta: 0xb9623f,
-  teal: 0x3d7f85,
+  mustard: 0xf2b632,
+  white: 0xfbf8ee,
+  trim: 0xfbf8ee,
+  wallCap: 0xe9e4d6,
 
-  // construção
-  plaster: 0xe6dfcd,
-  wallCut: 0x6f675c,
-  siding: 0xd0c3a6,
-  foundation: 0x8d8b85,
-  trim: 0xf0ebdd,
-  glass: 0x9fc6d9,
-  glassHi: 0xd6ebf2,
+  // pisos e terreno
+  grass: 0x5ea64a,
+  wood: 0xc98f55,
+  carpet: 0x7e9bd1,
+  tileA: 0xf4f6f4,
+  tileB: 0x8fd0cc,
+  road: 0x5b5d63,
+  sidewalk: 0xcfcbc0,
 
-  // pisos
-  woodFloor: 0xb3875a,
-  carpet: 0xb7a486,
-  tileFloor: 0xe2e5e1,
-  tileFloorB: 0xcdd6d6,
-  grass: 0x5d8c45,
-  grassHi: 0x6f9e52,
-  grassLo: 0x4f7a3b,
-  stone: 0xb9b3a6,
-  soil: 0x5c4630,
+  // paredes (cor de base de cada acabamento)
+  wallLiving: 0xf5e6a8,
+  wallBedroom: 0xf7dcc8,
+  wallBath: 0xcdeee8,
+  wallExterior: 0xbfd8ea,
+  brick: 0xb5563f,
 
   // materiais
-  oak: 0xa9794b,
-  walnut: 0x6b4a30,
-  pine: 0xc9a06c,
-  enamel: 0xeae8df,
-  porcelain: 0xf2f2ee,
-  chrome: 0xb8c1c6,
-  chromeDark: 0x7d868c,
-  plastic: 0x2b2a2c,
-  screen: 0x4c7f9a,
-  brass: 0xb5924c,
-  linen: 0xe9dfc6,
-  fabricBlue: 0x5a7193,
-  fabricRed: 0x9c4a3f,
-  fabricGreen: 0x4f6f54,
-  ceramic: 0xb5654a,
-  leaf: 0x3f7a3a,
-  leafHi: 0x5c9a4a,
-  leafLo: 0x2f5f30,
+  enamel: 0xf3f5f0,
+  porcelain: 0xfafaf6,
+  chrome: 0xc3ccd1,
+  plastic: 0x2e2e33,
+  oak: 0xb9814a,
+  walnut: 0x7a4f2e,
+  pine: 0xd9b07a,
+  brass: 0xc9a24a,
+  linen: 0xf6edd2,
+  terracotta: 0xc9653f,
+  soil: 0x4a3423,
+  sofa: 0x3f6fb5,
+  duvet: 0xf2c744,
+  phone: 0xd2403a,
+  glass: 0xbfe6f5,
+  water: 0x9fd6ea,
+  leaf: 0x3f9a3c,
+  bark: 0x6b4a30,
+  shoe: 0x2b2623,
 } as const;
 
-export const SKIN = [0xf1c9a5, 0xd9a67c, 0xa97850, 0x74492f];
-export const HAIR = [0x2a221d, 0x5e3f28, 0x8f4a2b, 0xc9a45c, 0xb9b3aa];
-export const SHIRT = [0x3f6f8c, 0xa8483c, 0xd8c690, 0x4f7a55, 0x6f5a86, 0xe6e2d8];
-export const PANTS = [0x3a4660, 0x4a3f36, 0x5c6350, 0x77736c];
+export const SKIN = [0xf6cfa8, 0xe0ab7f, 0xb07c53, 0x7d5034];
+export const HAIR = [0x2a221d, 0x6b4426, 0xa9502b, 0xe0b85c, 0xc9c3b8];
+export const SHIRT = [0x3f8fd0, 0xd9483f, 0xf2c744, 0x4fa864, 0x8a63b8, 0xf3efe4];
+export const PANTS = [0x35476b, 0x5a4636, 0x5f6b4a, 0x7c7872];
 
 export function shade(color: number, f: number): number {
   const r = Math.min(255, Math.round(((color >> 16) & 0xff) * f));
@@ -69,9 +66,18 @@ export function mix(a: number, b: number, k: number): number {
   return (ch(16) << 16) | (ch(8) << 8) | ch(0);
 }
 
-/** Ruído determinístico 0..1 a partir de dois inteiros. */
-export function hash(x: number, y: number): number {
-  let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263)) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+export function css(color: number, alpha = 1): string {
+  return `rgba(${(color >> 16) & 0xff},${(color >> 8) & 0xff},${color & 0xff},${alpha})`;
+}
+
+/** Gerador pseudoaleatório com seed, para as texturas saírem sempre iguais. */
+export function seeded(seed: number): () => number {
+  let s = seed | 0;
+  return () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }

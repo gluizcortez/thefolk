@@ -1,12 +1,14 @@
 # thefolk
 
 Jogo de simulação de vida para navegador. Você cuida de pessoas (os **folks**) em
-uma casa isométrica: elas têm necessidades que caem com o tempo, agem sozinhas
-quando ninguém manda e obedecem a uma fila de ações que você monta.
+uma casa vista de cima, em três quartos: elas têm necessidades que caem com o
+tempo, agem sozinhas quando ninguém manda e obedecem a uma fila de ações que
+você monta.
 
-Identidade, nomes, interface e arte são originais. O visual segue a tradição das
-casas de bonecas isométricas do fim dos anos 90 (proporções realistas, paredes
-em corte, móveis detalhados), mas toda a arte é desenhada por código, sem
+Identidade, nomes, interface e arte são originais. O visual segue a tradição dos
+jogos de simulação de vida para PC do fim dos anos 90: **3D de verdade em
+low-poly**, texturas pequenas e levemente borradas com cara de pintadas à mão,
+luz simples, cores quentes e alegres. Tudo é modelado e pintado por código, sem
 assets externos e sem copiar nenhum jogo.
 
 **Estado atual: fatia 1** (um folk, casa pronta, necessidades, IA autônoma,
@@ -32,7 +34,10 @@ npm run preview  # serve o dist/ localmente
   Itens tracejados são decisões do próprio folk.
 - **Relógio** no topo: pausa e três velocidades. Atalhos: `Espaço`, `1`, `2`, `3`.
 - **Arraste** para mover a câmera, **role** para aproximar. `Esc` fecha o menu.
-- O botão **Paredes** alterna entre em corte, baixas e inteiras.
+- **Gire a câmera** em passos de 90° com `Q` e `E` ou com os botões ⟲ ⟳ no canto
+  superior esquerdo.
+- O botão **Paredes** alterna entre em corte (some só o que fica na frente da
+  câmera), baixas e inteiras.
 - A chave "Age por conta própria" liga e desliga a IA do folk.
 - **Salvar / Carregar / Novo jogo** no canto superior direito. O jogo também
   salva sozinho a cada 30 segundos e continua de onde parou ao reabrir.
@@ -55,7 +60,7 @@ O núcleo de simulação é separado da renderização (estilo hexagonal).
 
 ```
 src/
-  sim/        TypeScript puro, determinístico, sem Phaser nem DOM
+  sim/        TypeScript puro, determinístico, sem Three.js nem DOM
     types.ts        estado (World), definições e comandos
     sim.ts          classe Sim: step() avança 1 minuto; dispatch() recebe comandos
     needs.ts        decaimento, efeitos e humor
@@ -67,8 +72,17 @@ src/
     world.ts        criação do mundo a partir de um mapa em texto
     save.ts         formato de save versionado e migrações
   data/       conteúdo como dados: objetos, traços, necessidades, casa inicial
-  game/       cena Phaser: só lê o estado e manda comandos
-    art/            todo o desenho por código (trocável por sprites)
+  game/       cena 3D (Three.js): só lê o estado e manda comandos
+    GameView.ts     câmera, luz, entrada do mouse e laço de quadros
+    controller.ts   ponte entre a tela, a HUD e a Sim
+    art/            modelos e texturas, tudo gerado por código
+      textures.ts     texturas pintadas em canvas de baixa resolução
+      build.ts        ajudantes de malha e material
+      house.ts        pisos, paredes (com corte), portas e janelas
+      furniture.ts    um modelo low-poly por objeto
+      folk.ts         boneco articulado, rosto e animações
+      scenery.ts      jardim, cerca, rua e vizinhança
+      palette.ts      cores
   ui/         HUD em HTML/CSS por cima do canvas
   i18n/       textos da interface (pt-BR.ts)
   platform/   IndexedDB
@@ -89,17 +103,35 @@ Decisões principais do núcleo:
   `ganho × urgência × peso do traço`, dividida por um custo de distância; o folk
   sorteia entre as melhores opções.
 
+## Como o visual é feito
+
+- **Câmera ortográfica** elevada, em três quartos, que gira em passos de 90°.
+- **Resolução interna limitada** (até 768 linhas) e ampliada sem suavização,
+  para o serrilhado e o borrado leves dos jogos da época.
+- **Texturas** de 16 a 128 pixels pintadas em canvas (`textures.ts`), com filtro
+  bilinear. Cada textura tem um nome; a mesma seed pinta sempre a mesma imagem.
+- **Materiais simples** (difuso, sem PBR, sem pós-processamento, sem contorno).
+  Um sol direcional, luz de céu e uma sombra de baixa resolução. À noite as
+  cores esfriam e os abajures acendem.
+- **Folk**: boneco articulado por juntas, com poses procedurais (andar, sentar,
+  dormir, ler, telefonar, dançar...) e rosto pintado que muda com o humor.
+- **Seleção**: anel giratório no chão, sob o folk.
+
 ## Adicionando conteúdo
 
 - **Objeto novo**: uma entrada em `src/data/objects.ts` e os textos em
-  `src/i18n/pt-BR.ts`. Sem desenho próprio, ele aparece como uma caixa; para
-  desenhar, adicione um painter em `src/game/art/objects.ts` com o mesmo id de `art`.
+  `src/i18n/pt-BR.ts`. Sem modelo próprio, ele aparece como uma caixa; para
+  modelar, registre um `FurnitureSpec` em `src/game/art/furniture.ts` com o mesmo
+  id de `art` (o spec também diz onde o folk senta, deita ou fica em pé).
+- **Textura nova**: um painter e uma entrada em `SPECS` em
+  `src/game/art/textures.ts`; use com `getTexture('nome')`.
 - **Traço novo**: `src/data/traits.ts`.
 - **Ritmo das necessidades**: `src/data/needs.ts`.
 - **Casa inicial**: `src/data/house.ts` (mapa em texto, portas e objetos).
 - **Tradução**: copie `src/i18n/pt-BR.ts` e registre em `src/i18n/index.ts`.
-- **Sprites definitivos**: troque as funções de `src/game/art/` (objetos, folk,
-  terreno). A simulação não conhece nada de desenho.
+- **Arte definitiva**: troque o que `src/game/art/` devolve. `getTexture` pode
+  passar a carregar imagens e `buildFurniture` / `FolkModel` podem carregar
+  modelos prontos (glTF, por exemplo). A simulação não conhece nada de desenho.
 - **Mudou o formato do `World`?** Aumente `SAVE_VERSION` em `src/sim/save.ts` e
   registre a migração no mesmo arquivo.
 
@@ -122,6 +154,18 @@ Decisões principais do núcleo:
 - O humor é exibido, mas ainda não muda o que o folk aceita fazer.
 - Objetos não têm rotação nem estados (sujo, quebrado), e o folk fica em pé ao
   lado da maioria deles (senta de fato só no sofá e na privada, deita na cama).
+- O visual é 3D gerado por código: as texturas são pinturas procedurais, não
+  arte feita à mão, e os modelos são montados com caixas, cilindros e esferas.
+- O folk é animado por juntas rígidas, sem esqueleto com pele: cotovelos e
+  joelhos mostram a emenda de perto. Ele não troca de roupa (toma banho vestido,
+  atrás do vidro embaçado) e não segura objetos na mão (livro, prato, fone).
+- As sombras são de baixa resolução e sem suavização, de propósito; de perto
+  ficam serrilhadas.
+- A câmera gira só em quatro ângulos fixos e não tem inclinação ajustável.
+- O clique atravessa paredes: dá para acertar um móvel escondido atrás de uma
+  parede inteira.
+- A casa não tem telhado nem segundo andar; as casas vizinhas são só cenário.
+- O Three.js deixa o pacote com cerca de 620 kB (164 kB comprimido).
 - O folk não tem horário: dorme quando a energia cai, de dia ou de noite.
 - Um save por navegador (um slot), sem exportar ou importar arquivo.
 - Sem som e sem música.

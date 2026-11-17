@@ -1,6 +1,5 @@
-import Phaser from 'phaser';
 import { GameController } from './game/controller';
-import { HouseScene } from './game/HouseScene';
+import { GameView } from './game/GameView';
 import { t } from './i18n';
 import { Hud } from './ui/hud';
 import './ui/style.css';
@@ -15,14 +14,9 @@ async function boot(): Promise<void> {
   if (import.meta.env.DEV) (window as unknown as { thefolk: GameController }).thefolk = ctrl;
 
   const hud = new Hud(document.getElementById('ui')!, ctrl);
-  new Phaser.Game({
-    type: Phaser.AUTO,
-    parent: 'game',
-    backgroundColor: '#2b2420',
-    scale: { mode: Phaser.Scale.RESIZE, width: '100%', height: '100%' },
-    scene: [new HouseScene(ctrl, hud)],
-    banner: false,
-  });
+  const view = new GameView(document.getElementById('game')!, ctrl, hud);
+  view.start();
+  if (import.meta.env.DEV) (window as unknown as { thefolkView: GameView }).thefolkView = view;
 
   window.setInterval(() => void ctrl.save(true), AUTOSAVE_MS);
   document.addEventListener('visibilitychange', () => {

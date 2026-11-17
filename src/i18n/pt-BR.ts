@@ -79,8 +79,10 @@ export const ptBR: Record<string, string> = {
   'hud.walls.down': 'Paredes: baixas',
   'hud.walls.up': 'Paredes: inteiras',
   'hud.wallsTip': 'Muda como as paredes aparecem',
+  'hud.turnLeft': 'Girar a câmera para a esquerda (Q)',
+  'hud.turnRight': 'Girar a câmera para a direita (E)',
   'hud.help':
-    'Clique em um objeto para dar uma ordem. Arraste para mover a câmera, role para aproximar.',
+    'Clique em um objeto para dar uma ordem. Arraste para mover a câmera, role para aproximar, Q e E para girar.',
 
   'toast.saved': 'Jogo salvo.',
   'toast.loaded': 'Jogo carregado.',
