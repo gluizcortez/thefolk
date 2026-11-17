@@ -382,6 +382,9 @@ Decisões principais do núcleo:
 4. **Fatia 4 (feita)**: modo construção.
 5. **Fatia 5 (feita)**: carreiras e relações aprofundadas.
 
+O próximo passo está em [docs/plano-evolucao.md](docs/plano-evolucao.md): 17 blocos
+que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
+
 ## Limitações conhecidas da fatia 5
 
 - O turno continua acontecendo fora da tela: o folk some e os eventos chegam
