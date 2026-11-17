@@ -82,7 +82,7 @@ export function freshness(rel: Relation, tick: number): number {
 export function applyDelta(
   world: World,
   catalog: Catalog,
-  from: Folk,
+  from: Pick<Folk, 'id' | 'traits'>,
   to: Pick<Folk, 'id' | 'traits'>,
   delta: RelDelta,
   bonus: RelDelta = {},

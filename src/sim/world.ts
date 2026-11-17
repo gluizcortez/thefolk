@@ -1,4 +1,6 @@
 import { fullNeeds } from './needs';
+import { introduce } from './gossip';
+import { personOf } from './people';
 import { ensureRelation } from './relations';
 import type { EdgeKind, Folk, Grid, Neighbor, Needs, Rotation, Vec, World } from './types';
 
@@ -118,6 +120,56 @@ export function seedNeighbors(seeds: NeighborSeed[], nextId: number): Neighbor[]
   }));
 }
 
+/**
+ * Colegas da vizinhança já se conhecem pelo serviço: amizade morna e
+ * respeito; o chefe é respeitado pela equipe.
+ */
+export function seedWorkplaceTies(world: World): void {
+  const byCareer = new Map<string, Neighbor[]>();
+  for (const n of world.neighbors) {
+    if (!n.career) continue;
+    if (!byCareer.has(n.career.id)) byCareer.set(n.career.id, []);
+    byCareer.get(n.career.id)!.push(n);
+  }
+  for (const staff of byCareer.values()) {
+    for (let i = 0; i < staff.length; i++) {
+      for (let j = i + 1; j < staff.length; j++) {
+        const a = personOf(world, staff[i].id)!;
+        const b = personOf(world, staff[j].id)!;
+        if (staff[i].boss || staff[j].boss) {
+          introduce(world, a, b, 10, 15);
+          const [boss, emp] = staff[i].boss ? [a, b] : [b, a];
+          ensureRelation(world, emp.id, boss.id).respect = 25;
+        } else {
+          introduce(world, a, b, 18, 12);
+        }
+      }
+    }
+  }
+}
+
+/** Relações iniciais pelos nomes (moradores ou vizinhos), valendo para os dois lados. */
+export function seedRelations(world: World, seeds: RelationSeed[]): void {
+  const find = (name: string) =>
+    world.folks.find((f) => f.name === name)?.id ?? world.neighbors.find((n) => n.name === name)?.id;
+  for (const r of seeds) {
+    const a = find(r.a);
+    const b = find(r.b);
+    if (a === undefined || b === undefined) throw new Error(`relação inicial com folk desconhecido: ${r.a} / ${r.b}`);
+    for (const [x, y] of [
+      [a, b],
+      [b, a],
+    ]) {
+      const rel = ensureRelation(world, x, y);
+      rel.friendship = r.friendship ?? 0;
+      rel.romance = r.romance ?? 0;
+      rel.respect = r.respect ?? 0;
+      rel.last = world.tick - 60;
+      if (!rel.memories.some((m) => m.kind === 'met')) rel.memories.push({ tick: world.tick, kind: 'met' });
+    }
+  }
+}
+
 export function createWorld(seed: WorldSeed): World {
   let nextId = 1;
   const objects = seed.objects.map((o) => ({ defId: o.defId, x: o.x, y: o.y, rot: o.rot ?? 0, paid: 0, id: nextId++ }));
@@ -140,6 +192,8 @@ export function createWorld(seed: WorldSeed): World {
     skills: { ...f.skills },
     job: null,
     away: null,
+    gig: null,
+    business: null,
     visit: null,
   }));
   const neighbors = seedNeighbors(seed.neighbors ?? [], nextId);
@@ -159,22 +213,11 @@ export function createWorld(seed: WorldSeed): World {
     relations: {},
     pendingVisits: [],
     lastDropIn: seed.startTick,
+    news: [],
+    reputation: {},
+    gigBoard: [],
   };
-  for (const r of seed.relations ?? []) {
-    const a = folks.find((f) => f.name === r.a);
-    const b = folks.find((f) => f.name === r.b);
-    if (!a || !b) throw new Error(`relação inicial com folk desconhecido: ${r.a} / ${r.b}`);
-    for (const [x, y] of [
-      [a, b],
-      [b, a],
-    ]) {
-      const rel = ensureRelation(world, x.id, y.id);
-      rel.friendship = r.friendship ?? 0;
-      rel.romance = r.romance ?? 0;
-      rel.respect = r.respect ?? 0;
-      rel.last = world.tick - 60;
-      rel.memories.push({ tick: world.tick, kind: 'met' });
-    }
-  }
+  seedRelations(world, seed.relations ?? []);
+  seedWorkplaceTies(world);
   return world;
 }

@@ -1,14 +1,17 @@
-import type { Grid, World } from './types';
-import type { NeighborSeed } from './world';
-import { firstBillAfter, seedNeighbors } from './world';
+import { relKey } from './relations';
+import type { Grid, Neighbor, World } from './types';
+import type { NeighborSeed, RelationSeed } from './world';
+import { firstBillAfter, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
   /** vizinhos que passam a existir em saves antigos */
   neighbors: NeighborSeed[];
+  /** quem já se conhece na vizinhança (só entra onde ainda não há relação) */
+  ties?: RelationSeed[];
 }
 
 /** Dinheiro e saída da casa para saves da fatia 1 (só existia a casa pronta). */
@@ -61,6 +64,43 @@ const migrations: Record<number, Migration> = {
     grid.coverings = {};
     world.grid = grid;
     return { ...save, world };
+  },
+  // fatia 5: chefes e colegas de verdade, eventos do expediente, aumento,
+  // frilas, negócio próprio, fofoca e reputação. Quem já existia continua
+  // igual; os vizinhos novos (chefes) chegam com ids novos.
+  4: (save, ctx) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    world.folks = (world.folks ?? []).map((f) => ({
+      ...f,
+      gig: f.gig ?? null,
+      business: f.business ?? null,
+      job: f.job
+        ? { ...f.job, raise: f.job.raise ?? 0, raisePending: f.job.raisePending ?? false, lastRaiseDay: f.job.lastRaiseDay ?? -99 }
+        : null,
+      away: f.away ? { ...f.away, event: f.away.event ?? null, nextEvent: f.away.nextEvent ?? -1 } : null,
+    }));
+    const neighbors: Neighbor[] = [...(world.neighbors ?? [])];
+    const missing = ctx.neighbors.filter(
+      (seed) => !neighbors.some((n) => n.name === seed.name) && !world.folks.some((f) => f.name === seed.name),
+    );
+    neighbors.push(...seedNeighbors(missing, world.nextId));
+    world.nextId += missing.length;
+    world.neighbors = neighbors;
+    world.relations = { ...(world.relations ?? {}) };
+    world.news = [];
+    world.reputation = {};
+    world.gigBoard = [];
+    // laços da vizinhança só onde ainda não havia relação
+    const nameToId = (name: string) =>
+      world.folks.find((f) => f.name === name)?.id ?? world.neighbors.find((n) => n.name === name)?.id;
+    const fresh = (ctx.ties ?? []).filter((t) => {
+      const a = nameToId(t.a);
+      const b = nameToId(t.b);
+      return a !== undefined && b !== undefined && !(relKey(a, b) in world.relations);
+    });
+    seedRelations(world, fresh);
+    seedWorkplaceTies(world);
+    return { ...save, world: world as unknown as Obj };
   },
 };
 

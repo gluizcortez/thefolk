@@ -14,3 +14,7 @@ export * from './career';
 export * from './relations';
 export * from './social';
 export * from './build';
+export * from './people';
+export * from './gossip';
+export * from './work';
+export * from './hustle';

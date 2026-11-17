@@ -5,7 +5,8 @@ import { skillBoost } from './skills';
 import { findPathToAny } from './pathfinding';
 import { nextFloat } from './rng';
 import { freshness, knows, relationOf } from './relations';
-import { guessAccept, onLot, socialAllowed, socialTaste, talkTiles, talkingWith } from './social';
+import { grudge, pickGossip } from './gossip';
+import { committedElsewhere, guessAccept, onLot, socialAllowed, socialTaste, talkTiles, talkingWith } from './social';
 import type { Catalog, Folk, InteractionDef, Needs, SocialDef, World } from './types';
 import { NEED_IDS } from './types';
 
@@ -92,14 +93,23 @@ function socialMood(catalog: Catalog, world: World, folk: Folk, other: Folk, def
   const rel = relationOf(world, folk.id, other.id);
   const f = rel?.friendship ?? 0;
   const taste = socialTaste(catalog, folk, def.category);
-  if (def.category === 'mean' && !(taste >= 1.5 || f <= -20)) return 0;
+  // lembranças: rancor afasta do papo amigável e empurra para a briga
+  const mem = grudge(world, catalog, folk.id, other.id);
+  if (def.category === 'mean' && !(taste >= 1.5 || f <= -20 || mem <= -6)) return 0;
+  if (def.category === 'friendly' && mem <= -8 && def.special !== 'gossip') return 0;
   if (def.category === 'romantic') {
     const into = (rel?.romance ?? 0) >= 15 || rel?.dating || (taste >= 1.3 && f >= 30);
     if (!into) return 0;
+    // quem namora firme não sai flertando por aí
+    if (!rel?.dating && committedElsewhere(world, folk.id, other.id)) return 0;
   }
+  if (def.special === 'gossip' && !pickGossip(world, catalog, folk.id, other.id)) return 0;
+  // pedir desculpas: só quem tem jeito para isso e algo a consertar
+  if (def.id === 'apologize' && !folk.traits.some((t) => t === 'gentil' || t === 'caseiro')) return 0;
   // visita veio para conversar; quem mora dá atenção a quem chegou
   const guest = folk.visit || other.visit ? GUEST_BIAS : 1;
-  return taste * guest * (1 + Math.max(0, f) / 150);
+  const fondness = Math.max(-0.5, Math.min(0.6, mem * 0.06));
+  return taste * guest * (1 + Math.max(0, f) / 150) * (1 + (def.category === 'mean' ? -fondness : fondness));
 }
 
 /** Conversas autônomas possíveis com quem está em casa. */
@@ -119,7 +129,7 @@ export function scoreSocialOptions(world: World, catalog: Catalog, folk: Folk, n
     if (!path) continue;
     const fresh = rel ? freshness(rel, world.tick) : 1;
     for (const def of Object.values(catalog.socials)) {
-      if (def.autonomous === false || !socialAllowed(world, def, folk, other)) continue;
+      if (def.autonomous === false || !socialAllowed(world, catalog, def, folk, other)) continue;
       const mood = socialMood(catalog, world, folk, other, def);
       if (mood <= 0) continue;
       const gain = effectsUtility(catalog, folk, def.effects, def.duration);

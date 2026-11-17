@@ -384,6 +384,8 @@ describe('determinismo e save com várias pessoas', () => {
     expect(loaded.world.neighbors).toHaveLength(NEIGHBORS.length);
     const ids = new Set([...loaded.world.folks.map((f) => f.id), ...loaded.world.objects.map((o) => o.id)]);
     expect(loaded.world.neighbors.every((n) => !ids.has(n.id) && n.id < loaded.world.nextId)).toBe(true);
-    expect(loaded.world.relations).toEqual({});
+    // moradores começam sem relações (só os colegas da vizinhança se conhecem, desde a v5)
+    const residents = loaded.world.folks.map((f) => f.id);
+    expect(Object.keys(loaded.world.relations).some((k) => k.split('>').some((id) => residents.includes(Number(id))))).toBe(false);
   });
 });

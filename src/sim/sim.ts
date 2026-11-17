@@ -13,9 +13,50 @@ import {
   levelOfJob,
   missingSkills,
   newJob,
+  payFor,
   shiftOn,
   shiftScore,
 } from './career';
+import {
+  breakUp,
+  chatGossip,
+  createNews,
+  dailyHearts,
+  grudge,
+  onLotWitnesses,
+  romanticAct,
+  spreadNews,
+} from './gossip';
+import {
+  BOARD_HOUR,
+  BUSINESS_CLOSE_HOUR,
+  checkGigDeadline,
+  closeBusiness,
+  gigAllowed,
+  gigDeadline,
+  openBusiness,
+  refreshBoard,
+  settleBusiness,
+  taskFits,
+  workBusiness,
+  workGig,
+} from './hustle';
+import {
+  SECOND_EVENT_CHANCE,
+  EVENT_CHANCE,
+  autoChoice,
+  bossBlocks,
+  bossFed,
+  canAskRaise,
+  meetWorkplace,
+  planEvent,
+  resolveRaise,
+  resolveWorkEvent,
+  startWorkEvent,
+  transferLevel,
+  workRelationTerm,
+  workplaceShift,
+} from './work';
 import { MINUTES_PER_DAY, clockOf } from './clock';
 import type { PlaceProblem } from './economy';
 import { billAmount, checkPlacement, formatMoney, objectBusy, sellValue } from './economy';
@@ -56,7 +97,16 @@ export type CommandProblem =
   | 'socialNotNow'
   | 'noPhone'
   | 'alreadyComing'
-  | 'houseFull';
+  | 'houseFull'
+  | 'noGig'
+  | 'noBusiness'
+  | 'hasGig'
+  | 'hasBusiness'
+  | 'raiseTooSoon'
+  | 'noJob'
+  | 'noEvent'
+  | 'skillTooLow'
+  | 'offerGone';
 
 /** Resultado de uma conversa, para a tela mostrar o que mudou (não vai no save). */
 export interface SocialOutcome {
@@ -212,6 +262,9 @@ export class Sim {
         // convites passam pelo comando 'invite', que diz quem convidar
         if (!folk || !def || !it || it.special) return false;
         if (folk.visit && (it.residentOnly || (it.cost ?? 0) > 0)) return this.fail('visitor');
+        if (it.task && !taskFits(this.catalog, folk, it.task, def.id)) {
+          return this.fail(it.task === 'gig' ? 'noGig' : 'noBusiness');
+        }
         return this.enqueuePlayer(folk, {
           kind: 'use',
           objectId: cmd.objectId,
@@ -229,7 +282,7 @@ export class Sim {
         const def = this.catalog.socials[cmd.socialId];
         if (!folk || !other || !def || folk === other) return false;
         if (other.away) return this.fail('away');
-        if (!onLot(other) || !socialAllowed(this.world, def, folk, other)) return this.fail('socialNotNow');
+        if (!onLot(other) || !socialAllowed(this.world, this.catalog, def, folk, other)) return this.fail('socialNotNow');
         if (def.special === 'moveIn' && this.residents().length >= MAX_RESIDENTS) return this.fail('houseFull');
         return this.enqueuePlayer(folk, { kind: 'social', otherId: other.id, socialId: def.id });
       }
@@ -258,9 +311,75 @@ export class Sim {
         if (folk.visit) return this.fail('visitor');
         if (folk.away) return this.fail('away');
         if (folk.job?.careerId === cmd.careerId) return false;
+        if (folk.business) return this.fail('hasBusiness');
         this.dropWork(folk);
-        folk.job = newJob(cmd.careerId);
-        this.log('log.hired', { name: folk.name, job: career.levels[0].title });
+        // troca de área: leva parte da experiência
+        const level = transferLevel(folk, folk.job, career);
+        const switched = folk.job !== null;
+        folk.job = { ...newJob(cmd.careerId), level };
+        this.log(switched && level > 0 ? 'log.switched' : 'log.hired', { name: folk.name, job: career.levels[level].title });
+        return true;
+      }
+      case 'workChoice': {
+        const folk = this.findFolk(cmd.folkId);
+        if (!folk?.away?.event) return this.fail('noEvent');
+        return resolveWorkEvent(this.world, this.catalog, this.logger, folk, cmd.choice, false) !== null;
+      }
+      case 'askRaise': {
+        const folk = this.findFolk(cmd.folkId);
+        if (!folk) return false;
+        if (folk.visit) return this.fail('visitor');
+        if (!folk.job) return this.fail('noJob');
+        if (!canAskRaise(folk, this.world.tick)) return this.fail('raiseTooSoon');
+        folk.job.raisePending = true;
+        folk.job.lastRaiseDay = Math.floor(this.world.tick / MINUTES_PER_DAY);
+        this.log('log.raisePlanned', { name: folk.name });
+        return true;
+      }
+      case 'takeGig': {
+        const folk = this.findFolk(cmd.folkId);
+        const offer = this.world.gigBoard.find((o) => o.id === cmd.offerId);
+        const def = offer && this.catalog.gigs[offer.defId];
+        if (!folk) return false;
+        if (folk.visit) return this.fail('visitor');
+        if (!offer || !def) return this.fail('offerGone');
+        if (folk.gig) return this.fail('hasGig');
+        if (!gigAllowed(folk, def)) return this.fail('skillTooLow');
+        folk.gig = { defId: def.id, pay: offer.pay, progress: 0, deadline: gigDeadline(this.world.tick, def) };
+        this.world.gigBoard = this.world.gigBoard.filter((o) => o.id !== offer.id);
+        this.log('log.gigTaken', { name: folk.name, gig: def.name });
+        return true;
+      }
+      case 'dropGig': {
+        const folk = this.findFolk(cmd.folkId);
+        if (!folk?.gig) return this.fail('noGig');
+        folk.gig = null;
+        this.dropTasks(folk, 'gig');
+        this.log('log.gigDropped', { name: folk.name });
+        return true;
+      }
+      case 'openBusiness': {
+        const folk = this.findFolk(cmd.folkId);
+        const def = this.catalog.businesses[cmd.businessId];
+        if (!folk || !def) return false;
+        if (folk.visit) return this.fail('visitor');
+        if (folk.away) return this.fail('away');
+        if (folk.business) return this.fail('hasBusiness');
+        if (this.world.household.funds < def.cost) return this.fail('funds');
+        if (folk.job) {
+          // abrir o próprio negócio é largar o emprego
+          this.dropWork(folk);
+          folk.job = null;
+          this.log('log.quit', { name: folk.name });
+        }
+        openBusiness(this.world, this.catalog, this.logger, folk, def);
+        return true;
+      }
+      case 'closeBusiness': {
+        const folk = this.findFolk(cmd.folkId);
+        if (!folk?.business) return this.fail('noBusiness');
+        closeBusiness(this.world, this.catalog, this.logger, folk);
+        this.dropTasks(folk, 'business');
         return true;
       }
       case 'quitJob': {
@@ -350,6 +469,13 @@ export class Sim {
     }
   }
 
+  /** Tira da fila o trabalho por conta própria de um tipo. */
+  private dropTasks(folk: Folk, task: 'gig' | 'business'): void {
+    const isTask = (a: Action) => this.interactionOf(a)?.task === task;
+    if (folk.queue[0] && isTask(folk.queue[0])) folk.path = [];
+    folk.queue = folk.queue.filter((a) => !isTask(a));
+  }
+
   /** Tira da fila a ida ao trabalho. */
   private dropWork(folk: Folk): void {
     if (folk.queue[0]?.kind === 'work') folk.path = [];
@@ -381,10 +507,19 @@ export class Sim {
     const world = this.world;
     world.tick++;
     this.stepBills();
-    if (world.tick % MINUTES_PER_DAY === COOL_HOUR * 60) coolRelations(world);
+    const minute = world.tick % MINUTES_PER_DAY;
+    if (minute === COOL_HOUR * 60) {
+      coolRelations(world);
+      // fofoca anda pela vizinhança; namoros apagados terminam
+      spreadNews(world, this.catalog, this.logger);
+      dailyHearts(world, this.catalog, this.logger);
+    }
+    if (minute === BOARD_HOUR * 60) refreshBoard(world, this.catalog);
     this.stepVisits();
     for (const folk of world.folks) {
       this.stepJob(folk);
+      if (folk.gig) checkGigDeadline(world, this.catalog, this.logger, folk);
+      if (folk.business && minute === BUSINESS_CLOSE_HOUR * 60) settleBusiness(world, this.catalog, this.logger, folk);
       this.stepFolk(folk);
     }
     for (const id of this.departed) this.removeVisitor(id);
@@ -407,6 +542,9 @@ export class Sim {
   private log(key: string, params?: Record<string, string | number>): void {
     this.world.log.push({ tick: this.world.tick, key, params });
   }
+
+  /** O log como função, para os módulos de fora (fofoca, trabalho, frilas). */
+  private readonly logger = (key: string, params?: Record<string, string | number>): void => this.log(key, params);
 
   // ---------- contas ----------
 
@@ -470,11 +608,15 @@ export class Sim {
       return;
     }
     job.doneDay = job.calledDay;
+    const start = Math.max(tick, shift.start);
     folk.away = {
       until: shift.end,
       late: Math.max(0, tick - shift.start),
       mood: moodOf(this.catalog, folk.needs),
+      event: null,
+      nextEvent: planEvent(this.world, start, shift.end, EVENT_CHANCE),
     };
+    meetWorkplace(this.world, this.catalog, this.logger, folk);
     folk.queue = [];
     folk.path = [];
     folk.idleTicks = 0;
@@ -494,7 +636,33 @@ export class Sim {
     }
     // ninguém desmaia no serviço: chega em casa no bagaço, mas chega
     folk.needs.energy = Math.max(3, folk.needs.energy);
+    this.stepWorkEvent(folk);
     if (this.world.tick >= away.until) this.comeHome(folk);
+  }
+
+  /** Eventos do expediente: começa na hora sorteada; sem escolha do jogador, o folk decide. */
+  private stepWorkEvent(folk: Folk): void {
+    const away = folk.away!;
+    const tick = this.world.tick;
+    if (away.event && tick >= away.event.deadline) this.autoResolve(folk);
+    if (!away.event && away.nextEvent >= 0 && tick >= away.nextEvent) {
+      away.nextEvent = -1;
+      if (startWorkEvent(this.world, this.catalog, this.logger, folk) && away.until - tick > 150) {
+        // às vezes o dia rende mais uma história
+        away.nextEvent = planEvent(this.world, tick + 60, away.until, SECOND_EVENT_CHANCE);
+      }
+    }
+  }
+
+  private autoResolve(folk: Folk): void {
+    const ev = folk.away?.event;
+    const def = ev && this.catalog.workEvents[ev.defId];
+    if (!ev || !def) {
+      if (folk.away) folk.away.event = null;
+      return;
+    }
+    const choice = autoChoice(this.world, this.catalog, folk, def, ev.actorId);
+    resolveWorkEvent(this.world, this.catalog, this.logger, folk, choice, true);
   }
 
   private comeHome(folk: Folk): void {
@@ -504,37 +672,53 @@ export class Sim {
     folk.y = folk.py = this.world.exit.y;
     folk.facing = { x: 0, y: -1 };
     folk.idleTicks = 0;
+    if (away.event) {
+      // folk volta para casa: o evento que ficou sem resposta ele decide sozinho
+      folk.away = away;
+      this.autoResolve(folk);
+      folk.away = null;
+    }
     const job = folk.job;
     const level = job && levelOfJob(this.catalog, job);
     if (!job || !level) return;
 
-    const pay = level.pay;
+    const pay = payFor(this.catalog, job);
     this.world.household.funds += pay;
     job.shifts++;
     const avgMood = (away.mood + moodOf(this.catalog, folk.needs)) / 2;
-    const score = shiftScore(this.catalog, folk, job, avgMood, away.late);
+    const score = shiftScore(this.catalog, folk, job, avgMood, away.late) + workRelationTerm(this.world, folk);
     job.performance = Math.max(-100, Math.min(100, job.performance + score));
     this.log('log.backFromWork', { name: folk.name, pay: formatMoney(pay) });
+    workplaceShift(this.world, this.catalog, folk, score);
+    resolveRaise(this.world, this.catalog, this.logger, folk);
 
     const career = careerOf(this.catalog, job);
     const next = career?.levels[job.level + 1];
     if (next && job.performance >= PROMOTE_AT) {
-      if (Object.keys(missingSkills(folk, next)).length === 0) {
+      const blocked = bossBlocks(this.world, folk, job.level + 1);
+      if (Object.keys(missingSkills(folk, next)).length > 0) {
+        this.log('log.needSkills', { name: folk.name });
+      } else if (blocked > 0) {
+        this.log('log.bossHeldBack', { name: folk.name });
+      } else {
         job.level++;
         job.performance = PERFORMANCE_AFTER_PROMOTION;
+        job.raise = 0;
         this.log('log.promoted', { name: folk.name, job: next.title, pay: formatMoney(next.pay) });
-      } else {
-        this.log('log.needSkills', { name: folk.name });
+        createNews(this.world, this.catalog, this.logger, 'promoted', folk.id, 0);
       }
     }
     this.checkFired(folk);
   }
 
   private checkFired(folk: Folk): void {
-    if (!folk.job || folk.job.performance > FIRE_AT) return;
+    if (!folk.job) return;
+    const byBoss = bossFed(this.world, folk);
+    if (folk.job.performance > FIRE_AT && !byBoss) return;
     folk.job = null;
     this.dropWork(folk);
-    this.log('log.fired', { name: folk.name });
+    this.log(byBoss ? 'log.firedByBoss' : 'log.fired', { name: folk.name });
+    createNews(this.world, this.catalog, this.logger, 'fired', folk.id, 0);
   }
 
   private stepFolk(folk: Folk): void {
@@ -701,6 +885,20 @@ export class Sim {
         return;
       }
       applyEffects(folk, it);
+      if (it.task === 'gig') {
+        const obj = this.findObject(action.objectId!);
+        if (!obj || !taskFits(this.catalog, folk, 'gig', obj.defId) || workGig(this.world, this.catalog, this.logger, folk)) {
+          this.finish(folk);
+          return;
+        }
+      } else if (it.task === 'business') {
+        const obj = this.findObject(action.objectId!);
+        if (!obj || !taskFits(this.catalog, folk, 'business', obj.defId)) {
+          this.finish(folk);
+          return;
+        }
+        workBusiness(this.catalog, this.logger, folk);
+      }
       if (it.skill) {
         const up = trainSkill(folk, it, moodOf(this.catalog, folk.needs));
         if (up !== null) {
@@ -921,9 +1119,31 @@ export class Sim {
     }
     if (mem?.target) addMemory(world, this.catalog, other.id, folk.id, mem.target);
     if (ok && def.special) this.socialSpecial(folk, other, def.special);
+    this.socialRipples(folk, other, def, ok, mem?.self);
     this.outcomes.push({ fromId: folk.id, toId: other.id, socialId: def.id, accepted: ok, toTarget, toSelf });
     if (this.outcomes.length > 50) this.outcomes.shift();
     this.endSocial(folk);
+  }
+
+  /**
+   * O que uma conversa provoca além dos dois: gestos românticos com quem
+   * namora outra pessoa viram traição, brigas viram notícia, e papo amigável
+   * pode render fofoca.
+   */
+  private socialRipples(folk: Folk, other: Folk, def: SocialDef, ok: boolean, memSelf: string | undefined): void {
+    const world = this.world;
+    if (ok && def.category === 'romantic' && def.special !== 'breakUp') {
+      romanticAct(world, this.catalog, this.logger, folk.id, other.id, onLotWitnesses(world, folk, [folk.id, other.id]));
+    }
+    if (memSelf === 'fought') {
+      createNews(world, this.catalog, this.logger, 'fought', folk.id, other.id, onLotWitnesses(world, folk, [folk.id, other.id]));
+    }
+    if (ok && def.special === 'gossip') {
+      const told = chatGossip(world, this.catalog, this.logger, folk, other, true);
+      if (!told) this.log('log.noGossip', { name: folk.name, other: other.name });
+    } else if (ok && def.category === 'friendly') {
+      chatGossip(world, this.catalog, this.logger, folk, other, false);
+    }
   }
 
   private socialSpecial(folk: Folk, other: Folk, special: NonNullable<SocialDef['special']>): void {
@@ -931,6 +1151,9 @@ export class Sim {
     if (special === 'date') {
       setDating(this.world, folk.id, other.id, true);
       this.log('log.dating', names);
+      createNews(this.world, this.catalog, this.logger, 'dating', folk.id, other.id, onLotWitnesses(this.world, folk, [folk.id, other.id]));
+    } else if (special === 'breakUp') {
+      breakUp(this.world, this.catalog, this.logger, folk.id, other.id, 'asked');
     } else if (special === 'sendHome') {
       if (other.visit) this.startLeaving(other);
     } else if (special === 'moveIn') {
@@ -944,6 +1167,7 @@ export class Sim {
       // quem se muda traz o emprego junto
       const career = n?.career && this.catalog.careers[n.career.id] ? n.career : null;
       other.job = career ? { ...newJob(career.id), level: Math.min(career.level, this.catalog.careers[career.id].levels.length - 1) } : null;
+      if (n?.boss) this.log('log.bossMovedIn', names);
       this.log('log.movedIn', names);
     }
   }
@@ -1003,7 +1227,11 @@ export class Sim {
       return;
     }
     const rel = relationOf(world, n.id, host.id);
-    const p = 0.75 + (rel?.friendship ?? 0) / 150 + affinity(this.catalog, n, host) * 0.05;
+    const p =
+      0.75 +
+      (rel?.friendship ?? 0) / 150 +
+      affinity(this.catalog, n, host) * 0.05 +
+      grudge(world, this.catalog, n.id, host.id) * 0.03;
     if (nextFloat(world) < p) {
       const delay = 30 + nextInt(world, 30);
       world.pendingVisits.push({ neighborId: n.id, at: world.tick + delay, hostId: host.id });
@@ -1044,7 +1272,9 @@ export class Sim {
           (n) =>
             !this.findFolk(n.id) &&
             !world.pendingVisits.some((v) => v.neighborId === n.id) &&
-            this.residents().every((r) => (relationOf(world, n.id, r.id)?.friendship ?? 0) > -40),
+            this.residents().every(
+              (r) => (relationOf(world, n.id, r.id)?.friendship ?? 0) > -40 && grudge(world, this.catalog, n.id, r.id) > -6,
+            ),
         );
         if (pool.length) {
           const n = pool[nextInt(world, pool.length)];
@@ -1101,6 +1331,8 @@ export class Sim {
       skills: { ...n.skills },
       job: null,
       away: null,
+      gig: null,
+      business: null,
       visit: { until, leaving: false, hostId },
     };
     world.folks.push(folk);

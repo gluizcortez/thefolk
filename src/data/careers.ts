@@ -11,6 +11,7 @@ export const CAREERS: Record<string, CareerDef> = {
   office: {
     id: 'office',
     name: 'career.office',
+    workplace: 'place.office',
     skills: ['logic', 'charisma'],
     shiftEffects: { fun: -0.06, comfort: 0.05 },
     levels: [
@@ -24,6 +25,7 @@ export const CAREERS: Record<string, CareerDef> = {
   kitchen: {
     id: 'kitchen',
     name: 'career.kitchen',
+    workplace: 'place.kitchen',
     skills: ['cooking', 'fitness'],
     shiftEffects: { hygiene: -0.08, energy: -0.03, hunger: 0.06 },
     levels: [
@@ -37,6 +39,7 @@ export const CAREERS: Record<string, CareerDef> = {
   studio: {
     id: 'studio',
     name: 'career.studio',
+    workplace: 'place.studio',
     skills: ['creativity', 'charisma'],
     shiftEffects: { fun: 0.03, energy: -0.02 },
     levels: [

@@ -78,3 +78,49 @@ describe('migração de save', () => {
     expect(restored.world.tick).toBe(startTick + 3000);
   });
 });
+
+describe('migração da fatia 5', () => {
+  it('um save da fatia 4 (versão 4) ganha chefes, colegas, fofoca e frilas', async () => {
+    const { householdSim } = await import('./helpers');
+    const { NEIGHBORS, NEIGHBOR_TIES } = await import('../src/data/neighbors');
+    const sim = householdSim(6);
+    const folk = sim.world.folks[0];
+    sim.dispatch({ type: 'takeJob', folkId: folk.id, careerId: 'office' });
+    const v4 = JSON.parse(JSON.stringify({ version: 4, savedAt: 1, world: sim.world }));
+    // como era a fatia 4: sem chefes, sem campos novos
+    const bosses = ['Hermínia Cumeeira', 'Áureo Beiral', 'Vera Claraboia', 'Bento Lajota'];
+    v4.world.neighbors = v4.world.neighbors.filter((n: { name: string }) => !bosses.includes(n.name));
+    v4.world.relations = Object.fromEntries(
+      Object.entries(v4.world.relations).filter(([k]) => {
+        const ids = k.split('>').map(Number);
+        return ids.every((id) => v4.world.folks.some((f: { id: number }) => f.id === id));
+      }),
+    );
+    delete v4.world.news;
+    delete v4.world.reputation;
+    delete v4.world.gigBoard;
+    for (const f of v4.world.folks) {
+      delete f.gig;
+      delete f.business;
+      if (f.job) {
+        delete f.job.raise;
+        delete f.job.raisePending;
+        delete f.job.lastRaiseDay;
+      }
+    }
+    const world = deserialize(v4, { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES }).world;
+    expect(world.neighbors.filter((n) => n.boss).map((n) => n.name)).toEqual(bosses.slice(0, 3));
+    expect(world.folks[0].job).toMatchObject({ raise: 0, raisePending: false, lastRaiseDay: -99 });
+    expect(world.folks.every((f) => f.gig === null && f.business === null)).toBe(true);
+    expect(world.news).toEqual([]);
+    // ids novos não colidem com ninguém
+    const ids = [...world.folks.map((f) => f.id), ...world.neighbors.map((n) => n.id)];
+    expect(new Set(ids).size).toBe(ids.length);
+    // a relação da casa continua como estava
+    const lia = world.folks[1];
+    expect(world.relations[`${folk.id}>${lia.id}`]).toEqual(sim.world.relations[`${folk.id}>${lia.id}`]);
+    const restored = new Sim(CATALOG, world);
+    run(restored, 3 * 1440);
+    expect(restored.world.folks[0].job?.shifts).toBeGreaterThan(0);
+  });
+});

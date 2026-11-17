@@ -50,6 +50,12 @@ export interface InteractionDef {
   residentOnly?: boolean;
   /** efeito especial ao terminar: 'invite' = convida o vizinho `otherId` da ação */
   special?: 'invite';
+  /**
+   * trabalho por conta própria feito neste objeto: 'gig' = adianta o frila
+   * do folk; 'business' = cuida do negócio próprio. Só vale com um frila ou
+   * negócio que aceite este objeto (veja data/gigs.ts e data/businesses.ts).
+   */
+  task?: 'gig' | 'business';
   /** dicas só para a renderização */
   pose?: Pose;
   onObject?: boolean;
@@ -126,6 +132,125 @@ export interface CareerDef {
   /** efeito por minuto nas necessidades durante o turno (além do decaimento) */
   shiftEffects: Partial<Needs>;
   levels: CareerLevel[];
+  /** chave de texto com o nome do lugar de trabalho */
+  workplace?: string;
+}
+
+// ---------- Fatia 5: dia de trabalho, frilas, negócio, fofoca ----------
+
+/** Quem aparece num evento do expediente. */
+export type WorkActor = 'boss' | 'coworker' | 'none';
+
+/** O que uma escolha faz acontecer. */
+export interface WorkOutcome {
+  /** chave de texto do resultado; recebe {name} e {actor} */
+  text: string;
+  /** soma direto no desempenho */
+  performance?: number;
+  /** como o ator do evento passa a ver o folk */
+  actor?: RelDelta;
+  /** como o folk passa a ver o ator */
+  self?: RelDelta;
+  /** como o chefe passa a ver o folk (quando o ator é um colega) */
+  boss?: RelDelta;
+  /** como cada colega passa a ver o folk */
+  coworkers?: RelDelta;
+  /** efeito imediato nas necessidades */
+  needs?: Partial<Needs>;
+  /** tostões que entram (ou saem) na hora */
+  money?: number;
+  /** experiência ganha numa habilidade */
+  xp?: { id: string; amount: number };
+  /** lembranças: do folk sobre o ator e do ator sobre o folk */
+  memory?: { self?: string; actor?: string };
+  /** notícia que nasce sobre o folk e corre pela vizinhança */
+  news?: string;
+  /** a notícia é sobre o ator, não sobre o folk */
+  newsAboutActor?: boolean;
+  /** é um gesto romântico com o ator (vale ciúme e traição) */
+  romantic?: boolean;
+}
+
+export interface WorkChoiceDef {
+  /** chave de texto do botão */
+  label: string;
+  /** quanto cada traço puxa para esta escolha quando o folk decide sozinho */
+  traits?: Record<string, number>;
+  /**
+   * teste de sorte: chance = base + perLevel x nível da habilidade (+ humor e
+   * respeito do ator, quando marcados). Sem teste, sempre dá `success`.
+   */
+  check?: { skill?: string; base: number; perLevel?: number; mood?: boolean; actorRespect?: boolean };
+  success: WorkOutcome;
+  fail?: WorkOutcome;
+}
+
+/** Um acontecimento do expediente, com escolhas. */
+export interface WorkEventDef {
+  id: string;
+  /** chave de texto; recebe {name} e {actor} */
+  text: string;
+  /** carreiras onde pode acontecer (padrão: todas) */
+  careers?: string[];
+  actor: WorkActor;
+  /** cargo mínimo (índice) */
+  minLevel?: number;
+  /** peso no sorteio (padrão 1) */
+  weight?: number;
+  /** só sai quando o folk vê o ator dentro destes limites de amizade */
+  requires?: { friendshipBelow?: number; friendshipAbove?: number };
+  choices: WorkChoiceDef[];
+}
+
+/** Um trabalho avulso do mural de frilas. */
+export interface GigDef {
+  id: string;
+  name: string;
+  skill: string;
+  /** nível mínimo da habilidade para pegar */
+  minLevel: number;
+  /** minutos de trabalho (no nível 0) para entregar */
+  work: number;
+  /** pagamento base, em tostões */
+  pay: number;
+  /** dias de prazo */
+  days: number;
+  /** objetos onde dá para fazer */
+  objects: string[];
+}
+
+/** Negócio próprio que um folk pode abrir em casa. */
+export interface BusinessDef {
+  id: string;
+  name: string;
+  /** custo para abrir */
+  cost: number;
+  skill: string;
+  /** objetos onde se trabalha nele */
+  objects: string[];
+  /** despesa por dia */
+  upkeep: number;
+  /** quanto cada freguês deixa */
+  price: number;
+  /** fregueses por dia com qualidade média */
+  customers: number;
+}
+
+/** Notícia que corre de boca em boca. */
+export interface NewsDef {
+  id: string;
+  /** chave de texto; recebe {name} (de quem se fala) e {other} */
+  label: string;
+  /** quanto a reputação de quem é o assunto muda a cada pessoa que fica sabendo */
+  reputation: number;
+  /** como quem ouve passa a ver o assunto (só se já o conhece) */
+  opinion?: RelDelta;
+  /** de 0 a 1: vontade de passar adiante */
+  juicy: number;
+  /** quem namora o assunto e fica sabendo sente ciúme de {other} */
+  jealousy?: boolean;
+  /** dias até cair no esquecimento */
+  days: number;
 }
 
 export interface TraitDef {
@@ -143,6 +268,10 @@ export interface TraitDef {
   needWeight?: Partial<Needs>;
   /** multiplica o decaimento de cada necessidade */
   decay?: Partial<Needs>;
+  /** quanto sente ciúme (1 = normal) */
+  jealousy?: number;
+  /** quanto gosta de passar fofoca adiante (1 = normal) */
+  gossip?: number;
 }
 
 // ---------- Relações ----------
@@ -179,6 +308,8 @@ export interface SocialRequires {
   visitor?: boolean;
   /** quem puxa precisa morar na casa */
   resident?: boolean;
+  /** o outro guarda mágoa de quem puxa (lembranças somando -3 ou menos) */
+  grudge?: boolean;
 }
 
 export interface SocialDef {
@@ -206,7 +337,7 @@ export interface SocialDef {
   rejectMemory?: { self?: string; target?: string };
   /** a IA pode escolher sozinha (padrão: true) */
   autonomous?: boolean;
-  special?: 'date' | 'moveIn' | 'sendHome';
+  special?: 'date' | 'moveIn' | 'sendHome' | 'breakUp' | 'gossip';
   skill?: { id: string; xpPerMinute: number };
   /** animação de quem puxa e de quem ouve */
   anim: SocialAnim;
@@ -241,8 +372,10 @@ export interface Neighbor {
   traits: string[];
   look: Folk['look'];
   skills: Record<string, number>;
-  /** onde trabalha (só para conversa e respeito; o turno dele não é simulado) */
+  /** onde trabalha (o turno dele não é simulado, mas ele é colega de verdade) */
   career: { id: string; level: number } | null;
+  /** manda no lugar onde trabalha */
+  boss?: boolean;
 }
 
 export interface Visit {
@@ -309,6 +442,10 @@ export interface Catalog {
   memories: Record<string, MemoryDef>;
   skills: Record<string, SkillDef>;
   careers: Record<string, CareerDef>;
+  workEvents: Record<string, WorkEventDef>;
+  gigs: Record<string, GigDef>;
+  businesses: Record<string, BusinessDef>;
+  news: Record<string, NewsDef>;
 }
 
 // ---------- Estado ----------
@@ -401,6 +538,10 @@ export interface Folk {
   job: Job | null;
   /** fora de casa, no turno de trabalho */
   away: Away | null;
+  /** frila em andamento */
+  gig: Gig | null;
+  /** negócio próprio aberto */
+  business: Business | null;
   /** null = mora na casa; senão é uma visita */
   visit: Visit | null;
 }
@@ -416,6 +557,62 @@ export interface Job {
   /** último dia em que o turno foi resolvido (trabalhado ou perdido) */
   doneDay: number;
   shifts: number;
+  /** aumento conquistado sobre o salário do cargo (0,1 = +10%) */
+  raise: number;
+  /** vai pedir aumento ao chefe no fim do próximo turno */
+  raisePending: boolean;
+  /** último dia em que pediu aumento (-99 = nunca) */
+  lastRaiseDay: number;
+}
+
+/** Acontecimento do expediente esperando uma escolha. */
+export interface PendingWorkEvent {
+  defId: string;
+  /** quem aparece no evento (0 = ninguém) */
+  actorId: number;
+  /** tick em que o folk decide sozinho, se o jogador não escolher */
+  deadline: number;
+}
+
+export interface Gig {
+  defId: string;
+  /** pagamento combinado */
+  pay: number;
+  /** minutos de trabalho feitos (já com o bônus da habilidade) */
+  progress: number;
+  /** tick do prazo */
+  deadline: number;
+}
+
+export interface GigOffer {
+  id: number;
+  defId: string;
+  pay: number;
+}
+
+export interface Business {
+  defId: string;
+  /** 0 a 100: capricho do negócio; cai todo dia e sobe com trabalho */
+  quality: number;
+  /** dias aberto */
+  days: number;
+  /** lucro (ou prejuízo) do último dia */
+  lastProfit: number;
+  /** fregueses do último dia */
+  lastCustomers: number;
+  total: number;
+}
+
+export interface News {
+  id: number;
+  kind: string;
+  /** de quem se fala */
+  about: number;
+  /** a outra pessoa da história (0 = ninguém) */
+  other: number;
+  tick: number;
+  /** quem já sabe */
+  knownBy: number[];
 }
 
 export interface Away {
@@ -425,6 +622,10 @@ export interface Away {
   late: number;
   /** humor na hora de sair */
   mood: number;
+  /** evento do expediente esperando escolha */
+  event: PendingWorkEvent | null;
+  /** tick do próximo evento do expediente (-1 = não tem mais) */
+  nextEvent: number;
 }
 
 export interface Household {
@@ -465,6 +666,12 @@ export interface World {
   pendingVisits: PendingVisit[];
   /** tick da última visita sem aviso */
   lastDropIn: number;
+  /** o que anda correndo de boca em boca */
+  news: News[];
+  /** reputação de cada pessoa na vizinhança, por id (-100 a 100) */
+  reputation: Record<string, number>;
+  /** mural de frilas do dia */
+  gigBoard: GigOffer[];
 }
 
 // ---------- Comandos (única porta de entrada do jogador) ----------
@@ -482,6 +689,12 @@ export type Command =
   | { type: 'invite'; folkId: number; neighborId: number }
   | { type: 'takeJob'; folkId: number; careerId: string }
   | { type: 'quitJob'; folkId: number }
+  | { type: 'workChoice'; folkId: number; choice: number }
+  | { type: 'askRaise'; folkId: number }
+  | { type: 'takeGig'; folkId: number; offerId: number }
+  | { type: 'dropGig'; folkId: number }
+  | { type: 'openBusiness'; folkId: number; businessId: string }
+  | { type: 'closeBusiness'; folkId: number }
   // modo construção: linhas de paredes vão de vértice a vértice do grid
   | { type: 'buildWalls'; x0: number; y0: number; x1: number; y1: number }
   | { type: 'eraseWalls'; x0: number; y0: number; x1: number; y1: number }

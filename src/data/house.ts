@@ -1,5 +1,5 @@
 import type { RoomStyle, WorldSeed } from '../sim/world';
-import { NEIGHBORS } from './neighbors';
+import { NEIGHBORS, NEIGHBOR_TIES } from './neighbors';
 import { gridFromMap } from '../sim/world';
 
 // A casa pronta da fatia 1. Cada letra é um cômodo; paredes nascem sozinhas
@@ -85,7 +85,7 @@ export function starterHouse(seed = 20001): WorldSeed {
       },
     ],
     // dividem a casa há pouco tempo: já se conhecem, mas ainda sem intimidade
-    relations: [{ a: 'Tomé Varanda', b: 'Lia Sacada', friendship: 22, respect: 5 }],
+    relations: [{ a: 'Tomé Varanda', b: 'Lia Sacada', friendship: 22, respect: 5 }, ...NEIGHBOR_TIES],
     neighbors: NEIGHBORS,
   };
 }

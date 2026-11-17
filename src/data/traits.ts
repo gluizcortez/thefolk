@@ -4,6 +4,7 @@ import type { TraitDef } from '../sim/types';
 // velocidade com que ela decai (decay). `likes` e `dislikes` dizem com que
 // traços dos outros o folk se dá bem ou tem atrito; `social` é o gosto por
 // cada tipo de conversa (amigável, romântica, profissional, maldosa).
+// `jealousy` e `gossip` multiplicam o ciúme e a vontade de passar fofoca.
 // Para criar um traço, basta adicionar uma entrada aqui e o nome em i18n.
 export const TRAITS: Record<string, TraitDef> = {
   caseiro: {
@@ -24,6 +25,7 @@ export const TRAITS: Record<string, TraitDef> = {
     likes: ['tagarela', 'brincalhao'],
     dislikes: ['reservado'],
     social: { friendly: 1.3 },
+    gossip: 1.6,
   },
   agitado: {
     id: 'agitado',
@@ -67,6 +69,7 @@ export const TRAITS: Record<string, TraitDef> = {
     likes: ['ambicioso'],
     dislikes: ['tagarela', 'esquentado'],
     social: { mean: 2, friendly: 0.8 },
+    jealousy: 1.4,
   },
   reservado: {
     id: 'reservado',
@@ -77,6 +80,7 @@ export const TRAITS: Record<string, TraitDef> = {
     likes: ['caseiro', 'reservado'],
     dislikes: ['tagarela'],
     social: { friendly: 0.7, romantic: 0.8 },
+    gossip: 0.4,
   },
   ambicioso: {
     id: 'ambicioso',
@@ -93,5 +97,27 @@ export const TRAITS: Record<string, TraitDef> = {
     likes: ['gentil', 'caseiro', 'romantico'],
     dislikes: ['esquentado'],
     social: { mean: 0.2, friendly: 1.15 },
+    gossip: 0.5,
+    jealousy: 0.7,
+  },
+  // fatia 5: ciúme e fofoca
+  ciumento: {
+    id: 'ciumento',
+    name: 'trait.ciumento',
+    hint: 'traitHint.ciumento',
+    likes: ['caseiro', 'reservado'],
+    dislikes: ['romantico', 'tagarela'],
+    social: { romantic: 1.2 },
+    jealousy: 2,
+  },
+  fofoqueiro: {
+    id: 'fofoqueiro',
+    name: 'trait.fofoqueiro',
+    hint: 'traitHint.fofoqueiro',
+    needWeight: { social: 1.2 },
+    likes: ['tagarela', 'fofoqueiro'],
+    dislikes: ['reservado'],
+    social: { friendly: 1.1 },
+    gossip: 2.5,
   },
 };

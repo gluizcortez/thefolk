@@ -84,11 +84,22 @@ export function shiftScore(catalog: Catalog, folk: Folk, job: Job, avgMood: numb
 }
 
 export function newJob(careerId: string): Job {
-  return { careerId, level: 0, performance: 0, calledDay: -1, doneDay: -1, shifts: 0 };
+  return {
+    careerId,
+    level: 0,
+    performance: 0,
+    calledDay: -1,
+    doneDay: -1,
+    shifts: 0,
+    raise: 0,
+    raisePending: false,
+    lastRaiseDay: -99,
+  };
 }
 
-/** Quanto de dinheiro entra num turno trabalhado. */
+/** Quanto de dinheiro entra num turno trabalhado (com o aumento conquistado). */
 export function payFor(catalog: Catalog, job: Job): number {
-  return levelOfJob(catalog, job)?.pay ?? 0;
+  const base = levelOfJob(catalog, job)?.pay ?? 0;
+  return Math.round(base * (1 + (job.raise ?? 0)));
 }
 

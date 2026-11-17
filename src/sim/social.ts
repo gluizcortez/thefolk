@@ -1,6 +1,7 @@
 import type { Nav } from './grid';
 import { blocksStep, edgeKey } from './grid';
 import { moodOf } from './needs';
+import { partnersOf, reputationOf } from './gossip';
 import { affinity, knows, memoryWeight, relationOf } from './relations';
 import type { Catalog, Folk, SocialCategory, SocialDef, Vec, World } from './types';
 
@@ -29,7 +30,7 @@ export function talkingWith(folk: Folk): number {
  * Diz se `a` pode puxar esta interação com `b`, olhando só os requisitos
  * (amizade, romance, quem é visita). Usa como `a` vê `b`.
  */
-export function socialAllowed(world: World, def: SocialDef, a: Folk, b: Folk): boolean {
+export function socialAllowed(world: World, catalog: Catalog, def: SocialDef, a: Folk, b: Folk): boolean {
   const req = def.requires;
   if (!req) return knows(world, a.id, b.id);
   const rel = relationOf(world, a.id, b.id);
@@ -42,12 +43,13 @@ export function socialAllowed(world: World, def: SocialDef, a: Folk, b: Folk): b
   if (req.maxFriendship !== undefined && f > req.maxFriendship) return false;
   if (req.romance !== undefined && (rel?.romance ?? 0) < req.romance) return false;
   if (req.dating !== undefined && (rel?.dating ?? false) !== req.dating) return false;
+  if (req.grudge && memoryWeight(catalog, relationOf(world, b.id, a.id)) > -3) return false;
   return true;
 }
 
 /** Interações que `a` pode puxar com `b`, na ordem do catálogo. */
 export function availableSocials(world: World, catalog: Catalog, a: Folk, b: Folk): SocialDef[] {
-  return Object.values(catalog.socials).filter((def) => socialAllowed(world, def, a, b));
+  return Object.values(catalog.socials).filter((def) => socialAllowed(world, catalog, def, a, b));
 }
 
 /**
@@ -66,7 +68,16 @@ export function acceptChance(world: World, catalog: Catalog, a: Folk, b: Folk, d
   p += (moodOf(catalog, b.needs) - 50) / 250;
   p += (socialTaste(catalog, b, def.category) - 1) * 0.25;
   for (const t of b.traits) p += def.traitAccept?.[t] ?? 0;
+  // fama de quem puxa conversa abre (ou fecha) portas
+  p += reputationOf(world, a.id) / 300;
+  // fidelidade: quem namora firme outra pessoa resiste a gracinhas
+  if (def.category === 'romantic' && def.special !== 'breakUp' && committedElsewhere(world, b.id, a.id)) p -= 0.3;
   return Math.max(0.03, Math.min(0.97, p));
+}
+
+/** `id` namora firme (romance 30+) alguém que não é `except`? */
+export function committedElsewhere(world: World, id: number, except: number): boolean {
+  return partnersOf(world, id).some((p) => p !== except && (relationOf(world, id, p)?.romance ?? 0) >= 30);
 }
 
 /** Palpite de `a` sobre a chance de dar certo, só pelo que ele sente. */

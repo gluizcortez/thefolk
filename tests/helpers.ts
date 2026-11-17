@@ -101,3 +101,14 @@ export function crowd(
   if (opts.autonomy === false) for (const f of sim.world.folks) f.autonomy = false;
   return sim;
 }
+
+/**
+ * Casa com um morador só, mas com a vizinhança inteira (chefes e colegas de
+ * verdade), para os testes de trabalho da fatia 5.
+ */
+export function workSim(seed = 1): Sim {
+  const s = starterHouse(seed);
+  s.folks = s.folks.slice(0, 1);
+  s.relations = (s.relations ?? []).filter((r) => r.a !== 'Lia Sacada' && r.b !== 'Lia Sacada');
+  return new Sim(CATALOG, createWorld(s));
+}

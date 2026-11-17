@@ -1,6 +1,6 @@
 import { CATALOG } from '../data/catalog';
 import { starterHouse } from '../data/house';
-import { NEIGHBORS } from '../data/neighbors';
+import { NEIGHBORS, NEIGHBOR_TIES } from '../data/neighbors';
 import { hasText, t } from '../i18n';
 import { readSave, writeSave } from '../platform/saveStore';
 import { Sim, createWorld, deserialize, isBuildCommand, serialize } from '../sim';
@@ -222,7 +222,7 @@ export class GameController {
       return false;
     }
     try {
-      this.replaceWorld(deserialize(raw, { neighbors: NEIGHBORS }).world);
+      this.replaceWorld(deserialize(raw, { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES }).world);
       this.toast(t('toast.loaded'));
       return true;
     } catch {
