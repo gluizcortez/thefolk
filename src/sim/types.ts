@@ -126,6 +126,73 @@ export interface MonthDef {
   dislikes: number[];
 }
 
+// ---------- Bloco 6: vontade própria, balões e desejos ----------
+
+/**
+ * O que aparece no balão sobre a cabeça: 'want' = uma necessidade pedindo;
+ * 'refuse' = recusou uma ordem (o ícone diz por quê); 'mess' = reclama da
+ * sujeira; 'miss' = saudade de alguém (`other`); 'chat' = o que acha da
+ * conversa; 'wish' = cumpriu um desejo; 'alarm' = o despertador tocou.
+ */
+export type ThoughtKind = 'want' | 'refuse' | 'mess' | 'miss' | 'chat' | 'wish' | 'alarm';
+
+export interface Thought {
+  kind: ThoughtKind;
+  /** id do ícone (necessidade, categoria de conversa, 'yes', 'no', 'mood'...) */
+  icon: string;
+  /** tick em que nasceu */
+  at: number;
+  /** tick em que some */
+  until: number;
+  /** de quem sente saudade, com quem conversa */
+  other?: number;
+}
+
+/**
+ * Tipos de desejo: 'talk' = conversa aceita com alguém; 'use' = minutos numa
+ * das interações da lista; 'skill' = minutos treinando uma habilidade; 'buy' =
+ * comprar um objeto da categoria; 'tidy' = arrumar ou limpar algumas coisas;
+ * 'host' = receber uma visita convidada.
+ */
+export type WishKind = 'talk' | 'use' | 'skill' | 'buy' | 'tidy' | 'host';
+
+export interface WishDef {
+  id: string;
+  /** chave de texto; recebe {other}, {skill} e {category} */
+  label: string;
+  /** ícone do desejo (os mesmos do balão) */
+  icon: string;
+  kind: WishKind;
+  /** peso no sorteio */
+  weight: number;
+  /** quanto cada eixo do temperamento puxa (peso x (1 + valor x eixo)) */
+  temper?: Partial<Temper>;
+  /** quanto cada traço multiplica o peso */
+  traits?: Record<string, number>;
+  /** 'use': interações que contam */
+  interactions?: string[];
+  /** 'talk': categorias de conversa que contam (padrão: amigável) */
+  socials?: SocialCategory[];
+  /** 'talk' romântico: só com quem já tem romance */
+  romance?: boolean;
+  /** 'buy': categoria do objeto */
+  category?: ObjectCategory;
+  /** minutos (use, skill) ou vezes (talk, tidy, buy, host) para cumprir */
+  amount: number;
+}
+
+/** Um desejo do dia de um folk. */
+export interface Wish {
+  id: number;
+  defId: string;
+  /** com quem ('talk') */
+  other?: number;
+  /** qual habilidade ('skill') */
+  skill?: string;
+  progress: number;
+  done: boolean;
+}
+
 /** Bloco 4: o que uma atividade a dois dá a mais quando tem parceiro. */
 export interface DuoDef {
   /** efeitos extras por minuto, para cada um */
@@ -653,6 +720,8 @@ export interface Catalog {
   news: Record<string, NewsDef>;
   /** bloco 5 */
   months: MonthDef[];
+  /** bloco 6 */
+  wishes: Record<string, WishDef>;
 }
 
 // ---------- Estado ----------
@@ -797,6 +866,18 @@ export interface Folk {
   outfit: Outfit;
   /** bloco 5: minutos de hábito por eixo desde a última virada (sinal = para que lado puxa) */
   habits: Partial<Temper>;
+  /** bloco 6: o que está no balão agora */
+  thought: Thought | null;
+  /** bloco 6: desejos do dia (até 3) */
+  wishes: Wish[];
+  /** bloco 6: dia (índice) em que os desejos foram sorteados (-1 = nunca) */
+  wishDay: number;
+  /** bloco 6: ânimo guardado (desejos cumpridos), gasto num dia inspirado */
+  spark: number;
+  /** bloco 6: tick até quando está inspirado (treino em dobro) */
+  inspired: number;
+  /** bloco 6: despertador ligado (acorda antes do turno) */
+  alarm: boolean;
   /** experiência acumulada por habilidade (o nível sai daqui) */
   skills: Record<string, number>;
   job: Job | null;
@@ -1002,6 +1083,9 @@ export type Command =
   | { type: 'dropGig'; folkId: number }
   | { type: 'openBusiness'; folkId: number; businessId: string }
   | { type: 'closeBusiness'; folkId: number }
+  // bloco 6
+  | { type: 'inspire'; folkId: number }
+  | { type: 'setAlarm'; folkId: number; on: boolean }
   // modo construção: linhas de paredes vão de vértice a vértice do grid
   | { type: 'buildWalls'; x0: number; y0: number; x1: number; y1: number }
   | { type: 'eraseWalls'; x0: number; y0: number; x1: number; y1: number }

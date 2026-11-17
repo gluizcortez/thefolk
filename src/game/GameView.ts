@@ -42,6 +42,7 @@ import { texMat } from './art/build';
 import { PAINT, PAL } from './art/palette';
 import { colorOf } from '../sim/furnish';
 import { wearOf } from '../sim/family';
+import { thoughtOf } from '../sim/will';
 import type { Look, Wear } from '../sim/types';
 import { buildScenery } from './art/scenery';
 import { getTexture } from './art/textures';
@@ -117,6 +118,9 @@ interface FolkEntry {
   /** plaquinha do tipo de conversa, sobre quem puxou */
   icon: THREE.Sprite;
   iconKey: string;
+  /** bloco 6: balão cujo gesto já começou (tick em que nasceu) e há quanto tempo (s reais) */
+  gestureOf: number;
+  gestureT: number;
 }
 
 interface Hover {
@@ -357,7 +361,15 @@ export class GameView {
       icon.scale.setScalar(0.42);
       icon.renderOrder = 5;
       this.worldRoot.add(model.group, icon);
-      this.folks.set(folk.id, { model, zzz, icon, iconKey: 'soc:friendly', lookKey: lookKey(folk.look, wearOf(folk)) });
+      this.folks.set(folk.id, {
+        model,
+        zzz,
+        icon,
+        iconKey: 'soc:friendly',
+        lookKey: lookKey(folk.look, wearOf(folk)),
+        gestureOf: -1,
+        gestureT: 99,
+      });
     }
     if (this.folks.size === world.folks.length) return;
     for (const [id, entry] of this.folks) {
@@ -930,10 +942,32 @@ export class GameView {
       }
     }
 
-    const mood = moodOf(sim.catalog, folk.needs);
-    view.model.update({ anim, ...place, mood, time: this.animTime, dt, expr, hold: it?.hold });
+    // bloco 6: o balão de agora pode pedir um gesto (recusa, comemoração) e mexe na cara
+    const thought = folk.collapsed > 0 || anim === 'sleep' ? null : thoughtOf(folk, sim.world.tick);
+    if (thought && thought.at !== view.gestureOf) {
+      view.gestureOf = thought.at;
+      view.gestureT = 0;
+    }
+    view.gestureT += dt;
+    if (thought && view.gestureT < 1.8 && (anim === 'idle' || anim === 'walk' || anim === 'reach')) {
+      if (thought.kind === 'refuse') {
+        anim = 'refuse';
+        expr = 'angry';
+      } else if (thought.kind === 'wish' && anim !== 'walk') {
+        anim = 'cheer';
+        expr = 'happy';
+      }
+    }
+    if (!expr && thought) {
+      if (thought.kind === 'miss') expr = 'sad';
+      else if (thought.kind === 'mess' || thought.kind === 'refuse') expr = 'angry';
+      else if (thought.kind === 'wish' || (thought.kind === 'chat' && thought.icon === 'yes')) expr = 'happy';
+    }
 
-    const iconKey = social?.icon;
+    const mood = moodOf(sim.catalog, folk.needs);
+    view.model.update({ anim, ...place, mood, time: this.animTime, dt, expr, hold: it?.hold, energy: folk.needs.energy });
+
+    const iconKey = social?.icon ?? (thought ? `th:${thought.kind}:${thought.icon}` : undefined);
     view.icon.visible = !!iconKey;
     if (iconKey) {
       if (iconKey !== view.iconKey) {
@@ -942,7 +976,9 @@ export class GameView {
         view.icon.material.needsUpdate = true;
       }
       const top = view.model.headTop(this.tmp);
-      view.icon.position.set(top.x, top.y + 0.32 + Math.sin(this.animTime * 3) * 0.04, top.z);
+      const balloon = iconKey.startsWith('th:');
+      view.icon.scale.set(balloon ? 0.5 : 0.42, balloon ? 0.58 : 0.42, 1);
+      view.icon.position.set(top.x, top.y + (balloon ? 0.42 : 0.32) + Math.sin(this.animTime * 3) * 0.04, top.z);
     }
 
     if (selected) {
@@ -969,7 +1005,8 @@ export class GameView {
       const v = head.clone().project(this.camera);
       const sx = (v.x * 0.5 + 0.5) * el.clientWidth;
       const sy = (-v.y * 0.5 + 0.5) * el.clientHeight;
-      this.hud.setBubble(sx, sy - 6, bubbleIcon(folk, it?.effects));
+      // bloco 6: com balão de pensamento em cima da cabeça, a plaquinha da ação sai
+      this.hud.setBubble(sx, sy - 6, iconKey ? null : bubbleIcon(folk, it?.effects));
     }
   }
 

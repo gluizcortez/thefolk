@@ -24,3 +24,5 @@ export * from './rooms';
 export * from './furnish';
 export * from './temper';
 export * from './family';
+export * from './will';
+export * from './wishes';

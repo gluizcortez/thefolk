@@ -13,6 +13,15 @@ import type { Catalog, Folk, InteractionDef, Needs, ServiceOrder, SocialDef, Wor
 import { NEED_IDS } from './types';
 import { temperPull } from './temper';
 import { JOIN_BONUS, TIER_PULL, duoPartners, occupiedId, tierOf } from './furnish';
+import { isSleep, refusal, sleepPressure } from './will';
+import { wishPull, wishTalkPull, wishTidyPull } from './wishes';
+
+/** Bloco 6: quanto a hora de deitar soma na vontade de dormir (com pressão 1). */
+export const BEDTIME_BONUS = 70;
+/** bexiga ou fome abaixo disso tiram o sono */
+const RESTLESS_BELOW = 15;
+/** a não ser que a energia esteja abaixo disso */
+const RESTLESS_ENERGY = 8;
 
 /** Bloco 4: vontade de entrar na atividade a dois que alguém já começou. */
 export function joinUtility(world: World, catalog: Catalog, folk: Folk, objectId: number, it: InteractionDef): number {
@@ -157,7 +166,7 @@ export function scoreSocialOptions(world: World, catalog: Catalog, folk: Folk, n
       if (mood <= 0) continue;
       const gain = effectsUtility(catalog, folk, def.effects, def.duration);
       const p = guessAccept(world, folk, other, def);
-      let utility = gain * (0.4 + 0.6 * p) * mood * fresh;
+      let utility = gain * (0.4 + 0.6 * p) * mood * fresh * wishTalkPull(catalog, folk, other.id, def);
       if (!knows(world, folk.id, other.id)) utility += MEET_BONUS;
       const score = utility / (1 + DISTANCE_COST * path.length);
       options.push({ otherId: other.id, socialId: def.id, score, distance: path.length });
@@ -174,7 +183,9 @@ function objectDefIdOf(world: World, id: number | undefined): string {
 export function scoreOptions(world: World, catalog: Catalog, folk: Folk, nav: Nav): Option[] {
   const options: Option[] = [];
   // vontade de cuidar da casa (traço e humor); visita não faxina
-  const drive = careDrive(catalog, folk, moodOf(catalog, folk.needs));
+  const drive = careDrive(catalog, folk, moodOf(catalog, folk.needs)) * wishTidyPull(catalog, folk);
+  // bloco 6: perto da hora de deitar (turno amanhã), a cama chama
+  const bedtime = sleepPressure(catalog, folk, world.tick);
   for (const obj of world.objects) {
     const def = catalog.objects[obj.defId];
     if (!def) continue;
@@ -192,7 +203,9 @@ export function scoreOptions(world: World, catalog: Catalog, folk: Folk, nav: Na
         canUse(world, obj, it) &&
         (it.cost ?? 0) <= world.household.funds &&
         !(visitor && (it.residentOnly || (it.cost ?? 0) > 0)) &&
-        (it.autoBelow === undefined || !it.until || folk.needs[it.until] < it.autoBelow),
+        (it.autoBelow === undefined || !it.until || folk.needs[it.until] < it.autoBelow || (bedtime > 0 && isSleep(it))) &&
+        // bloco 6: de mau humor, nem por conta própria o folk pega no pesado
+        refusal(catalog, folk, it, world.tick) === null,
     );
     if (auto.length === 0 && care.length === 0) continue;
     if (objectUsers(world, obj.id, folk) >= (def.slots ?? 1)) continue;
@@ -201,8 +214,13 @@ export function scoreOptions(world: World, catalog: Catalog, folk: Folk, nav: Na
     for (const it of auto) {
       // bloco 4: o objeto melhor puxa mais; atividade a dois com alguém já jogando também
       // bloco 5: o temperamento puxa para o que combina (malhar, pintar, ler)
-      let utility = interactionUtility(catalog, folk, it) * TIER_PULL[tierOf(def)] * temperPull(folk, it);
+      let utility = interactionUtility(catalog, folk, it) * TIER_PULL[tierOf(def)] * temperPull(folk, it) * wishPull(catalog, folk, it);
       if (it.duo) utility += joinUtility(world, catalog, folk, obj.id, it);
+      if (bedtime > 0 && isSleep(it)) utility = (utility + BEDTIME_BONUS * bedtime) * (1 + bedtime);
+      // ninguém pega no sono apertado para ir ao banheiro ou morto de fome (a não ser caindo de sono)
+      if (isSleep(it) && folk.needs.energy > RESTLESS_ENERGY && (folk.needs.bladder < RESTLESS_BELOW || folk.needs.hunger < RESTLESS_BELOW)) {
+        utility *= 0.15;
+      }
       const score = utility / (1 + DISTANCE_COST * path.length);
       options.push({ objectId: obj.id, interactionId: it.id, score, distance: path.length });
     }

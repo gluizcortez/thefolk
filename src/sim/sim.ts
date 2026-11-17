@@ -70,6 +70,20 @@ import { addMemory, affinity, applyDelta, coolRelations, ensureRelation, relatio
 import { skillLevel, trainSkill } from './skills';
 import { HABIT_PERIOD_DAYS, countHabit, settleHabits } from './temper';
 import { streetOutfit } from './family';
+import {
+  THINK_EVERY,
+  INSPIRED_TRAINING,
+  inspire,
+  inspireProblem,
+  isInspired,
+  isSleep,
+  refusal,
+  setThought,
+  sleepPressure,
+  think,
+  wakeTime,
+} from './will';
+import { rollWishes, wishOnBuy, wishOnHost, wishOnTalk, wishOnTidy, wishOnUse, wishesDue } from './wishes';
 import { acceptChance, adjacent, onLot, socialAllowed, talkTiles, talkingWith } from './social';
 import type {
   Action,
@@ -77,6 +91,7 @@ import type {
   Command,
   Folk,
   InteractionDef,
+  NeedId,
   Neighbor,
   ObjectDef,
   RelDelta,
@@ -180,7 +195,9 @@ export type CommandProblem =
   | 'notAtDoor'
   | 'undoBuyEmpty'
   | 'daytime'
-  | 'undoBuyBlocked';
+  | 'undoBuyBlocked'
+  | 'refused'
+  | 'noSpark';
 
 /** Resultado de uma conversa, para a tela mostrar o que mudou (não vai no save). */
 export interface SocialOutcome {
@@ -225,9 +242,6 @@ export const LIGHT_RATE = 0.012;
 export const SAVER_DEFAULT = 0.4;
 
 /** Interação de dormir (deitar e recuperar energia). */
-export function isSleep(it: InteractionDef): boolean {
-  return (it.effects.energy ?? 0) > 0 && it.pose === 'lie';
-}
 
 /** Chance de o folk apagar a luz ao sair (média dos traços que opinam). */
 export function saverOf(catalog: Catalog, folk: Folk): number {
@@ -277,6 +291,8 @@ export class Sim {
   private nav: Nav;
   /** motivo da última recusa de `dispatch` */
   lastProblem: CommandProblem | null = null;
+  /** bloco 6: por que o folk recusou a última ordem (necessidade ou mau humor) */
+  lastRefusal: NeedId | 'mood' | null = null;
   /** resultados de conversa ainda não lidos pela tela (não vai no save) */
   private outcomes: SocialOutcome[] = [];
   /** visitas que chegaram à calçada neste minuto e saem do lote */
@@ -381,6 +397,8 @@ export class Sim {
         if (it.task && !taskFits(this.catalog, folk, it.task, def.id)) {
           return this.fail(it.task === 'gig' ? 'noGig' : 'noBusiness');
         }
+        // bloco 6: de mau humor (ou apertado), o folk não topa esforço
+        if (!folk.away && folk.collapsed === 0 && this.refuse(folk, it)) return this.fail('refused');
         return this.enqueuePlayer(folk, {
           kind: 'use',
           objectId: cmd.objectId,
@@ -528,6 +546,23 @@ export class Sim {
         this.dropTasks(folk, 'business');
         return true;
       }
+      case 'inspire': {
+        const folk = this.findFolk(cmd.folkId);
+        if (!folk) return false;
+        const problem = inspireProblem(folk, this.world.tick);
+        if (problem) return this.fail(problem);
+        inspire(folk, this.world.tick);
+        setThought(folk, 'wish', 'spark', this.world.tick, 20);
+        this.log('log.inspired', { name: folk.name });
+        return true;
+      }
+      case 'setAlarm': {
+        const folk = this.findFolk(cmd.folkId);
+        if (!folk) return false;
+        if (folk.visit) return this.fail('visitor');
+        folk.alarm = cmd.on;
+        return true;
+      }
       case 'quitJob': {
         const folk = this.findFolk(cmd.folkId);
         if (!folk || !folk.job) return false;
@@ -586,6 +621,7 @@ export class Sim {
     this.world.objects.push(obj);
     this.world.household.funds -= def.price;
     this.pushBuyUndo({ kind: 'buy', objectId: obj.id, cost: def.price });
+    wishOnBuy(this.world, this.catalog, this.logger, def.category);
     this.replanAll();
     return true;
   }
@@ -697,6 +733,18 @@ export class Sim {
   private dropWork(folk: Folk): void {
     if (folk.queue[0]?.kind === 'work') folk.path = [];
     folk.queue = folk.queue.filter((a) => a.kind !== 'work');
+  }
+
+  /**
+   * Bloco 6: o folk recusa a ordem de esforço? Se sim, mostra o motivo no
+   * balão (com um gesto) e guarda em `lastRefusal`.
+   */
+  private refuse(folk: Folk, it: InteractionDef): boolean {
+    const why = refusal(this.catalog, folk, it, this.world.tick);
+    this.lastRefusal = why;
+    if (!why) return false;
+    setThought(folk, 'refuse', why, this.world.tick, 12);
+    return true;
   }
 
   private enqueuePlayer(folk: Folk, partial: ActionSeed): boolean {
@@ -1071,6 +1119,7 @@ export class Sim {
     }
     this.checkFailures(folk);
     if (folk.collapsed > 0) return;
+    if (!v) this.stepWill(folk, using);
 
     if (v && !v.leaving && !v.admitted) {
       this.stepDoorside(folk);
@@ -1090,6 +1139,25 @@ export class Sim {
 
     this.processAction(folk);
     if (folk.x !== folk.px || folk.y !== folk.py) this.leftRoom(folk);
+  }
+
+  // ---------- bloco 6: vontade, desejos e despertador ----------
+
+  private stepWill(folk: Folk, using: InteractionDef | undefined): void {
+    const tick = this.world.tick;
+    const asleep = !!using && isSleep(using);
+    if (asleep) {
+      // o despertador toca antes do turno; quem dorme sem ele acorda quando a energia enche
+      if (folk.alarm && folk.job && wakeTime(this.catalog, folk, tick) === tick) {
+        this.finish(folk);
+        folk.idleTicks = IDLE_BEFORE_AUTO;
+        setThought(folk, 'alarm', 'alarm', tick, 6);
+        this.log('log.alarm', { name: folk.name });
+      }
+      return;
+    }
+    if (wishesDue(folk, tick)) rollWishes(this.world, this.catalog, folk);
+    if ((tick + folk.id) % THINK_EVERY === 0) think(this.world, this.catalog, folk, using);
   }
 
   // ---------- bloco 3: luz ----------
@@ -1325,6 +1393,12 @@ export class Sim {
           return;
         }
       }
+      if (it && action.source === 'player' && this.refuse(folk, it)) {
+        // bloco 6: chegou lá e não quis (o humor caiu no caminho)
+        this.log(`log.refused.${this.lastRefusal}`, { name: folk.name });
+        this.finish(folk);
+        return;
+      }
       const cost = it?.cost ?? 0;
       if (cost > 0) {
         if (this.world.household.funds < cost) {
@@ -1362,6 +1436,7 @@ export class Sim {
         return;
       }
       applyEffects(folk, it);
+      if (!folk.visit) wishOnUse(this.world, this.catalog, this.logger, folk, it);
       const used = this.findObject(action.objectId!);
       const usedDef = used && this.defOf(used);
       if (used && usedDef && !it.care) this.furnishTick(folk, action, used, usedDef, it);
@@ -1369,6 +1444,7 @@ export class Sim {
         if (!it.care) wearTick(this.catalog, folk, used, usedDef);
         else if (careTick(this.world, this.catalog, this.logger, folk, used, usedDef, it)) {
           this.trainCare(folk, it);
+          if (!folk.visit) wishOnTidy(this.world, this.catalog, this.logger, folk);
           this.finish(folk);
           this.chain(folk, afterCare(used, it), action.source);
           return;
@@ -1442,10 +1518,15 @@ export class Sim {
     }
   }
 
+  /** Bloco 6: dia inspirado treina em dobro. */
+  private trainBoost(folk: Folk): number {
+    return isInspired(folk, this.world.tick) ? INSPIRED_TRAINING : 1;
+  }
+
   /** Um minuto de treino da habilidade da interação (avisa quando sobe de nível). */
   private trainCare(folk: Folk, it: InteractionDef): void {
     if (!it.skill) return;
-    const up = trainSkill(folk, it, moodOf(this.catalog, folk.needs));
+    const up = trainSkill(folk, it, moodOf(this.catalog, folk.needs), this.trainBoost(folk));
     if (up !== null && !folk.visit) {
       const skill = this.catalog.skills[it.skill.id];
       this.log('log.skillUp', { name: folk.name, skill: skill?.name ?? it.skill.id, level: up });
@@ -1510,6 +1591,7 @@ export class Sim {
     const sv = folk.visit?.service;
     if (sv && mess.by) sv.blame = mess.by;
     const next = finishTidy(this.world, this.catalog, this.logger, folk, mess);
+    if (!folk.visit && mess.kind !== 'paper') wishOnTidy(this.world, this.catalog, this.logger, folk);
     this.finish(folk);
     this.chain(folk, next, action.source);
   }
@@ -1521,6 +1603,15 @@ export class Sim {
       this.finish(folk);
       folk.idleTicks = IDLE_BEFORE_AUTO;
       return;
+    }
+    // bloco 6: passou da hora de deitar (turno amanhã cedo): larga a diversão
+    if (!folk.visit && !isSleep(it) && sleepPressure(this.catalog, folk, this.world.tick) >= 0.9) {
+      const body = (it.effects.hunger ?? 0) > 0 || (it.effects.bladder ?? 0) > 0 || (it.effects.hygiene ?? 0) > 0;
+      if (!body) {
+        this.finish(folk);
+        folk.idleTicks = IDLE_BEFORE_AUTO;
+        return;
+      }
     }
     for (const id of NEED_IDS) {
       if (id === 'ambience') continue;
@@ -1645,7 +1736,7 @@ export class Sim {
     if (def.category === 'friendly' || def.category === 'romantic') countHabit(folk, 'warmth', 1);
     else if (def.category === 'mean') countHabit(folk, 'warmth', -2);
     if (def.skill) {
-      const up = trainSkill(folk, { skill: def.skill } as InteractionDef, mood);
+      const up = trainSkill(folk, { skill: def.skill } as InteractionDef, mood, this.trainBoost(folk));
       if (up !== null && !folk.visit) {
         const skill = this.catalog.skills[def.skill.id];
         this.log('log.skillUp', { name: folk.name, skill: skill?.name ?? def.skill.id, level: up });
@@ -1711,6 +1802,8 @@ export class Sim {
     ensureRelation(this.world, folk.id, other.id);
     const p = acceptChance(this.world, this.catalog, folk, other, def);
     action.accepted = nextFloat(this.world) < p;
+    // bloco 6: quem ouve mostra no balão se está gostando da conversa
+    setThought(other, 'chat', action.accepted ? 'yes' : 'no', this.world.tick, action.accepted ? def.duration : REJECT_MINUTES, folk.id);
     action.phase = 'using';
     action.elapsed = 0;
     folk.path = [];
@@ -1737,6 +1830,10 @@ export class Sim {
     }
     if (mem?.target) addMemory(world, this.catalog, other.id, folk.id, mem.target);
     if (ok && def.special) this.socialSpecial(folk, other, def.special);
+    if (!folk.visit) wishOnTalk(world, this.catalog, this.logger, folk, other.id, def, ok);
+    if (!other.visit) wishOnTalk(world, this.catalog, this.logger, other, folk.id, def, ok);
+    // quem puxou também diz o que achou
+    setThought(folk, 'chat', ok ? 'yes' : 'no', world.tick, 4, other.id);
     this.socialRipples(folk, other, def, ok, mem?.self);
     this.outcomes.push({ fromId: folk.id, toId: other.id, socialId: def.id, accepted: ok, toTarget, toSelf });
     if (this.outcomes.length > 50) this.outcomes.shift();
@@ -2086,6 +2183,7 @@ export class Sim {
       const delay = 30 + nextInt(world, 30);
       world.pendingVisits.push({ neighborId: n.id, at: world.tick + delay, hostId: host.id });
       this.log('log.inviteYes', { ...names, minutes: delay });
+      wishOnHost(world, this.catalog, this.logger, host);
     } else {
       this.log('log.inviteNo', names);
     }
@@ -2188,6 +2286,12 @@ export class Sim {
       month: n.month,
       outfit: 'day',
       habits: {},
+      thought: null,
+      wishes: [],
+      wishDay: -1,
+      spark: 0,
+      inspired: 0,
+      alarm: false,
       skills: { ...n.skills },
       job: null,
       away: null,

@@ -37,7 +37,7 @@ export function levelProgress(xp: number): number {
 /**
  * Um minuto de treino. Devolve o novo nível se subiu, ou null.
  */
-export function trainSkill(folk: Folk, it: InteractionDef, mood: number): number | null {
+export function trainSkill(folk: Folk, it: InteractionDef, mood: number, boost = 1): number | null {
   const gain = it.skill;
   if (!gain) return null;
   // bloco 5: o treino vira hábito (o temperamento muda devagar)
@@ -45,7 +45,8 @@ export function trainSkill(folk: Folk, it: InteractionDef, mood: number): number
   const before = skillLevel(folk, gain.id);
   if (before >= MAX_SKILL_LEVEL) return null;
   // bloco 5: o temperamento acelera (ou freia) o treino e o treino vira hábito
-  const rate = gain.xpPerMinute * (mood < LOW_MOOD ? 0.5 : 1) * temperTraining(folk.temper, gain.id);
+  // bloco 6: no dia inspirado, `boost` dobra o treino
+  const rate = gain.xpPerMinute * (mood < LOW_MOOD ? 0.5 : 1) * temperTraining(folk.temper, gain.id) * boost;
   folk.skills[gain.id] = Math.min(xpForLevel(MAX_SKILL_LEVEL), (folk.skills[gain.id] ?? 0) + rate);
   const after = skillLevel(folk, gain.id);
   return after > before ? after : null;

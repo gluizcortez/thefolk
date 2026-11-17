@@ -31,6 +31,14 @@ import {
   sellValue,
   stillNew,
   tierOf,
+  ALARM_LEAD,
+  INSPIRE_COST,
+  MAX_SPARK,
+  isInspired,
+  thoughtOf,
+  wakeTime,
+  wishParams,
+  refusal,
   skillLevel,
   RAISE_COOLDOWN,
   bossBlocks,
@@ -78,6 +86,7 @@ import type {
   WorldObject,
 } from '../sim';
 import { iconSvg } from './icons';
+import type { IconId } from './icons';
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -215,6 +224,11 @@ export class Hud {
   private wevSig = '';
   private panelButtons = new Map<Exclude<Panel, null>, HTMLButtonElement>();
   private faceEl = el('div', 'folk-face');
+  /** bloco 6: desejos do dia e ânimo */
+  private wishesEl = el('div', 'wishes');
+  private wishesSig = '';
+  /** bloco 6: cartões de aviso (algo quebrou, conta chegou, campainha) */
+  private noticesEl = el('div', 'notices');
   private householdEl = el('div', 'household');
   private householdSig = '';
   private floatsEl = el('div', 'floats');
@@ -257,12 +271,13 @@ export class Hud {
     this.buildPanel();
     this.buildCatalog();
     this.buildBuildPanel();
-    this.root.append(this.wevEl, this.floatsEl, this.toastsEl, this.menuEl, this.bubbleEl, this.tooltipEl);
+    this.root.append(this.wevEl, this.floatsEl, this.noticesEl, this.toastsEl, this.menuEl, this.bubbleEl, this.tooltipEl);
     this.wevEl.hidden = true;
     this.tooltipEl.hidden = true;
     this.menuEl.hidden = true;
     this.bubbleEl.hidden = true;
     ctrl.onToast((text) => this.showToast(text));
+    ctrl.onNotice((text, icon) => this.showNotice(text, icon));
     this.update();
   }
 
@@ -372,7 +387,7 @@ export class Hud {
       this.panelButtons.set(id, b);
       tabs.append(b);
     }
-    body.append(this.nameEl, this.traitsEl, mood, auto, tabs);
+    body.append(this.nameEl, this.traitsEl, mood, this.wishesEl, auto, tabs);
     card.append(face, body);
     this.root.append(card);
   }
@@ -429,6 +444,70 @@ export class Hud {
       light: n(score.light),
       taste: n(score.taste),
     });
+  }
+
+  /**
+   * Bloco 6: os desejos do dia (ícone, texto na dica, cumprido em verde), o
+   * ânimo guardado em losangos e o botão do dia inspirado.
+   */
+  private renderWishes(folk: Folk): void {
+    const world = this.ctrl.world;
+    const catalog = this.ctrl.sim.catalog;
+    const inspired = isInspired(folk, world.tick);
+    const sig = `${folk.id}|${JSON.stringify(folk.wishes)}|${folk.spark}|${inspired ? folk.inspired : 0}`;
+    if (sig === this.wishesSig) return;
+    this.wishesSig = sig;
+    this.wishesEl.replaceChildren();
+    const row = el('div', 'wish-row');
+    row.append(el('span', 'wish-label', t('wish.title')));
+    if (folk.wishes.length === 0) row.append(el('span', 'wish-none', t('wish.none')));
+    for (const w of folk.wishes) {
+      const def = catalog.wishes[w.defId];
+      if (!def) continue;
+      const params = wishParams(world, catalog, w);
+      const text = t(def.label, { other: params.other ?? '', skill: params.skill ? t(params.skill) : '', category: params.category ? t(params.category) : '' });
+      const chip = el('span', `wish${w.done ? ' done' : ''}`);
+      chip.innerHTML = iconSvg(def.icon as IconId, 15);
+      const pct = Math.min(100, Math.round((w.progress / def.amount) * 100));
+      chip.title = w.done ? t('wish.doneTip', { text }) : def.amount > 1 ? t('wish.progressTip', { text, pct }) : text;
+      chip.setAttribute('aria-label', chip.title);
+      row.append(chip);
+    }
+    const spark = el('div', 'spark-row');
+    const pips = el('span', 'spark-pips');
+    pips.title = t('spark.tip', { n: folk.spark, max: MAX_SPARK, cost: INSPIRE_COST });
+    for (let i = 0; i < MAX_SPARK; i++) pips.append(el('span', `pip${i < folk.spark ? ' on' : ''}`));
+    spark.append(el('span', 'wish-label', t('spark.title')), pips);
+    if (inspired) {
+      spark.append(el('span', 'spark-on', t('spark.until', { time: formatClock(folk.inspired) })));
+    } else {
+      const b = el('button', 'btn btn-small btn-spark', t('spark.inspire'));
+      b.disabled = folk.spark < INSPIRE_COST;
+      b.title = t('spark.inspireTip', { cost: INSPIRE_COST });
+      b.addEventListener('click', () => {
+        if (this.ctrl.commandOrExplain({ type: 'inspire', folkId: folk.id })) this.wishesSig = '';
+      });
+      spark.append(b);
+    }
+    this.wishesEl.append(row, spark);
+  }
+
+  private showNotice(text: string, icon: string): void {
+    const card = el('div', 'card notice');
+    const ic = el('span', 'notice-icon');
+    ic.innerHTML = iconSvg(icon as IconId, 16);
+    const close = el('button', 'pill-cancel', '✕');
+    close.title = t('hud.close');
+    close.setAttribute('aria-label', t('hud.close'));
+    close.addEventListener('click', () => card.remove());
+    const time = el('span', 'notice-time', formatClock(this.ctrl.world.tick));
+    const body = el('div', 'notice-body');
+    body.append(el('div', 'notice-text', text), time);
+    card.append(ic, body, close);
+    this.noticesEl.prepend(card);
+    while (this.noticesEl.children.length > 4) this.noticesEl.lastElementChild?.remove();
+    window.setTimeout(() => card.classList.add('out'), 24000);
+    window.setTimeout(() => card.remove(), 24500);
   }
 
   private buildQueue(): void {
@@ -501,6 +580,7 @@ export class Hud {
     }
 
     this.renderRoom(folk);
+    this.renderWishes(folk);
     this.renderQueue();
     this.renderWorkEvent();
     this.renderPanel();
@@ -639,6 +719,13 @@ export class Hud {
       if (it.special === 'payBills') extras.push(formatMoney(debtOf(world)));
       if (it.special === 'fair') extras.push(formatMoney(FAIR.price));
       if (it.skill) extras.push(t(`skill.${it.skill.id}`));
+      // bloco 6: de mau humor ele não topa; o menu já avisa (mas deixa tentar)
+      const why = refusal(this.ctrl.sim.catalog, folk, it, world.tick);
+      if (why) {
+        extras.push(t('refuse.short'));
+        b.classList.add('reluctant');
+        b.title = t(`refuse.${why}`, { name: folk.name });
+      }
       if (extras.length) b.append(el('span', 'menu-extra', extras.join(' · ')));
       if (state.broken && !it.care) {
         b.disabled = true;
@@ -852,7 +939,18 @@ export class Hud {
       const rel = relationOf(this.ctrl.world, folk.id, other.id);
       parts.push(this.relSummary(rel));
     }
+    // bloco 6: o que o balão quer dizer
+    const th = thoughtOf(other, this.ctrl.world.tick);
+    if (th) {
+      const who = th.other !== undefined ? this.nameOf(th.other) : '';
+      parts.push(t(`thought.${th.kind}`, { other: who, need: t(`need.${th.icon}`) }));
+    }
     return parts.join(' · ');
+  }
+
+  private nameOf(id: number): string {
+    const world = this.ctrl.world;
+    return world.folks.find((f) => f.id === id)?.name ?? world.neighbors.find((n) => n.id === id)?.name ?? '?';
   }
 
   private relSummary(rel: Relation | undefined): string {
@@ -1000,7 +1098,7 @@ export class Hud {
             .join(',')}`
         : this.panel === 'relations'
           ? `r|${folk.id}|${Math.floor(world.tick / 10)}|${world.folks.map((f) => f.id).join(',')}|${world.pendingVisits.length}|${world.news.length}`
-          : `j|${this.jobTab}|${folk.id}|${JSON.stringify([folk.job, folk.gig && Math.floor(folk.gig.progress / 5), folk.business && Math.floor(folk.business.quality), world.gigBoard, world.household.funds >= 0])}|${folk.away?.until ?? ''}|${Math.floor(world.tick / 60)}`;
+          : `j|${this.jobTab}|${folk.id}|${folk.alarm}|${JSON.stringify([folk.job, folk.gig && Math.floor(folk.gig.progress / 5), folk.business && Math.floor(folk.business.quality), world.gigBoard, world.household.funds >= 0])}|${folk.away?.until ?? ''}|${Math.floor(world.tick / 60)}`;
     if (sig === this.panelSig) return;
     this.panelSig = sig;
     this.panelEl.hidden = false;
@@ -1315,6 +1413,23 @@ export class Hud {
             return shift ? t('job.nextShift', { when: whenText(shift.start) }) : '';
           })();
       if (status) box.append(el('div', 'job-line strong', status));
+      // bloco 6: despertador na cama, antes do turno
+      const alarm = el('label', 'autonomy alarm');
+      const input = el('input');
+      input.type = 'checkbox';
+      input.checked = folk.alarm;
+      input.addEventListener('change', () => {
+        this.ctrl.commandOrExplain({ type: 'setAlarm', folkId: folk.id, on: input.checked });
+        this.panelSig = '';
+      });
+      const wake = wakeTime(catalog, folk, world.tick) ?? (() => {
+        const shift = nextShift(catalog, folk, world.tick);
+        return shift ? shift.start - ALARM_LEAD : null;
+      })();
+      const alarmText = folk.alarm && wake !== null ? t('job.alarmAt', { time: formatClock(wake) }) : t('job.alarm');
+      alarm.title = t('job.alarmTip');
+      alarm.append(input, el('span', 'switch'), el('span', '', alarmText));
+      box.append(alarm);
 
       const next = career.levels[job.level + 1];
       if (next) {

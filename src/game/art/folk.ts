@@ -30,7 +30,10 @@ export type FolkAnim =
   | 'wave'
   | 'hug'
   | 'kiss'
-  | 'argue';
+  | 'argue'
+  // bloco 6: recusa (cruza os braços e balança a cabeça) e comemoração (desejo cumprido)
+  | 'refuse'
+  | 'cheer';
 
 export type FolkLook = Look;
 
@@ -53,6 +56,8 @@ export interface FolkFrame {
   expr?: Expression;
   /** bloco 5: o que está na mão */
   hold?: HeldProp;
+  /** bloco 6: energia (0..100); com pouca, cara de cansaço e cabeça pesada */
+  energy?: number;
 }
 
 export const FOLK_HEIGHT = 1.8;
@@ -109,15 +114,18 @@ function rest(): Pose {
 }
 
 /** Pose-alvo de cada animação. Ângulos em radianos; frente do corpo = +z. */
-function poseFor(anim: FolkAnim, t: number, mood: number): Pose {
+function poseFor(anim: FolkAnim, t: number, mood: number, energy = 100): Pose {
   const p = rest();
   const breathe = Math.sin(t * 1.8);
+  // bloco 6: cansado, a cabeça pesa e os braços caem
+  const tired = Math.min(1, Math.max(0, (25 - energy) / 20));
   // postura: cabisbaixo quando o humor está ruim, peito aberto quando está ótimo
   const slump = Math.min(1, Math.max(0, (55 - mood) / 40));
   const perky = Math.min(1, Math.max(0, (mood - 70) / 30));
   p.torsoX = 0.02 * breathe + 0.2 * slump - 0.04 * perky;
   // a cabeça fica um pouco erguida para o rosto aparecer para a câmera alta
-  p.headX = -0.12 + 0.24 * slump - 0.06 * perky;
+  p.headX = -0.12 + 0.24 * slump - 0.06 * perky + 0.16 * tired;
+  p.torsoX += 0.08 * tired;
 
   switch (anim) {
     case 'walk': {
@@ -323,6 +331,32 @@ function poseFor(anim: FolkAnim, t: number, mood: number): Pose {
       p.torsoX += 0.1;
       p.headY = 0.12 * Math.sin(t * 5.3);
       p.headX += 0.06;
+      break;
+    }
+    case 'refuse': {
+      // braços cruzados na frente do peito e a cabeça dizendo que não
+      p.armLX = -1.1;
+      p.armRX = -1.1;
+      p.armLOut = -0.5;
+      p.armROut = -0.5;
+      p.elbowL = -1.9;
+      p.elbowR = -1.9;
+      p.headY = 0.42 * Math.sin(t * 9);
+      p.headX -= 0.05;
+      p.torsoX -= 0.06;
+      break;
+    }
+    case 'cheer': {
+      // os dois braços para cima, num pulinho
+      const hop = Math.max(0, Math.sin(t * 8));
+      p.armLX = -2.8;
+      p.armRX = -2.8;
+      p.armLOut = 0.35 + 0.15 * hop;
+      p.armROut = 0.35 + 0.15 * hop;
+      p.elbowL = -0.2;
+      p.elbowR = -0.2;
+      p.hipsY = HIPS_Y + 0.05 * hop;
+      p.headX = -0.25;
       break;
     }
     default: {
@@ -689,7 +723,7 @@ export class FolkModel {
   update(f: FolkFrame): void {
     this.clock += f.dt;
     const k = 1 - Math.exp(-f.dt * 12);
-    const target = poseFor(f.anim, f.time, f.mood);
+    const target = poseFor(f.anim, f.time, f.mood, f.energy);
     const p = this.pose;
     for (const key of Object.keys(p) as (keyof Pose)[]) p[key] += (target[key] - p[key]) * k;
 
@@ -736,7 +770,8 @@ export class FolkModel {
     // expressão: humor + piscadas
     if (this.clock > this.blinkAt + 0.13) this.blinkAt = this.clock + 2 + Math.random() * 3;
     const blinking = this.clock > this.blinkAt;
-    const expr: Expression = f.expr ?? (f.mood >= 62 ? 'happy' : f.mood >= 40 ? 'neutral' : 'sad');
+    const tired = (f.energy ?? 100) < 22;
+    const expr: Expression = f.expr ?? (tired ? 'tired' : f.mood >= 62 ? 'happy' : f.mood >= 40 ? 'neutral' : 'sad');
     this.setFace(lying ? 'neutral' : expr, lying || blinking);
   }
 }

@@ -265,7 +265,7 @@ afinidade e atrito escritos à mão. Guarda-roupa, pijama na cama, roupão no
 chuveiro, traje na hidromassagem, prato, livro, fone e pano na mão. Papo
 autônomo agora larga a conversa quando a campainha toca sem ninguém ir.
 
-## Bloco 6 — Humor que manda: vontade própria, balões e desejos (save v11)
+## Bloco 6 — Humor que manda: vontade própria, balões e desejos (save v11) — feito em 17/11/2026
 
 **Lacuna**: humor só muda desempenho e treino; o folk aceita qualquer ordem,
 não mostra o que pensa e não planeja o sono.
@@ -293,6 +293,19 @@ não mostra o que pensa e não planeja o sono.
 **Pronto quando**: ordens são recusadas em humor ruim; ninguém chega ao
 trabalho sem dormir na simulação de 7 dias; desejos aparecem e se cumprem;
 testes de recusa, plano de sono e desejos.
+
+**Como ficou**: recusa de esforço (treino, estudo, frila, negócio) abaixo de
+um humor que depende do Pique, ou com necessidade do corpo abaixo de 15; o
+motivo vai para o balão e para o aviso, com braços cruzados; o menu marca
+"sem vontade" e a IA também evita. Balões 3D em cartão de papel para
+vontade, conversa (aprovação de quem ouve), bagunça, saudade, desejo e
+despertador; rosto cansado. Sono planejado pela hora do turno (pressão que
+sobe 1h30 antes da hora de deitar, larga a diversão), despertador duas horas
+antes, ninguém dorme apertado. 14 desejos em `data/wishes.ts`, até 3 por dia
+às 6h, sorteados por hash (não mexem no RNG do mundo); cumprir dá diversão,
+conforto e ânimo; com 3 de ânimo, quatro horas de treino em dobro. Cartões
+de aviso para fatos importantes. Simulação de 7 dias com emprego: todo mundo
+sai descansado, sem desmaio nem falta.
 
 ## Bloco 7 — Som, música, fala inventada e saves (sem save novo)
 

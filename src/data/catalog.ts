@@ -11,6 +11,7 @@ import { OBJECTS } from './objects';
 import { SKILLS } from './skills';
 import { SOCIALS } from './socials';
 import { TRAITS } from './traits';
+import { WISHES } from './wishes';
 
 export const CATALOG: Catalog = {
   needs: NEEDS,
@@ -28,4 +29,5 @@ export const CATALOG: Catalog = {
   businesses: BUSINESSES,
   news: NEWS,
   months: MONTHS,
+  wishes: WISHES,
 };

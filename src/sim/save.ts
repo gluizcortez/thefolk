@@ -10,7 +10,7 @@ import { NEUTRAL_TEMPER, fullLook, monthFor, temperFromTraits } from './temper';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 10;
+export const SAVE_VERSION = 11;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -168,6 +168,21 @@ const migrations: Record<number, Migration> = {
     world.folks = (world.folks ?? []).map((f) => Object.assign({ ...born(f.traits), outfit: 'day', habits: {} }, f, { look: fullLook(f.look) }));
     world.neighbors = (world.neighbors ?? []).map((n) => ({ ...born(n.traits), ...n, look: fullLook(n.look) }));
     return { ...save, world: world as unknown as Obj };
+  },
+  // bloco 6: balão, desejos do dia (sorteados no primeiro minuto), ânimo,
+  // dia inspirado e despertador (ligado para quem mora na casa)
+  10: (save) => {
+    const world = { ...(save.world as Obj) };
+    world.folks = ((world.folks as Obj[]) ?? []).map((f) => ({
+      thought: null,
+      wishes: [],
+      wishDay: -1,
+      spark: 0,
+      inspired: 0,
+      alarm: f.visit === null || f.visit === undefined,
+      ...f,
+    }));
+    return { ...save, world };
   },
 };
 

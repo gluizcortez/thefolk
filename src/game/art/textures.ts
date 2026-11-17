@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { FORMAL, HAIR, PAJAMA, PAL, PANTS, SHIRT, SKIN, SWIM, css, seeded, shade } from './palette';
+import { ICON_PATHS, STROKED } from '../../ui/icons';
+import type { IconId } from '../../ui/icons';
 
 // Todas as texturas do jogo são pintadas aqui, por código, em canvases
 // pequenos (cerca de 64 pixels por metro). Cada uma recebe um granulado por
@@ -1162,9 +1164,75 @@ function socialIcon(kind: string): Painter {
   };
 }
 
+/**
+ * Bloco 6: balão de pensamento. Cartão de papel com rabicho (o mesmo jeito
+ * dos ícones de conversa), com o desenho do ícone no meio; a cor da borda e
+ * da tinta diz o tipo: recusa em vermelho com risco, aprovação em verde,
+ * desejo cumprido em dourado, saudade em rosa.
+ */
+function thoughtIcon(kind: string, icon: string): Painter {
+  return (c, w, h) => {
+    c.clearRect(0, 0, w, h);
+    const r = 9;
+    const top = 3;
+    const bottom = h - 11;
+    const paper =
+      kind === 'wish' ? 0xf6e3a4 : kind === 'refuse' ? 0xf4d6cc : kind === 'miss' ? 0xf3dbe0 : kind === 'chat' && icon === 'yes' ? 0xdcefd2 : 0xf4ead8;
+    const ink =
+      kind === 'refuse' || icon === 'no' ? 0xb23a2e : icon === 'yes' ? 0x2f7a3a : kind === 'wish' ? 0x8a5a12 : kind === 'miss' ? 0xb04a66 : kind === 'mess' ? 0x6e5326 : 0x2a2320;
+    c.beginPath();
+    c.moveTo(3 + r, top);
+    c.arcTo(w - 3, top, w - 3, bottom, r);
+    c.arcTo(w - 3, bottom, 3, bottom, r);
+    // rabicho apontando para a cabeça
+    c.lineTo(w / 2 + 6, bottom);
+    c.lineTo(w / 2 - 2, h - 2);
+    c.lineTo(w / 2 - 3, bottom);
+    c.arcTo(3, bottom, 3, top, r);
+    c.arcTo(3, top, w - 3, top, r);
+    c.closePath();
+    c.fillStyle = css(paper);
+    c.fill();
+    c.lineWidth = 3;
+    c.strokeStyle = css(0x2a2320);
+    c.stroke();
+    const d = ICON_PATHS[icon as IconId];
+    if (!d) return;
+    const size = Math.min(w - 16, bottom - top - 10);
+    const s = size / 24;
+    c.save();
+    c.translate((w - size) / 2, top + (bottom - top - size) / 2);
+    c.scale(s, s);
+    const path = new Path2D(d);
+    c.lineJoin = 'round';
+    c.lineCap = 'round';
+    if (STROKED.has(icon as IconId)) {
+      c.lineWidth = 2.6;
+      c.strokeStyle = css(ink);
+      c.stroke(path);
+    } else {
+      c.fillStyle = css(ink);
+      c.fill(path, 'evenodd');
+      c.lineWidth = 1.2;
+      c.strokeStyle = css(ink);
+      c.stroke(path);
+    }
+    c.restore();
+    if (kind === 'refuse') {
+      // risco por cima: "não vou"
+      c.lineWidth = 4;
+      c.strokeStyle = css(0xb23a2e);
+      c.beginPath();
+      c.moveTo(9, bottom - 7);
+      c.lineTo(w - 9, top + 7);
+      c.stroke();
+    }
+  };
+}
+
 // ---------- folks ----------
 
-export type Expression = 'happy' | 'neutral' | 'sad' | 'talk' | 'angry';
+export type Expression = 'happy' | 'neutral' | 'sad' | 'talk' | 'angry' | 'tired';
 
 /**
  * Pele da cabeça, que dá a volta inteira (u = 0.5 é o centro do rosto).
@@ -1207,6 +1275,12 @@ function face(skinIdx: number, hairIdx: number, expr: Expression, eyesClosed: bo
         disc(c, ex + s * 0.2, ey + 0.1, 1.8, 0x33241a);
         fill(c, 0xffffff, Math.round(ex - 1), Math.round(ey - 1.3), 1, 1, 0.9);
         line(c, ex - 3.6, ey - 2.2, ex + 3.6, ey - 2.2, 0x2a1d16, 0.85, 1);
+        if (expr === 'tired') {
+          // bloco 6: pálpebra caída até o meio do olho e olheira
+          oval(c, ex, ey - 1.4, 3.8, 1.9, shade(skin, 0.86));
+          line(c, ex - 3.6, ey - 0.1, ex + 3.6, ey - 0.1, 0x2a1d16, 0.9, 1.2);
+          oval(c, ex, ey + 3, 3.2, 1, shade(skin, 0.62), 0.5);
+        }
       }
       const tilt = expr === 'sad' ? -1.5 : expr === 'happy' ? 0.5 : expr === 'angry' ? 2.2 : 0;
       line(c, ex - 4.2, ey - 5.5 + s * tilt, ex + 4.2, ey - 5.5 - s * tilt, shade(hair, 0.85), 1, 1.8);
@@ -1225,6 +1299,12 @@ function face(skinIdx: number, hairIdx: number, expr: Expression, eyesClosed: bo
     c.beginPath();
     if (expr === 'happy') c.arc(cx, my - 5, 6, 0.2 * Math.PI, 0.8 * Math.PI);
     else if (expr === 'sad' || expr === 'angry') c.arc(cx, my + 5, 5.5, 1.22 * Math.PI, 1.78 * Math.PI);
+    else if (expr === 'tired') {
+      // meio bocejo
+      c.stroke();
+      oval(c, cx, my + 0.5, 2.2, 1.6, 0x5a2420, 0.85);
+      c.beginPath();
+    }
     else if (expr === 'talk') {
       c.stroke();
       oval(c, cx, my + 0.5, 3, 2.2, 0x5a2420);
@@ -1656,6 +1736,9 @@ function specFor(name: string): Spec | undefined {
       return { w: 16, h: 16, paint: skinTex(n), grain: 3 };
     case 'soc':
       return { w: 32, h: 32, paint: socialIcon(parts[1]), grain: 0, smooth: true };
+    case 'th':
+      // bloco 6: th:tipo:ícone
+      return { w: 48, h: 56, paint: thoughtIcon(parts[1], parts[2] ?? ''), grain: 0, smooth: true };
     default:
       return undefined;
   }

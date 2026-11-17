@@ -27,6 +27,31 @@ import type { WallMode } from './art/house';
 const SLOT = 'principal';
 
 /**
+ * Bloco 6: fatos importantes do log viram cartão de aviso (que fica na tela)
+ * em vez do aviso passageiro. Chave (ou começo da chave) e ícone do cartão.
+ */
+const NOTICES: [string, string][] = [
+  ['log.broke', 'no'],
+  ['log.billArrived', 'coin'],
+  ['log.billsDebt', 'coin'],
+  ['log.bailiffComing', 'coin'],
+  ['log.ring', 'house'],
+  ['log.dropIn', 'house'],
+  ['log.fired', 'no'],
+  ['log.promoted', 'spark'],
+  ['log.collapse', 'energy'],
+  ['log.accident', 'bladder'],
+  ['log.allWishes', 'spark'],
+  ['log.missedWork', 'alarm'],
+];
+
+/** Ícone do cartão de aviso para esta linha do log (null = aviso passageiro). */
+export function noticeIcon(key: string): string | null {
+  for (const [k, icon] of NOTICES) if (key === k || key.startsWith(`${k}.`) || (k === 'log.fired' && key === 'log.firedByBoss')) return icon;
+  return null;
+}
+
+/**
  * Ponte entre a simulação e as camadas de fora (cena Phaser e HUD).
  * As camadas de fora só leem `world` e mandam comandos por `command`.
  */
@@ -53,6 +78,7 @@ export class GameController {
   private pausedForEvent: Speed = 0;
   private hadEvent = false;
   private toastListeners: ((text: string) => void)[] = [];
+  private noticeListeners: ((text: string, icon: string) => void)[] = [];
   private seenLog = 0;
 
   constructor() {
@@ -109,6 +135,9 @@ export class GameController {
     if (p === 'collapsed') return t('toast.collapsed', { name });
     if (p === 'queueFull') return t('toast.queueFull');
     if (p === 'visitor') return t('problem.visitor');
+    // bloco 6: a recusa diz por quê (fome, sono, mau humor...)
+    if (p === 'refused') return t(`refuse.${this.sim.lastRefusal ?? 'mood'}`, { name });
+    if (p === 'noSpark') return t('problem.noSpark', { name });
     return t(`problem.${p}`);
   }
 
@@ -204,7 +233,11 @@ export class GameController {
     this.hadEvent = pending;
     const log = this.world.log;
     for (const entry of log) {
-      if (entry.tick > this.seenLog) this.toast(t(entry.key, translateParams(entry.params)));
+      if (entry.tick <= this.seenLog) continue;
+      const text = t(entry.key, translateParams(entry.params));
+      const icon = noticeIcon(entry.key);
+      if (icon) this.notice(text, icon);
+      else this.toast(text);
     }
     if (log.length > 0) this.seenLog = Math.max(this.seenLog, log[log.length - 1].tick);
   }
@@ -226,6 +259,14 @@ export class GameController {
 
   toast(text: string): void {
     for (const cb of this.toastListeners) cb(text);
+  }
+
+  onNotice(cb: (text: string, icon: string) => void): void {
+    this.noticeListeners.push(cb);
+  }
+
+  notice(text: string, icon: string): void {
+    for (const cb of this.noticeListeners) cb(text, icon);
   }
 
   private replaceWorld(world: World): void {
@@ -293,6 +334,9 @@ function translateParams(params?: Record<string, string | number>): Record<strin
   // textos dentro de textos (resultado de evento, notícia) usam os mesmos parâmetros
   const raw: Record<string, string | number> = { ...params, about: params.about ?? params.name };
   for (const [k, v] of Object.entries(params)) out[k] = typeof v === 'string' && hasText(v) ? t(v, raw) : v;
+  // bloco 6: texto dentro de texto com parâmetro que também é chave (desejo "Aprender {skill}")
+  const inner: Record<string, string | number> = { ...out, about: out.about ?? out.name };
+  for (const [k, v] of Object.entries(params)) if (typeof v === 'string' && hasText(v)) out[k] = t(v, inner);
   return out;
 }
 

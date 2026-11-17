@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_SKILL_LEVEL, levelOf, levelProgress, skillLevel, xpForLevel } from '../src/sim';
+import { MAX_SKILL_LEVEL, levelOf, levelProgress, skillLevel, trainSkill, xpForLevel } from '../src/sim';
+import { CATALOG } from '../src/data/catalog';
 import { openField, run } from './helpers';
 
 describe('habilidades', () => {
@@ -25,21 +26,16 @@ describe('habilidades', () => {
     expect(sim.world.log.some((l) => l.key === 'log.skillUp')).toBe(true);
   });
 
-  it('de mau humor o treino rende metade', () => {
-    const happy = openField(6, 6, [{ defId: 'recorder', x: 2, y: 2 }], { x: 2, y: 3 });
-    const grumpy = openField(6, 6, [{ defId: 'recorder', x: 2, y: 2 }], {
-      x: 2,
-      y: 3,
-      needs: { hunger: 5, energy: 30, hygiene: 5, bladder: 40, comfort: 5, fun: 5, social: 5 },
-    });
-    for (const sim of [happy, grumpy]) {
-      const folk = sim.world.folks[0];
-      sim.dispatch({ type: 'setAutonomy', folkId: folk.id, on: false });
-      sim.dispatch({ type: 'queueUse', folkId: folk.id, objectId: sim.world.objects[0].id, interactionId: 'rehearse' });
-      run(sim, 20);
+  it('de mau humor o treino rende metade (bloco 6: quando ele ainda topa treinar)', () => {
+    const it = CATALOG.objects.recorder.interactions.find((i) => i.id === 'rehearse')!;
+    const happy = openField(6, 6, [], { x: 2, y: 3 }).world.folks[0];
+    const grumpy = openField(6, 6, [], { x: 2, y: 3 }).world.folks[0];
+    for (let m = 0; m < 20; m++) {
+      trainSkill(happy, it, 80);
+      trainSkill(grumpy, it, 20);
     }
-    const a = happy.world.folks[0].skills.charisma;
-    const b = grumpy.world.folks[0].skills.charisma;
+    const a = happy.skills.charisma;
+    const b = grumpy.skills.charisma;
     expect(b).toBeGreaterThan(0);
     expect(b).toBeLessThan(a * 0.75);
   });

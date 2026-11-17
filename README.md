@@ -233,6 +233,33 @@ npm run preview  # serve o dist/ localmente
   roupão, na banheira de hidromassagem de traje de banho, e ninguém vai
   trabalhar de pijama. Prato, livro, telefone e pano de limpeza aparecem na
   mão de quem come, lê, liga e limpa.
+- **Humor que manda (bloco 6)**: de mau humor, ou com fome, sono, banheiro,
+  banho ou conforto no fim, o folk **recusa** ordens de esforço (estudar,
+  treinar, frila, negócio): cruza os braços, balança a cabeça e o balão
+  mostra o motivo; o menu já marca "sem vontade". Comer, dormir e limpar ele
+  sempre topa. Pique alto aguenta mais antes de recusar. A IA também não pega
+  no pesado de mau humor.
+- **Balões (bloco 6)**: cartõezinhos sobre a cabeça mostram o que o folk quer
+  (necessidade baixa), se está gostando da conversa (verde ou vermelho),
+  reclamação de bagunça por perto (mais em quem tem Ordem), saudade de alguém
+  querido que não aparece há dois dias, desejo cumprido e despertador. Passe
+  o mouse no folk para ler o balão em palavras. Cansado, o rosto fica de
+  pálpebra caída e a cabeça pesa.
+- **Sono com horário (bloco 6)**: quem trabalha calcula a hora de deitar
+  para acordar descansado e larga a diversão quando passa da hora; o
+  **despertador** (no painel de trabalho, ligado por padrão) toca duas horas
+  antes do turno. Ninguém pega no sono apertado para o banheiro ou com fome.
+- **Desejos do dia e ânimo (bloco 6)**: às 6h cada morador sorteia até três
+  desejos pequenos pelo temperamento e pelos traços (papo ou carinho com
+  alguém, cozinhar, ler, jogar, suar a camisa, aprender uma habilidade, banho
+  demorado, telefonar, receber visita, arrumar a casa, comprar algo novo).
+  Aparecem no cartão do folk; a IA procura cumpri-los. Cumprir dá diversão,
+  conforto e um ponto de **ânimo** (losangos, até 9; os três do dia dão um a
+  mais). Com 3 de ânimo, **Inspirar** dá quatro horas de treino em dobro sem
+  recusa.
+- **Cartões de aviso (bloco 6)**: algo quebrou, conta chegou, campainha,
+  promoção, demissão, desmaio e falta ao trabalho viram cartões no canto
+  direito, que ficam até fechar (ou uns 25 segundos).
 - **Cores**: sofás, poltronas, cadeiras e camas têm cores para escolher no
   rodapé do catálogo antes de pôr no chão.
 - **Depreciação e desfazer**: no dia da compra o objeto vale o que custou (e
@@ -453,6 +480,18 @@ Decisões principais do núcleo:
   `formal`, `sleepwear` e `swimwear`; `TraitDef.temper` diz para onde o
   traço puxa; `InteractionDef` ganhou `dress`, `wear` e `hold`. Save v10.
   A tela fica em `ui/creator.ts` e o retrato em `GameView.portrait`.
+- **Vontade, balões e desejos (bloco 6)** moram em `sim/will.ts` (`isEffort`,
+  `refusal`, `setThought`/`thoughtOf`/`think`, `sleepPressure`, `wakeTime`,
+  `ALARM_LEAD`, ânimo e `inspire`; `hashFloat` tira sorte de um hash sem
+  andar o RNG do mundo) e `sim/wishes.ts` (`rollWishes`, ganchos
+  `wishOnUse/Talk/Tidy/Buy/Host`, puxões da IA). Os desejos ficam em
+  `data/wishes.ts`. `Folk` ganhou `thought`, `wishes`, `wishDay`, `spark`,
+  `inspired` e `alarm`; comandos `inspire` e `setAlarm`; problemas
+  `refused` (motivo em `Sim.lastRefusal`) e `noSpark`. `isSleep` saiu de
+  `sim.ts` para `will.ts`. Na tela: balão 3D `th:<tipo>:<ícone>` em
+  `art/textures.ts` (desenho dos ícones em `ui/icons.ts`, `ICON_PATHS`),
+  gestos `refuse`/`cheer` e cara `tired` em `art/folk.ts`, cartões de aviso
+  por `noticeIcon` em `game/controller.ts`. Save v11.
 - **Catálogo e atividades a dois (bloco 4)** moram em `sim/furnish.ts`.
   `ObjectDef` ganhou `tier` (0, 1, 2), `line` (a função que agrupa as faixas;
   frilas e negócios aceitam qualquer objeto da mesma `line`), `colors` e
@@ -558,6 +597,11 @@ Decisões principais do núcleo:
   `ServiceOrder` e `placeOrder`/`servicePrice` em `sim/services.ts`.
 - **Comida que gasta estoque**: `portions` (despensa) ou `takeout: true`
   (comida pedida) na interação; `pantry` no objeto diz quantas porções cabem.
+- **Desejo do dia**: uma entrada em `src/data/wishes.ts` (tipo, peso, puxão
+  por eixo e por traço, interações ou categoria, quantidade), o texto
+  `wish.<id>` em i18n e, se o ícone for novo, o desenho em `ui/icons.ts`.
+- **Fato que vira cartão de aviso**: a chave do log e o ícone em `NOTICES`
+  (`game/controller.ts`).
 - **Mudou o formato do `World`?** Aumente `SAVE_VERSION` em `src/sim/save.ts` e
   registre a migração no mesmo arquivo.
 
@@ -583,7 +627,23 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
 - **Bloco 5 (feito)**: criar família de 1 a 8, temperamento em cinco eixos
   que muda com o hábito, mês de nascimento com afinidade, corpos, rostos,
   cortes, roupas por ocasião, guarda-roupa e objetos na mão (save v10).
-- Próximo: bloco 6, humor que manda (recusa, balões, desejos, sono).
+- **Bloco 6 (feito)**: recusa de esforço com motivo e gesto, balões de
+  vontade, conversa, bagunça e saudade, cara de cansaço, sono planejado com
+  despertador, desejos do dia, ânimo e dia inspirado, cartões de aviso (save v11).
+- Próximo: bloco 7, som, música, fala inventada e vários saves.
+
+## Limitações conhecidas do bloco 6
+
+- A recusa vale só para ordens de esforço (treinar, estudar, frila, negócio);
+  ir ao trabalho e cuidar da casa nunca são recusados.
+- O gesto de recusa e a comemoração duram uns dois segundos de tempo real e
+  só andam com o jogo rodando (com o jogo pausado, tocam ao despausar).
+- O desejo de compra se cumpre ao comprar, mesmo que a compra seja desfeita
+  depois. O de receber visita conta quando o convidado aceita.
+- Saudade é só balão (sem aviso no log); o balão não mostra o rosto de quem
+  faz falta, só o nome na dica.
+- O despertador só toca antes de turno de emprego (frila e negócio não têm
+  horário). Sem emprego, há só um pouco de sono de madrugada.
 
 ## Limitações conhecidas do bloco 5
 
