@@ -22,7 +22,7 @@ import {
   writeSlot,
 } from '../platform/slots';
 import { Sim, createWorld, isBuildCommand } from '../sim';
-import type { Command, FamilyDraft, Folk, OpeningKind, Rotation, Side, Speed, World } from '../sim';
+import type { Command, FamilyDraft, FenceKind, Folk, OpeningKind, Rotation, Side, Speed, World } from '../sim';
 import { MAX_LEVELS, levelOfRow } from '../sim';
 import { cleanName, familyProblem } from '../sim';
 
@@ -32,13 +32,18 @@ export type Mode = 'live' | 'buy' | 'build';
  * Ferramenta do modo construção. Bloco 12: meia parede, coluna, escada,
  * telhado e os estilos de porta e janela (cada um é uma ferramenta).
  */
-export type BuildTool = 'wall' | 'half' | 'erase' | 'column' | 'stairs' | OpeningKind | 'floor' | 'paint' | 'roof';
+export type BuildTool = 'wall' | 'half' | 'erase' | 'column' | 'stairs' | OpeningKind | 'floor' | 'paint' | 'roof' | FenceKind | 'yard';
+
+/** Bloco 13: ferramentas que se arrastam de vértice a vértice (paredes, cercas, derrubar). */
+export function isLineTool(tool: BuildTool): boolean {
+  return tool === 'wall' || tool === 'half' || tool === 'erase' || tool === 'fence' || tool === 'lowwall';
+}
 
 /** Bloco 12: ferramentas que abrem vão numa parede. */
 export const OPENING_TOOLS: OpeningKind[] = ['door', 'doorGlass', 'doorDouble', 'arch', 'window', 'windowTall', 'windowHigh'];
 
 export function isOpeningTool(tool: BuildTool): tool is OpeningKind {
-  return (OPENING_TOOLS as string[]).includes(tool);
+  return (OPENING_TOOLS as string[]).includes(tool) || tool === 'gate';
 }
 
 /** O que está sendo posto no chão no modo compra. */

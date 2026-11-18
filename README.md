@@ -466,6 +466,23 @@ npm run preview  # serve o dist/ localmente
 - **Peças novas (bloco 12)**: meia parede (fecha o passo sem dividir o
   cômodo), coluna nos cantos, porta de vidro, porta dupla, arco (passagem sem
   folha), janela alta (+6 de ambiente) e basculante (+2).
+- **Quintal (bloco 13)**: aba Quintal no modo construção, só no térreo. A
+  piscina se cava tile a tile (35 ⟡ o tile; "Grama (aterrar)" desfaz); dentro
+  dela só vão a escadinha (220 ⟡, onde se entra e sai para nadar) e, na borda,
+  o trampolim (380 ⟡). Nadar diverte e treina Fôlego, com roupa de banho;
+  mergulhar numa piscina sem escadinha assusta e cansa. Caminho de pedra e
+  deck de madeira enfeitam o chão de fora. Cerca de ripas, mureta e portão:
+  arraste de um canto a outro; ninguém passa pela cerca, só pelo portão
+  (num trecho de cerca ou num vão deixado nela), e cerca não fecha cômodo.
+- **Jardim vivo (bloco 13)**: canteiro de flores, roseira, cerca viva,
+  horta, laranjeira e ipê (categoria Ao ar livre) nascem mudas, crescem,
+  florescem, pedem água, murcham e morrem sem rega; o vaso de dentro de casa
+  também. Regar, cheirar flor, colher (horta e laranjeira enchem a despensa)
+  e replantar a planta morta. De madrugada sai a previsão: em 30% dos dias
+  chove por algumas horas, molhando o que está ao ar livre (o vaso de dentro,
+  não). Plantas bonitas somam ao ambiente do cômodo. O jardineiro Tião
+  Mangueira (telefone, serviços, 30 ⟡ por visita) passa às 8h, rega e colhe.
+  Churrasqueira, mesa de jardim para três e rede completam o quintal.
 
 ## Deploy na Vercel
 
@@ -692,6 +709,17 @@ Decisões principais do núcleo:
   `sim/roof.ts` (`roofMask`, `roofHeights`). Na tela, cada andar é um grupo em
   `House` (subido `LEVEL_H` e trazido de volta para cima do térreo) e
   `sceneZ` converte linha do grid em posição de cena.
+- **Quintal (bloco 13)**: pisos com `yard` (só no térreo) e `water` (a
+  piscina, que `buildNav` bloqueia); `ObjectDef.pool` ('in' na água, 'edge' na
+  borda) e `sim/yard.ts` (`poolProblem`, `poolOf`, `poolHasLadder`). Cercas são
+  `EdgeKind` 'fence' | 'lowwall' | 'gate': `splitsRoom` ignora cerca e meia
+  parede, `isDoorway` deixa passar o portão; o comando `buildFences` traça a
+  linha. Jardim em `sim/garden.ts`: `WorldObject.plant` (água, crescimento,
+  saúde, frutos), `gardenHour` a cada hora, `World.rain` sorteado por
+  `rollWeather` às 4h, `harvest` usa a despensa; o jardineiro é um prestador
+  como a faxineira (`household.gardener`, `services.ts`). Na tela,
+  `game/art/yard.ts` desenha a planta pelo estado e `updateRain` faz os riscos
+  de chuva (fora do `worldRoot`, que é limpo a cada novo jogo).
 - **Bebês e crianças (bloco 11)** moram em `sim/kids.ts` (regras puras:
   necessidades do bebê, herança, horário da escola, nota). `Folk` ganhou
   `age` ('baby' | 'child'; adulto não tem) e `kid` (nascimento, quando cresce,
@@ -889,6 +917,11 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
   quatro águas com cor, meia parede, coluna, porta de vidro, porta dupla,
   arco, janela alta e basculante, botões de andar e clique que não atravessa
   parede (save v16).
+- **Bloco 13 (feito)**: piscina cavada com escadinha e trampolim, nadar e
+  mergulhar com roupa de banho, cerca, mureta e portão que bloqueiam o
+  caminho, caminho de pedra e deck, jardim vivo que cresce, floresce, murcha
+  e dá frutos para a despensa, chuva, jardineiro, churrasqueira, mesa de
+  jardim e rede (save v17).
 - Próximo: bloco 13, quintal: piscina, cercas e jardim vivo.
 
 ## Limitações conhecidas do bloco 12

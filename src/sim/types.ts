@@ -24,7 +24,7 @@ export interface Vec {
 
 export type Side = 'N' | 'E' | 'S' | 'W';
 
-export type Pose = 'stand' | 'sit' | 'lie' | 'dance';
+export type Pose = 'stand' | 'sit' | 'lie' | 'dance' | 'swim' | 'dive';
 
 export interface InteractionDef {
   id: string;
@@ -104,6 +104,8 @@ export interface InteractionDef {
   atTable?: boolean;
   /** bloco 4: só dá com o céu escuro (luneta) */
   night?: boolean;
+  /** bloco 13: só com a planta florida (cheirar as flores) */
+  bloom?: boolean;
   /** bloco 5: troca a roupa de sempre do folk (guarda-roupa) */
   dress?: Outfit;
   /** bloco 5: roupa só enquanto dura (pijama na cama, roupão no chuveiro) */
@@ -265,7 +267,11 @@ export interface DuoDef {
   romance?: number;
 }
 
-export type CareKind = 'clean' | 'repair' | 'service' | 'empty' | 'dishes' | 'dump';
+/**
+ * Bloco 13: 'water' rega a planta, 'harvest' colhe os frutos (vão para a
+ * despensa) e 'replant' replanta o que secou de vez.
+ */
+export type CareKind = 'clean' | 'repair' | 'service' | 'empty' | 'dishes' | 'dump' | 'water' | 'harvest' | 'replant';
 
 /** Bagunça solta: prato sujo, poça, lixo no chão. */
 export type MessKind = 'plate' | 'puddle' | 'trash' | 'paper';
@@ -303,7 +309,9 @@ export type ObjectCategory =
   | 'decor'
   | 'lighting'
   | 'hobbies'
-  | 'games';
+  | 'games'
+  // bloco 13: piscina, jardim e quintal
+  | 'outdoor';
 
 /** Bloco 4: faixa de preço (0 = barato, 1 = médio, 2 = caro). */
 export type Tier = 0 | 1 | 2;
@@ -362,6 +370,44 @@ export interface ObjectDef {
   arch?: boolean;
   /** bloco 11: berço (bebê nasce ou chega só com um berço livre) */
   crib?: boolean;
+  /** bloco 13: planta viva (cresce, pede água, murcha, floresce, dá fruto) */
+  plant?: PlantDef;
+  /**
+   * bloco 13: peça de piscina. 'in' = fica dentro da água (escadinha), com
+   * chão firme do lado de uso; 'edge' = fica no chão com a água logo atrás
+   * (trampolim).
+   */
+  pool?: 'in' | 'edge';
+}
+
+/** Bloco 13: tipo de planta (muda o desenho e o jeito de crescer). */
+export type PlantKind = 'pot' | 'flower' | 'shrub' | 'crop' | 'tree';
+
+/** Bloco 13: como uma planta vive. */
+export interface PlantDef {
+  kind: PlantKind;
+  /** água que perde por hora (de 100); no quintal, a chuva repõe */
+  thirst: number;
+  /** horas de jogo para crescer de muda a adulta (0 = já vem crescida) */
+  grow: number;
+  /** quanto soma ao ambiente quando adulta, viçosa e florida */
+  bloom: number;
+  /** horta e pomar: porções que cada colheita dá e horas para amadurecer */
+  fruit?: { portions: number; hours: number };
+}
+
+/** Bloco 13: estado de uma planta viva. */
+export interface PlantState {
+  /** 0 a 100: seca abaixo de 25 */
+  water: number;
+  /** 0 a 100: muda → adulta */
+  growth: number;
+  /** 0 a 100: murcha abaixo de 40; em 0, secou de vez */
+  health: number;
+  /** porções prontas para colher */
+  fruit: number;
+  /** 0 a 100: quanto falta para a próxima leva de frutos */
+  ripen: number;
 }
 
 export type ObjectLayer = 'wall' | 'floor' | 'ceiling';
@@ -746,10 +792,10 @@ export interface Visit {
 // ---------- Bloco 2: despensa, correio e serviços ----------
 
 /** Quem trabalha para a casa: entregador, faxineira, técnico, oficial de penhora. */
-export type ServiceKind = 'courier' | 'maid' | 'repair' | 'bailiff' | 'social';
+export type ServiceKind = 'courier' | 'maid' | 'repair' | 'bailiff' | 'social' | 'gardener';
 
 /** O que dá para pedir pelo telefone. */
-export type ServiceOrder = 'groceries' | 'takeout' | 'maid' | 'repair';
+export type ServiceOrder = 'groceries' | 'takeout' | 'maid' | 'repair' | 'gardener';
 
 export interface ServiceVisit {
   kind: ServiceKind;
@@ -826,6 +872,10 @@ export interface FloorDef {
   cover?: string;
   /** bloco 12: sem piso (vão de andar de cima): ninguém pisa, não aparece no catálogo */
   void?: boolean;
+  /** bloco 13: água de piscina (ninguém anda; só se nada, pela escadinha) */
+  water?: boolean;
+  /** bloco 13: piso do quintal (piscina, caminho, deck): só no térreo, fica na aba Quintal */
+  yard?: boolean;
 }
 
 /** Revestimento de uma face de parede (papel, azulejo, tijolo...). */
@@ -886,10 +936,26 @@ export interface Catalog {
  * parede (fecha a passagem mas não divide cômodo), porta de vidro, porta
  * dupla, arco (passagem sem folha), janela alta e basculante.
  */
-export type EdgeKind = 'wall' | 'half' | 'door' | 'doorGlass' | 'doorDouble' | 'arch' | 'window' | 'windowTall' | 'windowHigh';
+export type EdgeKind =
+  | 'wall'
+  | 'half'
+  | 'door'
+  | 'doorGlass'
+  | 'doorDouble'
+  | 'arch'
+  | 'window'
+  | 'windowTall'
+  | 'windowHigh'
+  // bloco 13: cerca de ripas, mureta e portão (não dividem cômodo)
+  | 'fence'
+  | 'lowwall'
+  | 'gate';
 
-/** Bloco 12: o que vai num vão de parede já levantada. */
-export type OpeningKind = Exclude<EdgeKind, 'wall' | 'half'>;
+/** Bloco 13: o que se levanta arrastando no quintal. */
+export type FenceKind = 'fence' | 'lowwall';
+
+/** Bloco 12: o que vai num vão de parede já levantada (bloco 13: o portão vai na cerca). */
+export type OpeningKind = Exclude<EdgeKind, 'wall' | 'half' | FenceKind>;
 
 /**
  * Bloco 12: escada. Sobe do andar `level` para o de cima, na direção `dir`
@@ -973,6 +1039,8 @@ export interface WorldObject {
   snacks?: number;
   /** bloco 11: bebê que dorme neste berço */
   baby?: number;
+  /** bloco 13: planta viva */
+  plant?: PlantState;
 }
 
 export interface ObjectState {
@@ -1230,6 +1298,8 @@ export interface Household {
   orders: Order[];
   /** faxineira contratada (vem todo dia de manhã) */
   maid: boolean;
+  /** bloco 13: jardineiro vem toda manhã */
+  gardener: boolean;
   /** último dia (índice) em que o jornal chegou */
   paperDay: number;
   /** dia em que alguém da casa leu o jornal (classificados abertos) */
@@ -1287,11 +1357,19 @@ export interface World {
   lastParty: PartyResult | null;
   /** bloco 9: telefone tocando (ou em ligação recebida) */
   call: PhoneCall | null;
+  /** bloco 13: chuva marcada para hoje (de tal tick a tal tick), ou nenhuma */
+  rain: Rain | null;
 }
 
 // ---------- Bloco 9: assuntos, rodas, telefone e festas ----------
 
 /** Um assunto de conversa. */
+/** Bloco 13: uma pancada de chuva. */
+export interface Rain {
+  from: number;
+  to: number;
+}
+
 export interface TopicDef {
   id: string;
   /** chave de texto */
@@ -1390,7 +1468,7 @@ export type Command =
   | { type: 'queueGoto'; folkId: number; x: number; y: number }
   | { type: 'queueTidy'; folkId: number; messId: number }
   | { type: 'callService'; folkId: number; service: ServiceOrder }
-  | { type: 'dismissService'; service: 'maid' }
+  | { type: 'dismissService'; service: 'maid' | 'gardener' }
   | { type: 'answerDoor'; folkId: number; otherId: number; welcome: boolean }
   | { type: 'cancel'; folkId: number; actionId: number }
   | { type: 'setAutonomy'; folkId: number; on: boolean }
@@ -1427,6 +1505,8 @@ export type Command =
   | { type: 'placeOpening'; edge: string; kind: OpeningKind }
   // bloco 12: meia parede, escada, coluna e telhado
   | { type: 'buildHalfWalls'; x0: number; y0: number; x1: number; y1: number }
+  // bloco 13: cerca e mureta (o portão vai por placeOpening)
+  | { type: 'buildFences'; x0: number; y0: number; x1: number; y1: number; kind: FenceKind }
   | { type: 'placeStairs'; x: number; y: number; dir: Side }
   | { type: 'removeStairs'; x: number; y: number }
   | { type: 'toggleColumn'; x: number; y: number }

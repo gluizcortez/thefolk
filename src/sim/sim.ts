@@ -1,6 +1,8 @@
 import { chooseAutonomous } from './ai';
 import type { BuildCommand, BuildProblem, GridChange } from './build';
 import { applyChange, checkGrid, invertChange, isBuildCommand, planBuild, touchesNav } from './build';
+import { WEATHER_HOUR, freshPlant, gardenHour, harvest, replant, rollWeather } from './garden';
+import { poolHasLadder, poolOf } from './yard';
 import {
   AWAY_DECAY,
   CALL_AHEAD,
@@ -168,6 +170,9 @@ import {
   deliverPaper,
   doorTaken,
   finishMaid,
+  finishGardener,
+  hasPlants,
+  GARDENER,
   freshPaper,
   frontDoor,
   interactionReady,
@@ -567,6 +572,13 @@ export class Sim {
       case 'callService':
         return this.callService(cmd.folkId, cmd.service);
       case 'dismissService': {
+        // bloco 13: o jardineiro também se dispensa pelo telefone
+        if (cmd.service === 'gardener') {
+          if (!this.world.household.gardener) return this.fail('nothingToDo');
+          this.world.household.gardener = false;
+          this.log('log.gardenerDismissed');
+          return true;
+        }
         if (!this.world.household.maid) return this.fail('nothingToDo');
         this.world.household.maid = false;
         this.log('log.maidDismissed');
@@ -842,6 +854,8 @@ export class Sim {
     if (!check.ok) return this.fail(check.problem ?? 'invalid');
     const obj: WorldObject = { id: this.world.nextId++, defId, x, y, rot, paid: def.price, state: freshState(), bought: this.world.tick, used: 0, uses: {} };
     if (color && def.colors?.includes(color)) obj.color = color;
+    // bloco 13: planta comprada chega muda (o vaso já vem crescido)
+    if (def.plant) obj.plant = freshPlant(def.plant);
     this.world.objects.push(obj);
     this.world.household.funds -= def.price;
     this.pushBuyUndo({ kind: 'buy', objectId: obj.id, cost: def.price });
@@ -1004,6 +1018,9 @@ export class Sim {
       if (shining(obj, def) || playing(obj, def)) world.household.lightMinutes++;
     }
     const minute = world.tick % MINUTES_PER_DAY;
+    // bloco 13: o tempo do dia (chuva) e o jardim, de hora em hora
+    if (minute === WEATHER_HOUR * 60) rollWeather(world);
+    if (minute % 60 === 30) gardenHour(world, this.catalog, this.logger);
     this.stepServices(minute);
     // bloco 9: telefone tocando e festa
     this.stepPhone();
@@ -1102,6 +1119,10 @@ export class Sim {
     if (minute === PAPER_HOUR * 60) deliverPaper(world);
     const anyone = this.residents().length > 0;
     if (minute === MAID.hour * 60 && house.maid && anyone) this.spawnService('maid', null, MAID.fee);
+    // bloco 13: jardineiro de manhã cedo, se houver planta para cuidar
+    if (minute === GARDENER.hour * 60 && house.gardener && anyone && hasPlants(world, this.catalog)) {
+      this.spawnService('gardener', null, GARDENER.fee);
+    }
     if (minute === BAILIFF_HOUR * 60 && anyone && seizableBills(world).length > 0) {
       if (this.spawnService('bailiff', null, 0)) this.log('log.bailiffComing');
     }
@@ -1875,6 +1896,10 @@ export class Sim {
         else if (it.special) this.resolveHouseSpecial(folk, it, action);
         let next: Chain = null;
         if (used && usedDef) {
+          // bloco 13: colher vai para a despensa; replantar volta a muda; pular sem escadinha cansa
+          if (it.care === 'harvest') harvest(this.world, this.catalog, this.logger, folk, used, usedDef);
+          else if (it.care === 'replant') replant(used, usedDef);
+          if (it.pose === 'dive') this.afterDive(folk, used, usedDef);
           next = it.care ? afterCare(used, it) : afterUse(this.world, this.catalog, this.logger, folk, used, usedDef, it);
         }
         this.finish(folk);
@@ -1885,6 +1910,19 @@ export class Sim {
         this.maybeAbandon(folk, it);
       }
     }
+  }
+
+  /**
+   * Bloco 13: pulou do trampolim. Sem escadinha na piscina, sai da água a
+   * duras penas (no bloco 14, isso vira perigo de verdade).
+   */
+  private afterDive(folk: Folk, obj: WorldObject, def: ObjectDef): void {
+    const pool = poolOf(this.world, this.catalog, obj, def);
+    if (pool.length === 0 || poolHasLadder(this.world, this.catalog, pool)) return;
+    folk.needs.energy = Math.max(0, folk.needs.energy - 20);
+    folk.needs.comfort = Math.max(0, folk.needs.comfort - 25);
+    folk.needs.fun = Math.max(0, folk.needs.fun - 15);
+    if (!folk.visit) this.log('log.noLadder', { name: folk.name });
   }
 
   /**
@@ -2755,7 +2793,11 @@ export class Sim {
       this.stepSocialWorker(folk);
       return;
     }
-    const tooLong = sv.kind === 'maid' && this.world.tick - sv.started >= MAID.hours * 60;
+    // quem entrou sem passar pela porta (chave, teste) começa a contar agora
+    if (sv.started < 0) sv.started = this.world.tick;
+    const tooLong =
+      (sv.kind === 'maid' && this.world.tick - sv.started >= MAID.hours * 60) ||
+      (sv.kind === 'gardener' && this.world.tick - sv.started >= GARDENER.hours * 60);
     const task = tooLong ? null : serviceTask(this.world, this.catalog, folk, this.nav);
     if (task) {
       sv.done++;
@@ -2765,6 +2807,8 @@ export class Sim {
     }
     if (sv.kind === 'maid') {
       finishMaid(this.world, this.catalog, this.logger, folk);
+    } else if (sv.kind === 'gardener') {
+      finishGardener(this.world, this.logger, folk);
     } else if (sv.kind === 'repair') {
       const fee = repairBill(sv, this.world.tick);
       this.world.household.funds -= fee;

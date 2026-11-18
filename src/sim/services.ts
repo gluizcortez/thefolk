@@ -40,6 +40,8 @@ export const FAIR = { portions: 12, price: 36, day: 5, from: 6, to: 10 };
 export const TAKEOUT = { portions: 3, price: 30, promise: 60, tip: 4, from: 10, to: 23 };
 /** faxineira: diária, hora em que chega e quanto tempo fica no máximo */
 export const MAID = { fee: 45, hour: 9, hours: 3 };
+/** bloco 13: jardineiro: diária, hora em que chega, horas no máximo e a partir de quanto rega */
+export const GARDENER = { fee: 30, hour: 8, hours: 2, waterBelow: 70 };
 /** técnico: visita mais hora trabalhada */
 export const REPAIR = { base: 40, hourly: 20, from: 8, to: 18 };
 /** dias para pagar a conta; depois disso mais tantos dias até a penhora */
@@ -57,6 +59,7 @@ export const RING_WAIT: Record<ServiceKind | 'guest', number> = {
   repair: 15,
   bailiff: 0,
   social: 0,
+  gardener: 15,
 };
 /** jornais velhos acumulados na calçada, no máximo */
 const MAX_PAPERS = 4;
@@ -335,6 +338,8 @@ export function servicePrice(order: ServiceOrder): number {
       return TAKEOUT.price;
     case 'maid':
       return MAID.fee;
+    case 'gardener':
+      return GARDENER.fee;
     case 'repair':
       return REPAIR.base;
   }
@@ -361,6 +366,7 @@ export function orderProblem(world: World, order: ServiceOrder): OrderProblem {
     if (house.orders.some((o) => o.kind === 'takeout')) return 'already';
   }
   if (order === 'maid' && house.maid) return 'already';
+  if (order === 'gardener' && house.gardener) return 'already';
   if (order === 'repair' && house.orders.some((o) => o.kind === 'repair')) return 'already';
   return null;
 }
@@ -382,6 +388,11 @@ export function placeOrder(world: World, log: Logger, folk: Folk, order: Service
   if (order === 'maid') {
     house.maid = true;
     log('log.maidHired', { name: folk.name, fee: formatMoney(MAID.fee) });
+    return true;
+  }
+  if (order === 'gardener') {
+    house.gardener = true;
+    log('log.gardenerHired', { name: folk.name, fee: formatMoney(GARDENER.fee) });
     return true;
   }
   let at: number;
@@ -490,6 +501,10 @@ export function serviceTask(world: World, catalog: Catalog, folk: Folk, nav: Nav
       } else if (kind === 'repair') {
         if (it.care === 'repair') score = 100;
         else if (it.care === 'service' && s.wear >= 35) score = 40 + s.wear / 2;
+      } else if (kind === 'gardener' && obj.plant) {
+        // bloco 13: rega o que tem sede e colhe o que amadureceu (não replanta: isso custa)
+        if (it.care === 'water' && obj.plant.water < GARDENER.waterBelow) score = 40 + (100 - obj.plant.water) / 2;
+        else if (it.care === 'harvest') score = 50;
       }
       if (score <= 0) continue;
       if (world.folks.some((f) => f !== folk && f.queue[0]?.objectId === obj.id && f.queue[0].phase !== 'queued')) continue;
@@ -519,6 +534,19 @@ export function finishMaid(world: World, catalog: Catalog, log: Logger, folk: Fo
   if (sv.done >= 6 && sv.blame && nextFloat(world) < 0.6) {
     createNews(world, catalog, log, 'messyHouse', sv.blame, folk.id);
   }
+}
+
+/** Bloco 13: o jardineiro terminou: a casa paga a diária. */
+export function finishGardener(world: World, log: Logger, folk: Folk): void {
+  const sv = folk.visit?.service;
+  if (!sv) return;
+  world.household.funds -= sv.fee;
+  log('log.gardenerDone', { name: folk.name, done: sv.done, fee: formatMoney(sv.fee) });
+}
+
+/** Bloco 13: tem planta no lote (o jardineiro só vem se tiver)? */
+export function hasPlants(world: World, catalog: Catalog): boolean {
+  return world.objects.some((o) => !!catalog.objects[o.defId]?.plant);
 }
 
 /** O técnico terminou: cobra a visita mais as horas trabalhadas. */

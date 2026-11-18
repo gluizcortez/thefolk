@@ -7,12 +7,13 @@ import { computeRooms, lightsIn } from './rooms';
 import { START_PANTRY } from './services';
 import type { NeighborSeed, RelationSeed } from './world';
 import { freshState } from './upkeep';
+import { freshPlant } from './garden';
 import { NEUTRAL_TEMPER, fullLook, monthFor, temperFromTraits } from './temper';
 import { seedInterests } from './topics';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 16;
+export const SAVE_VERSION = 17;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -235,6 +236,20 @@ const migrations: Record<number, Migration> = {
   15: (save) => {
     const world = { ...(save.world as Obj) } as unknown as World;
     world.grid = storied(world.grid);
+    return { ...save, world: world as unknown as Obj };
+  },
+  // bloco 13: quintal. A casa ganha o campo do jardineiro (não contratado) e
+  // o bairro, o Tião; os vasos que já existiam viram plantas vivas, adultas e
+  // regadas; o dia começa sem chuva marcada.
+  16: (save, ctx) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    world.household = { ...world.household, gardener: world.household?.gardener ?? false };
+    world.rain = world.rain ?? null;
+    world.objects = (world.objects ?? []).map((o) => {
+      const def = ctx.catalog?.objects[o.defId];
+      return def?.plant && !o.plant ? { ...o, plant: freshPlant(def.plant, true) } : o;
+    });
+    addMissingNeighbors(world, ctx);
     return { ...save, world: world as unknown as Obj };
   },
 };

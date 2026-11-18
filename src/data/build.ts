@@ -18,6 +18,11 @@ const floors: FloorDef[] = [
   { id: 'parquet', name: 'floor.parquet', price: 15, ambience: 6 },
   // bloco 12: o vão do andar de cima (sem piso); pintar com ele tira o piso
   { id: 'void', name: 'floor.void', price: 0, outdoor: true, void: true },
+  // bloco 13: quintal (só no térreo). A piscina se cava tile a tile; caminho
+  // de pedra e deck de madeira enfeitam o chão de fora
+  { id: 'stonepath', name: 'floor.stonepath', price: 6, outdoor: true, yard: true, ambience: 2 },
+  { id: 'deck', name: 'floor.deck', price: 12, outdoor: true, yard: true, ambience: 3 },
+  { id: 'pool', name: 'floor.pool', price: 35, outdoor: true, yard: true, water: true, ambience: 4 },
 ];
 
 const coverings: CoveringDef[] = [
@@ -49,6 +54,10 @@ export const PARTS: BuildParts = {
   stairs: { price: 650 },
   column: { price: 40 },
   roof: { price: 2 },
+  // bloco 13: cerca de ripas, mureta de tijolo e portão (por metro / peça)
+  fence: { price: 8 },
+  lowwall: { price: 12 },
+  gate: { price: 60 },
 };
 
 /** Bloco 12: cores de telhado (id → cor da telha). */

@@ -1,6 +1,7 @@
 import type { Nav } from './grid';
 import { buildNav, edgeKey, footprint, inBounds, objectSize, onStairs, stepNeighbors, useTiles, wallBehind } from './grid';
 import { roomAt, roomsOf } from './rooms';
+import { poolProblem } from './yard';
 import { freshState } from './upkeep';
 import { currentValue, resaleValue } from './furnish';
 import type { Catalog, ObjectDef, Rotation, Vec, World, WorldObject } from './types';
@@ -52,7 +53,10 @@ export type PlaceProblem =
   | 'inUse'
   | 'funds'
   | 'needsWall'
-  | 'needsRoof';
+  | 'needsRoof'
+  // bloco 13: peça de piscina fora da água, móvel em cima da água
+  | 'needsPool'
+  | 'onWater';
 
 export interface PlaceCheck {
   ok: boolean;
@@ -117,10 +121,24 @@ export function checkPlacement(
   const others: World = { ...world, objects: world.objects.filter((o) => o.id !== ignoreId) };
   const before = buildNav(others, catalog);
   const tiles = footprint({ x, y, rot }, def);
+  // bloco 13: a escadinha vai dentro da água (que já não é chão livre)
+  const inPool = def.pool === 'in';
+  const taken = new Set<string>();
+  if (inPool) {
+    for (const o of others.objects) {
+      const od = catalog.objects[o.defId];
+      if (od && !od.layer) for (const t of footprint(o, od)) taken.add(`${t.x},${t.y}`);
+    }
+  }
 
   for (const t of tiles) {
     if (!inBounds(world.grid, t.x, t.y)) return { ok: false, problem: 'outside' };
     if (noFloor(world, catalog, t.x, t.y)) return { ok: false, problem: 'noFloor' };
+    if (inPool) {
+      if (taken.has(`${t.x},${t.y}`)) return { ok: false, problem: 'occupied' };
+      continue;
+    }
+    if (catalog.floors[world.grid.floor[t.y * world.grid.w + t.x]]?.water) return { ok: false, problem: 'onWater' };
     if (!before.isFree(t.x, t.y)) return { ok: false, problem: 'occupied' };
     // a calçada de onde sai a condução fica sempre livre
     if (t.x === world.exit.x && t.y === world.exit.y) return { ok: false, problem: 'blocksWay' };
@@ -136,6 +154,8 @@ export function checkPlacement(
       if (dy > 0 && world.grid.edges[edgeKey(tx, ty - 1, tx, ty)]) return { ok: false, problem: 'wall' };
     }
   }
+  const pool = poolProblem(world.grid, catalog, { x, y, rot }, def);
+  if (pool) return { ok: false, problem: pool };
 
   const placed: WorldObject = { id: -1, defId, x, y, rot, paid: 0, state: freshState() };
   const after = buildNav({ ...others, objects: [...others.objects, placed] }, catalog);
@@ -184,6 +204,8 @@ function checkLayered(
     if (!inBounds(world.grid, t.x, t.y)) return { ok: false, problem: 'outside' };
     if (noFloor(world, catalog, t.x, t.y)) return { ok: false, problem: 'noFloor' };
     if (taken.has(`${t.x},${t.y}`)) return { ok: false, problem: 'occupied' };
+    // bloco 13: tapete não boia na piscina
+    if (catalog.floors[world.grid.floor[t.y * world.grid.w + t.x]]?.water) return { ok: false, problem: 'onWater' };
   }
   const size = objectSize(def, rot);
   for (let dy = 0; dy < size.h; dy++) {

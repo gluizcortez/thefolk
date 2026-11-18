@@ -45,8 +45,11 @@ import { FolkModel } from './art/folk';
 import type { FolkAnim } from './art/folk';
 import { buildFurniture, furnitureSpec } from './art/furniture';
 import type { Anchor, FurnitureModel, FurnitureSpec } from './art/furniture';
-import { COVER_ART, FLOOR_ART, HALF_H, House, LEVEL_H, LOW_H, TH, WALL_H, sceneZ } from './art/house';
-import { isOpeningTool } from './controller';
+import { COVER_ART, FLOOR_ART, HALF_H, House, LEVEL_H, LOW_H, POOL_SURFACE, TH, WALL_H, sceneZ } from './art/house';
+import { CHILD_SCALE } from './art/folk';
+import { poolOf } from '../sim/yard';
+import { raining } from '../sim/garden';
+import { isLineTool, isOpeningTool } from './controller';
 import { texMat } from './art/build';
 import { PAINT, PAL } from './art/palette';
 import { colorOf } from '../sim/furnish';
@@ -108,6 +111,10 @@ const CARE_ANIMS: Record<string, FolkAnim> = {
   dishes: 'scrub',
   empty: 'reach',
   dump: 'reach',
+  // bloco 13
+  water: 'reach',
+  harvest: 'reach',
+  replant: 'scrub',
 };
 
 /** Altura do tampo das superfícies, para o prato ficar em cima (o resto vai no chão). */
@@ -393,9 +400,11 @@ export class GameView {
     for (const st of grid.stairs ?? []) {
       stairPlan(grid, st).run.forEach((t, i) => this.stairSteps.set(t.y * grid.w + t.x, i));
     }
+    // bloco 13: caminho, deck e piscina não recebem enfeite de cenário
     const free = (x: number, y: number) =>
-      x >= 0 && y >= 0 && x < grid.w && y < grid.h && floors[grid.floor[y * grid.w + x]]?.outdoor === true && !occupied.has(`${x},${y}`);
-    this.scenery = buildScenery(grid, free);
+      x >= 0 && y >= 0 && x < grid.w && y < grid.h && floors[grid.floor[y * grid.w + x]]?.outdoor === true && !floors[grid.floor[y * grid.w + x]]?.yard && !occupied.has(`${x},${y}`);
+    const hole = (x: number, y: number) => !!floors[grid.floor[y * grid.w + x]]?.water;
+    this.scenery = buildScenery(grid, free, hole);
     this.worldRoot.add(this.scenery, this.house.group);
     this.builtGrid = this.ctrl.gridVersion;
     this.wallState = '';
@@ -895,7 +904,15 @@ export class GameView {
 
     this.updateCamera(dt);
     const night = nightAmount(clockOf(world.tick).dayFraction + alpha / 1440);
-    this.applyDaylight(night);
+    // bloco 13: chuva escurece o dia e cai em riscos; a água da piscina ondula
+    const wet = raining(world);
+    this.rainLevel += ((wet ? 1 : 0) - this.rainLevel) * Math.min(1, dt * 0.8);
+    this.applyDaylight(night, this.rainLevel);
+    this.updateRain(dt);
+    const waterTex = this.house?.waterMats[0]?.map;
+    if (waterTex) {
+      waterTex.offset.set(Math.sin(this.animTime * 0.4) * 0.06, this.animTime * 0.035);
+    }
 
     // quem está usando o quê
     const using = new Map<number, string>();
@@ -913,6 +930,7 @@ export class GameView {
         lit: !!entry.obj.lit && !entry.obj.state?.broken,
         ringing: !!world.call && !world.call.answeredBy,
         stock: entry.obj.snacks,
+        plant: entry.obj.plant,
       });
       if (entry.obj.state) entry.fx.update(entry.obj.state, !!entry.def.upkeep?.bin && entry.obj.state.fill >= 100, this.animTime);
       this.updateNotes(entry);
@@ -1087,12 +1105,54 @@ export class GameView {
     });
   }
 
-  private applyDaylight(night: number): void {
-    this.sun.intensity = THREE.MathUtils.lerp(2.0, 0.32, night);
+  private applyDaylight(night: number, rain = 0): void {
+    this.sun.intensity = THREE.MathUtils.lerp(2.0, 0.32, night) * (1 - 0.55 * rain);
     this.sun.color.setHex(PAL.sun).lerp(new THREE.Color(PAL.moon), night);
-    this.hemi.intensity = THREE.MathUtils.lerp(1.5, 0.42, night);
-    this.hemi.color.setHex(0xffffff).lerp(new THREE.Color(0x7f93d8), night);
-    this.scene.background = new THREE.Color(PAL.sky).lerp(new THREE.Color(PAL.nightSky), night);
+    this.hemi.intensity = THREE.MathUtils.lerp(1.5, 0.42, night) * (1 - 0.2 * rain);
+    this.hemi.color.setHex(0xffffff).lerp(new THREE.Color(0x7f93d8), night).lerp(new THREE.Color(0xa9b4c2), rain * 0.5);
+    this.scene.background = new THREE.Color(PAL.sky).lerp(new THREE.Color(0x7d8794), rain * 0.8).lerp(new THREE.Color(PAL.nightSky), night);
+  }
+
+  /** Bloco 13: quanto está chovendo na tela (sobe e desce devagar). */
+  private rainLevel = 0;
+  private rain: THREE.LineSegments | null = null;
+
+  /** Bloco 13: riscos de chuva caindo em volta do lote. */
+  private updateRain(dt: number): void {
+    const grid = this.ctrl.world.grid;
+    const N = 900;
+    if (!this.rain) {
+      const pos = new Float32Array(N * 6);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const mat = new THREE.LineBasicMaterial({ color: 0xd8e6f2, transparent: true, opacity: 0, depthWrite: false });
+      this.rain = new THREE.LineSegments(geo, mat);
+      this.rain.frustumCulled = false;
+      this.rain.userData.drops = Array.from({ length: N }, (_, i) => ({
+        x: ((i * 7919) % 1000) / 1000,
+        z: ((i * 104729) % 1000) / 1000,
+        y: ((i * 31337) % 1000) / 100,
+      }));
+      // fora do worldRoot: ele é limpo a cada novo jogo e a chuva sumiria junto
+      this.scene.add(this.rain);
+    }
+    const mat = this.rain.material as THREE.LineBasicMaterial;
+    mat.opacity = 0.8 * this.rainLevel;
+    this.rain.visible = this.rainLevel > 0.02;
+    if (!this.rain.visible) return;
+    const pos = this.rain.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const drops = this.rain.userData.drops as { x: number; y: number; z: number }[];
+    const w = grid.w + 12;
+    const h = grid.h + 12;
+    drops.forEach((d, i) => {
+      d.y -= dt * 14;
+      if (d.y < 0) d.y += 10;
+      const x = d.x * w - 6;
+      const z = d.z * h - 6;
+      pos.setXYZ(i * 2, x, d.y, z);
+      pos.setXYZ(i * 2 + 1, x - 0.08, d.y + 0.9, z - 0.08);
+    });
+    pos.needsUpdate = true;
   }
 
   private anchorToWorld(entry: ObjectEntry, a: Anchor): { x: number; y: number; z: number; heading: number } {
@@ -1104,6 +1164,49 @@ export class GameView {
       z: entry.center.z - a.x * sin + a.z * cos,
       heading: a.heading + entry.turn,
     };
+  }
+
+  /**
+   * Bloco 13: onde o folk aparece nadando. Dá voltas numa elipse dentro da
+   * piscina (cada um no seu ritmo), com a cabeça e os ombros fora d'água. No
+   * trampolim, fica na prancha parte do tempo e depois cai na água logo à frente.
+   */
+  private swimPlace(
+    folk: Folk,
+    entry: ObjectEntry,
+    pose: 'swim' | 'dive',
+    onBoard: { x: number; y: number; z: number; heading: number },
+  ): { anim: FolkAnim; place: { x: number; y: number; z: number; heading: number } } {
+    const sim = this.ctrl.sim;
+    const pool = poolOf(sim.world, sim.catalog, entry.obj, entry.def);
+    const scale = folk.age === 'child' ? CHILD_SCALE : 1;
+    const y = -POOL_SURFACE - 1.32 * scale;
+    if (pool.length === 0) return { anim: pose === 'dive' ? 'dive' : 'swim', place: onBoard };
+    if (pose === 'dive') {
+      const k = (this.animTime * 0.3 + folk.id * 0.37) % 1;
+      if (k < 0.55) return { anim: 'dive', place: onBoard };
+    }
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let z0 = Infinity;
+    let z1 = -Infinity;
+    for (const t of pool) {
+      x0 = Math.min(x0, t.x);
+      x1 = Math.max(x1, t.x + 1);
+      z0 = Math.min(z0, t.y);
+      z1 = Math.max(z1, t.y + 1);
+    }
+    const cx = (x0 + x1) / 2;
+    const cz = (z0 + z1) / 2;
+    const rx = Math.max(0.15, (x1 - x0) / 2 - 0.45);
+    const rz = Math.max(0.15, (z1 - z0) / 2 - 0.45);
+    const dir = folk.id % 2 === 0 ? 1 : -1;
+    const a = dir * this.animTime * (0.5 / Math.max(rx, rz, 0.5)) + folk.id * 1.7;
+    const x = cx + Math.cos(a) * rx;
+    const z = cz + Math.sin(a) * rz;
+    // anda na tangente da elipse
+    const heading = Math.atan2(-Math.sin(a) * rx * dir, Math.cos(a) * rz * dir);
+    return { anim: 'swim', place: { x, y, z, heading } };
   }
 
   /** Bloco 12: ponto da cena onde fica o pé de quem está no tile (x, y), com a altura do degrau. */
@@ -1216,6 +1319,13 @@ export class GameView {
           place = this.anchorToWorld(entry, anchor);
           onObject = true;
         }
+      }
+      // bloco 13: nadando (volta pela piscina) e pulando do trampolim
+      if (it.pose === 'swim' || it.pose === 'dive') {
+        const swim = this.swimPlace(folk, entry, it.pose, place);
+        anim = swim.anim;
+        place = swim.place;
+        onObject = true;
       }
     } else if (action?.kind === 'tidy' && action.phase === 'using') {
       anim = 'scrub';
@@ -1555,10 +1665,10 @@ export class GameView {
 
   private beginBuildDrag(clientX: number, clientY: number): void {
     const tool = this.ctrl.buildTool;
-    if (tool === 'wall' || tool === 'half' || tool === 'erase') {
+    if (isLineTool(tool)) {
       const v = this.vertexAt(clientX, clientY);
       if (v) this.buildDrag = { start: v, cur: v };
-    } else if (tool === 'floor') {
+    } else if (tool === 'floor' || tool === 'yard') {
       const t = this.tileAt(clientX, clientY);
       if (t) this.buildDrag = { start: t, cur: t };
     }
@@ -1576,7 +1686,7 @@ export class GameView {
     const tool = this.ctrl.buildTool;
     const drag = this.buildDrag;
     let cmd: BuildCommand | null = null;
-    if (tool === 'wall' || tool === 'half' || tool === 'erase') {
+    if (isLineTool(tool)) {
       const v = this.vertexAt(clientX, clientY);
       if (drag && v) {
         // a linha segue o eixo em que o mouse andou mais
@@ -1584,7 +1694,14 @@ export class GameView {
         const dy = Math.abs(v.y - drag.start.y);
         drag.cur = dx >= dy ? { x: v.x, y: drag.start.y } : { x: drag.start.x, y: v.y };
         const c = { x0: drag.start.x, y0: drag.start.y, x1: drag.cur.x, y1: drag.cur.y };
-        cmd = tool === 'wall' ? { type: 'buildWalls', ...c } : tool === 'half' ? { type: 'buildHalfWalls', ...c } : { type: 'eraseWalls', ...c };
+        cmd =
+          tool === 'wall'
+            ? { type: 'buildWalls', ...c }
+            : tool === 'half'
+              ? { type: 'buildHalfWalls', ...c }
+              : tool === 'fence' || tool === 'lowwall'
+                ? { type: 'buildFences', ...c, kind: tool }
+                : { type: 'eraseWalls', ...c };
       } else if (v) {
         this.showVertex(v);
         this.hud.setTooltip(clientX, clientY, t(tool === 'erase' ? 'build.hint.eraseStart' : 'build.hint.wallStart'));
@@ -1600,7 +1717,7 @@ export class GameView {
         const on = stairStepAt(this.ctrl.world.grid, tile.x, tile.y);
         cmd = on ? { type: 'removeStairs', x: tile.x, y: tile.y } : { type: 'placeStairs', x: tile.x, y: tile.y, dir: this.ctrl.stairDir };
       }
-    } else if (tool === 'floor') {
+    } else if (tool === 'floor' || tool === 'yard') {
       const tile = this.tileAt(clientX, clientY);
       if (drag && tile) drag.cur = tile;
       const a = drag?.start ?? tile;
@@ -1650,7 +1767,7 @@ export class GameView {
     if (cmd) {
       const ok = this.ctrl.commandOrExplain(cmd);
       if (ok && cmd.type === 'placeOpening') this.addPing(...this.edgeCenter(cmd.edge));
-      if (ok && tool === 'floor' && cmd.type === 'paintFloor') this.addPing(cmd.x1, cmd.y1);
+      if (ok && (tool === 'floor' || tool === 'yard') && cmd.type === 'paintFloor') this.addPing(cmd.x1, cmd.y1);
       if (ok && (cmd.type === 'placeStairs' || cmd.type === 'removeStairs')) this.addPing(cmd.x, cmd.y);
     }
     this.previewKey = '';
@@ -1716,9 +1833,9 @@ export class GameView {
       this.buildPreview.add(m);
     };
 
-    if (cmd.type === 'buildWalls' || cmd.type === 'buildHalfWalls' || cmd.type === 'eraseWalls') {
+    if (cmd.type === 'buildWalls' || cmd.type === 'buildHalfWalls' || cmd.type === 'buildFences' || cmd.type === 'eraseWalls') {
       const edges = lineEdges(grid, cmd.x0, cmd.y0, cmd.x1, cmd.y1) ?? [];
-      const full = cmd.type === 'buildWalls' ? WALL_H * 0.75 : HALF_H;
+      const full = cmd.type === 'buildWalls' ? WALL_H * 0.75 : cmd.type === 'buildFences' ? (cmd.kind === 'fence' ? 1.0 : 0.7) : HALF_H;
       for (const e of edges) {
         const exists = !!grid.edges[e];
         if (cmd.type !== 'eraseWalls') edgeBox(e, exists ? 0.5 : full, 1, ok ? 0x6fd06a : bad, exists ? 0.3 : 0.55);
@@ -1734,7 +1851,7 @@ export class GameView {
       }
     } else if (cmd.type === 'placeOpening') {
       const exists = !!grid.edges[cmd.edge];
-      const h = { door: 2.1, doorGlass: 2.1, doorDouble: 2.1, arch: 2.2, window: 1.3, windowTall: 2.0, windowHigh: 0.45 }[cmd.kind];
+      const h = { door: 2.1, doorGlass: 2.1, doorDouble: 2.1, arch: 2.2, window: 1.3, windowTall: 2.0, windowHigh: 0.45, gate: 1.0 }[cmd.kind];
       const wide = cmd.kind === 'doorDouble' || cmd.kind === 'arch' ? 0.9 : cmd.kind.startsWith('door') ? 0.8 : 0.86;
       edgeBox(cmd.edge, exists && this.house.isTallEdge(cmd.edge) ? h : Math.max(h * 0.5, LOW_H + 0.4), wide, ok ? 0x6fd06a : bad, 0.6);
     } else if (cmd.type === 'toggleColumn') {

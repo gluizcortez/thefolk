@@ -4,8 +4,9 @@
 // revestimento e cantos), e não mais de um raio em volta do folk.
 
 import { daylightAt } from './clock';
-import { blocksFloor, edgeKey, footprint, inBounds, isDoorway, isWindow, rowsOf } from './grid';
+import { blocksFloor, edgeKey, footprint, inBounds, isDoorway, isWindow, rowsOf, splitsRoom } from './grid';
 import { MESS_AMBIENCE, messSenseOf, stateAmbience } from './upkeep';
+import { plantAmbience } from './garden';
 import type { Catalog, Folk, Grid, ObjectDef, RoomTaste, Side, Vec, World, WorldObject } from './types';
 
 export interface Room {
@@ -80,7 +81,8 @@ export function computeRooms(grid: Grid, catalog: Catalog): RoomMap {
           if (kind === 'wall' || kind === 'half') faces.push(`${x},${y},${d.side}`);
           if (isWindow(kind)) windows.add(key);
           // bloco 12: meia parede fecha o passo, mas o cômodo continua do outro lado
-          if (kind !== 'half') continue;
+          // (bloco 13: cerca, mureta e portão também)
+          if (splitsRoom(kind)) continue;
         }
         if (!inBounds(grid, nx, ny)) {
           border = true;
@@ -259,8 +261,10 @@ export function roomScore(world: World, catalog: Catalog, map: RoomMap, room: Ro
     const def = catalog.objects[obj.defId];
     if (!def || roomOfObject(map, obj) !== room) continue;
     if (room.outdoor && !near(obj)) continue;
-    if (def.ambience >= 0) positive += def.ambience;
-    else negative += def.ambience;
+    // bloco 13: planta florida soma mais; murcha ou seca, tira
+    const amb = def.ambience + plantAmbience(obj, def);
+    if (amb >= 0) positive += amb;
+    else negative += amb;
     mess += stateAmbience(obj, def);
     if (blocksFloor(def) || def.layer === 'floor') count++;
     for (const t of footprint(obj, def)) occupied.add(`${t.x},${t.y}`);

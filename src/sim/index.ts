@@ -33,3 +33,5 @@ export * from './cliques';
 export * from './marriage';
 export * from './kids';
 export * from './roof';
+export * from './garden';
+export * from './yard';

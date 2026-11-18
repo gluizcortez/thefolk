@@ -35,7 +35,10 @@ export type FolkAnim =
   | 'refuse'
   | 'cheer'
   // bloco 11: bebê no colo (braços dobrados na frente, embalando)
-  | 'cradle';
+  | 'cradle'
+  // bloco 13: nadando (de peito, cabeça fora d'água) e o pulo do trampolim
+  | 'swim'
+  | 'dive';
 
 export type FolkLook = Look;
 
@@ -376,6 +379,44 @@ function poseFor(anim: FolkAnim, t: number, mood: number, energy = 100): Pose {
       p.elbowR = -0.2;
       p.hipsY = HIPS_Y + 0.05 * hop;
       p.headX = -0.25;
+      break;
+    }
+    case 'swim': {
+      // nado de peito: braços abrem e voltam na frente, pernas batem
+      const s = Math.sin(t * 3.2);
+      const c = Math.cos(t * 3.2);
+      p.torsoX = 0.35;
+      p.headX = -0.45;
+      p.armLX = -1.5 + 0.25 * c;
+      p.armRX = -1.5 + 0.25 * c;
+      p.armLOut = 0.3 + 0.55 * Math.max(0, s);
+      p.armROut = 0.3 + 0.55 * Math.max(0, s);
+      p.elbowL = -0.3 - 0.5 * Math.max(0, -s);
+      p.elbowR = -0.3 - 0.5 * Math.max(0, -s);
+      p.legLX = 0.5 + 0.3 * s;
+      p.legRX = 0.5 - 0.3 * s;
+      p.kneeL = 0.6;
+      p.kneeR = 0.6;
+      p.legOut = 0.12;
+      break;
+    }
+    case 'dive': {
+      // na ponta da prancha: braços para cima, joelhos dobram e esticam
+      const k = (t * 1.3) % 1;
+      const crouch = k < 0.5 ? Math.sin(k * Math.PI * 2) : 0;
+      p.armLX = -2.9;
+      p.armRX = -2.9;
+      p.armLOut = 0.12;
+      p.armROut = 0.12;
+      p.elbowL = -0.05;
+      p.elbowR = -0.05;
+      p.kneeL = 0.7 * Math.max(0, crouch);
+      p.kneeR = 0.7 * Math.max(0, crouch);
+      p.legLX = -0.35 * Math.max(0, crouch);
+      p.legRX = -0.35 * Math.max(0, crouch);
+      p.hipsY = HIPS_Y - 0.12 * Math.max(0, crouch);
+      p.torsoX = 0.25 * Math.max(0, crouch);
+      p.headX = -0.2;
       break;
     }
     default: {

@@ -5,9 +5,14 @@ export function blocksStep(kind: EdgeKind | undefined): boolean {
   return kind !== undefined && !isDoorway(kind);
 }
 
-/** Bloco 12: porta de qualquer estilo, ou arco: dá para passar. */
+/** Bloco 12: porta de qualquer estilo, ou arco: dá para passar. Bloco 13: o portão também. */
 export function isDoorway(kind: EdgeKind | undefined): boolean {
-  return kind === 'door' || kind === 'doorGlass' || kind === 'doorDouble' || kind === 'arch';
+  return kind === 'door' || kind === 'doorGlass' || kind === 'doorDouble' || kind === 'arch' || kind === 'gate';
+}
+
+/** Bloco 13: cerca, mureta ou portão (coisa de quintal: não divide cômodo nem leva revestimento). */
+export function isFence(kind: EdgeKind | undefined): boolean {
+  return kind === 'fence' || kind === 'lowwall' || kind === 'gate';
 }
 
 /** Bloco 12: janela de qualquer estilo. */
@@ -15,9 +20,22 @@ export function isWindow(kind: EdgeKind | undefined): boolean {
   return kind === 'window' || kind === 'windowTall' || kind === 'windowHigh';
 }
 
-/** Bloco 12: a borda divide cômodos? A meia parede não divide (só não deixa passar). */
+/**
+ * Bloco 12: a borda divide cômodos? A meia parede não divide (só não deixa
+ * passar). Bloco 13: cerca, mureta e portão também não.
+ */
 export function splitsRoom(kind: EdgeKind | undefined): boolean {
-  return kind !== undefined && kind !== 'half';
+  return kind !== undefined && kind !== 'half' && !isFence(kind);
+}
+
+/** Bloco 13: borda que leva revestimento (parede inteira ou meia parede). */
+export function isWallLike(kind: EdgeKind | undefined): boolean {
+  return kind !== undefined && !isFence(kind);
+}
+
+/** Bloco 13: o tile é água de piscina? */
+export function isWater(grid: Grid, catalog: Catalog, x: number, y: number): boolean {
+  return inBounds(grid, x, y) && !!catalog.floors[grid.floor[y * grid.w + x]]?.water;
 }
 
 // ---------- bloco 12: andares ----------
@@ -223,7 +241,8 @@ export function buildNav(world: World, catalog: Catalog): Nav {
   const blocked = new Uint8Array(grid.w * rows);
   for (let i = 0; i < blocked.length; i++) {
     const f = grid.floor[i];
-    if (f === undefined || catalog.floors[f]?.void || f === VOID) blocked[i] = 1;
+    // bloco 13: na água da piscina ninguém anda (nada-se pela escadinha)
+    if (f === undefined || catalog.floors[f]?.void || f === VOID || catalog.floors[f]?.water) blocked[i] = 1;
   }
   for (const obj of world.objects) {
     const def = catalog.objects[obj.defId];

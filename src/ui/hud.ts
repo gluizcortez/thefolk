@@ -60,6 +60,8 @@ import {
   gigAllowed,
   payFor,
   raiseChance,
+  raining,
+  plantStage,
   reputationLabel,
   reputationOf,
   transferLevel,
@@ -74,6 +76,7 @@ import {
   FAIR,
   GROCERIES,
   MAID,
+  GARDENER,
   REPAIR,
   TAKEOUT,
   classifiedsOpen,
@@ -154,6 +157,7 @@ const CATEGORIES: (ObjectCategory | 'all')[] = [
   'decor',
   'hobbies',
   'games',
+  'outdoor',
 ];
 
 /** Bloco 4: filtro de faixa de preço no catálogo. */
@@ -163,10 +167,10 @@ type Panel = 'skills' | 'job' | 'relations' | null;
 type JobTab = 'job' | 'gigs' | 'business';
 const JOB_TABS: JobTab[] = ['job', 'gigs', 'business'];
 
-type BuildTab = 'walls' | 'openings' | 'floors' | 'coverings' | 'roof';
-const BUILD_TABS: BuildTab[] = ['walls', 'openings', 'floors', 'coverings', 'roof'];
+type BuildTab = 'walls' | 'openings' | 'floors' | 'coverings' | 'roof' | 'yard';
+const BUILD_TABS: BuildTab[] = ['walls', 'openings', 'floors', 'coverings', 'roof', 'yard'];
 /** ferramenta que cada aba do modo construção escolhe ao abrir */
-const TAB_TOOL: Record<BuildTab, BuildTool> = { walls: 'wall', openings: 'door', floors: 'floor', coverings: 'paint', roof: 'roof' };
+const TAB_TOOL: Record<BuildTab, BuildTool> = { walls: 'wall', openings: 'door', floors: 'floor', coverings: 'paint', roof: 'roof', yard: 'fence' };
 /** aba onde fica cada ferramenta */
 const TOOL_TAB: Record<BuildTool, BuildTab> = {
   wall: 'walls',
@@ -184,6 +188,11 @@ const TOOL_TAB: Record<BuildTool, BuildTab> = {
   floor: 'floors',
   paint: 'coverings',
   roof: 'roof',
+  // bloco 13: quintal
+  fence: 'yard',
+  lowwall: 'yard',
+  gate: 'yard',
+  yard: 'yard',
 };
 /** bloco 12: amostra de cada estilo de porta e janela no catálogo da obra */
 const OPENING_SWATCH: Record<OpeningKind, string> = {
@@ -194,6 +203,7 @@ const OPENING_SWATCH: Record<OpeningKind, string> = {
   window: 'windowOut',
   windowTall: 'windowOut',
   windowHigh: 'windowOut',
+  gate: 'picket',
 };
 
 const SOCIAL_ORDER: SocialCategory[] = ['friendly', 'professional', 'romantic', 'mean'];
@@ -703,7 +713,9 @@ export class Hud {
     const wallsText = t(`hud.walls.${this.ctrl.wallMode}`);
     if (this.wallsButton.textContent !== wallsText) this.wallsButton.textContent = wallsText;
 
-    this.clockDay.textContent = t('hud.day', { day: clock.day, weekday: t(`weekday.${(clock.day - 1) % 7}`) });
+    // bloco 13: o dia mostra quando está chovendo
+    const dayText = t('hud.day', { day: clock.day, weekday: t(`weekday.${(clock.day - 1) % 7}`) }) + (raining(world) ? ` · ☂ ${t('hud.rain')}` : '');
+    if (this.clockDay.textContent !== dayText) this.clockDay.textContent = dayText;
     const house = world.household;
     const funds = formatMoney(house.funds);
     if (this.fundsEl.textContent !== funds) this.fundsEl.textContent = funds;
@@ -878,6 +890,13 @@ export class Hud {
     const state = stateOf(obj);
     const status = this.objectStatus(obj);
     if (status) this.menuEl.append(el('div', `menu-note ${state.broken ? 'menu-warn' : ''}`, status));
+    // bloco 13: como vai a planta (fase, água e frutos)
+    if (def.plant && obj.plant) {
+      const stage = plantStage(obj.plant);
+      let note = t('plant.status', { stage: t(`plant.${stage}`), water: Math.round(obj.plant.water) });
+      if (obj.plant.fruit > 0) note += ` · ${t('plant.fruit', { n: obj.plant.fruit })}`;
+      this.menuEl.append(el('div', `menu-note ${stage === 'wilted' || stage === 'dead' ? 'menu-warn' : ''}`, note));
+    }
     // bloco 7: o que o som está tocando e qual estação o folk prefere
     if (isStereo(def)) {
       const on = stationDef(obj.tune);
@@ -1054,6 +1073,7 @@ export class Hud {
       { id: 'groceries', label: t('services.groceries', { portions: GROCERIES.portions }), price: formatMoney(GROCERIES.price) },
       { id: 'takeout', label: t('services.takeout', { portions: TAKEOUT.portions }), price: formatMoney(TAKEOUT.price) },
       { id: 'maid', label: t('services.maid', { hour: MAID.hour }), price: t('services.perDay', { price: formatMoney(MAID.fee) }) },
+      { id: 'gardener', label: t('services.gardener', { hour: GARDENER.hour }), price: t('services.perDay', { price: formatMoney(GARDENER.fee) }) },
       {
         id: 'repair',
         label: t('services.repair'),
@@ -1064,10 +1084,12 @@ export class Hud {
       const b = el('button', 'menu-item');
       const icon = el('span', 'menu-icon');
       icon.innerHTML = iconSvg(row.id === 'groceries' || row.id === 'takeout' ? 'hunger' : 'ambience', 16);
-      if (row.id === 'maid' && world.household.maid) {
-        b.append(icon, el('span', '', t('services.maidOn')));
+      const hired = (row.id === 'maid' && world.household.maid) || (row.id === 'gardener' && world.household.gardener);
+      if (hired && (row.id === 'maid' || row.id === 'gardener')) {
+        const service = row.id;
+        b.append(icon, el('span', '', t(`services.${service}On`)));
         b.addEventListener('click', () => {
-          this.ctrl.commandOrExplain({ type: 'dismissService', service: 'maid' });
+          this.ctrl.commandOrExplain({ type: 'dismissService', service });
           this.closeMenu();
           this.update();
         });
@@ -2241,9 +2263,14 @@ export class Hud {
     }
     this.undoButton.textContent = depth > 0 ? t('build.undoN', { n: depth }) : t('build.undo');
     this.undoButton.disabled = depth === 0;
-    this.buildHint.textContent = isOpeningTool(c.buildTool)
-      ? t(c.buildTool.startsWith('window') ? 'build.hint.window' : 'build.hint.door')
-      : t(`build.hint.${c.buildTool}`, { dir: t(`build.dir.${c.stairDir}`) });
+    this.buildHint.textContent =
+      c.buildTool === 'gate'
+        ? t('build.hint.gate')
+        : isOpeningTool(c.buildTool)
+          ? t(c.buildTool.startsWith('window') ? 'build.hint.window' : 'build.hint.door')
+          : c.buildTool === 'yard'
+            ? t(`build.hint.yard.${c.floorId}`)
+            : t(`build.hint.${c.buildTool}`, { dir: t(`build.dir.${c.stairDir}`) });
     this.buildItems.replaceChildren();
     const catalog = c.sim.catalog;
     const add = (name: string, price: string, img: string | null, on: boolean, pick: () => void, tip?: string) => {
@@ -2306,10 +2333,25 @@ export class Hud {
         });
         this.buildItems.append(item);
       }
+    } else if (this.buildTab === 'yard') {
+      // bloco 13: cerca, mureta, portão, piscina, caminho e deck (só no térreo)
+      add(t('build.fence'), t('build.perMeter', { price: formatMoney(catalog.parts.fence.price) }), sw('picket'), c.buildTool === 'fence', tool('fence'), t('build.hint.fence'));
+      add(t('build.lowwall'), t('build.perMeter', { price: formatMoney(catalog.parts.lowwall.price) }), sw('wallExterior', true), c.buildTool === 'lowwall', tool('lowwall'), t('build.hint.lowwall'));
+      add(t('build.gate'), formatMoney(catalog.parts.gate.price), sw('picket'), c.buildTool === 'gate', tool('gate'), t('build.hint.gate'));
+      const yardFloors = Object.values(catalog.floors).filter((f) => f.yard || f.id === 'grass');
+      for (const f of yardFloors.sort((a, b) => a.price - b.price)) {
+        const price = f.price > 0 ? t('build.perTile', { price: formatMoney(f.price) }) : t('build.free');
+        const tex = f.id === 'grass' ? 'grass' : f.id === 'pool' ? 'water' : f.id;
+        add(t(f.id === 'grass' ? 'build.fill' : f.name), price, sw(tex), c.buildTool === 'yard' && c.floorId === f.id, () => {
+          c.floorId = f.id;
+          c.setBuildTool('yard');
+        }, t(`build.hint.yard.${f.id}`));
+      }
     } else if (this.buildTab === 'floors') {
       for (const f of Object.values(catalog.floors).sort((a, b) => a.price - b.price)) {
         // bloco 12: o vão não aparece; no andar de cima, a grama vira "sem piso"
-        if (f.void) continue;
+        // bloco 13: piscina, caminho e deck ficam na aba Quintal
+        if (f.void || f.yard) continue;
         const bare = f.outdoor && c.viewLevel > 0;
         const tex = f.outdoor ? 'grass' : FLOOR_ART.includes(f.id) ? f.id : 'wood';
         const price = f.price > 0 ? t('build.perTile', { price: formatMoney(f.price) }) : t('build.free');

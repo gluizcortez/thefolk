@@ -490,7 +490,7 @@ sobe para dormir; testes de navegação entre andares e de obra.
 mesmo `floor` (andar n a partir de `n * (h + 2)`), para que posições, cômodos,
 compra e IA sigam em (x, y) sem mudança. Parede diagonal ficou de fora.
 
-## Bloco 13 — Quintal: piscina, cercas e jardim vivo (save v17)
+## Bloco 13 — Quintal: piscina, cercas e jardim vivo (save v17) — feito em 18/11/2026
 
 **Escopo**
 - Piscina como obra (cavar), escadinha, trampolim; nadar treina Pique e dá
@@ -505,6 +505,16 @@ compra e IA sigam em (x, y) sem mudança. Parede diagonal ficou de fora.
 
 **Pronto quando**: piscina com escada funciona, horta dá comida, cercas
 bloqueiam caminho; testes.
+
+**Como ficou**: módulos `sim/yard.ts` e `sim/garden.ts`. A piscina é um piso
+de água cavado só no térreo; a escadinha fica dentro dela e é por onde se
+nada (diversão e Fôlego, roupa de banho), o trampolim fica na borda e
+mergulhar sem escadinha assusta (o afogamento de verdade é do bloco 14).
+Cerca, mureta e portão são tipos de aresta que bloqueiam o passo sem fechar
+cômodo; o portão vai num trecho de cerca ou num vão deixado nela. Dez objetos
+de quintal; as plantas (e o vaso antigo) têm água, crescimento, saúde e
+frutos, com chuva sorteada de madrugada e o jardineiro como prestador. Ficou
+de fora o desnível de terreno.
 
 ## Bloco 14 — Perigos e morte: fogo, gatuno, fantasmas (save v18)
 

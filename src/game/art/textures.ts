@@ -1771,7 +1771,125 @@ function checkerboard(c: Ctx, w: number): void {
   line(c, 0, 0, w, 0, 0x2a180c, 1, 2);
 }
 
+
+// ---------- bloco 13: quintal ----------
+
+/** Água da piscina: azul cheio com reflexos ondulados (a tela anda com ela). */
+const water: Painter = (c, w, h, rnd) => {
+  fill(c, 0x2f8fc0);
+  mottle(c, w, h, rnd, 70, 0x2f8fc0, 0.35);
+  for (let i = 0; i < 26; i++) {
+    const x = rnd() * w;
+    const y = rnd() * h;
+    const len = 6 + rnd() * 14;
+    c.strokeStyle = css(rnd() > 0.4 ? 0xbfeaf7 : 0x7fd0ea, 0.7);
+    c.lineWidth = 1;
+    c.beginPath();
+    c.moveTo(x, y);
+    c.quadraticCurveTo(x + len / 2, y - 2, x + len, y);
+    c.stroke();
+  }
+  speckle(c, w, h, rnd, 40, [0xe8f8ff], 0.8);
+};
+
+/** Fundo e paredes da piscina: pastilha azul-clara com rejunte. */
+const poolTile: Painter = (c, w, h, rnd) => {
+  fill(c, 0x9bb8bf);
+  const n = 8;
+  const s = w / n;
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      fill(c, shade(0x5fb8d6, 0.88 + rnd() * 0.2), x * s + 1, y * s + 1, s - 1, s - 1);
+    }
+  }
+  // faixa escura de raia
+  fill(c, 0x1f4f86, 0, h / 2 - s / 2 + 1, w, s - 1, 0.8);
+};
+
+/** Pedras de caminho, irregulares, assentadas na grama. */
+const stonepath: Painter = (c, w, h, rnd) => {
+  grass(c, w, h, rnd);
+  const stones: [number, number, number, number][] = [
+    [16, 16, 13, 11],
+    [46, 18, 14, 12],
+    [20, 46, 12, 13],
+    [48, 47, 13, 11],
+  ];
+  for (const [x, y, rx, ry] of stones) {
+    const jx = (rnd() - 0.5) * 4;
+    const jy = (rnd() - 0.5) * 4;
+    oval(c, x + jx + 1, y + jy + 2, rx, ry, 0x2b2a24, 0.45, rnd());
+    oval(c, x + jx, y + jy, rx, ry, shade(0xb3ab98, 0.9 + rnd() * 0.2), 1, rnd());
+    oval(c, x + jx - rx * 0.25, y + jy - ry * 0.3, rx * 0.5, ry * 0.35, 0xffffff, 0.18, rnd());
+  }
+  speckle(c, w, h, rnd, 60, [0x8f8a7b, 0xc0bbab], 0.25);
+};
+
+/** Deck de madeira: tábuas largas e parafusos. */
+const deck: Painter = (c, w, h, rnd) => {
+  const rows = 5;
+  const rh = h / rows;
+  for (let r = 0; r < rows; r++) {
+    const base = shade(0x9a6a3c, 0.85 + rnd() * 0.25);
+    fill(c, base, 0, r * rh, w, rh);
+    for (let k = 0; k < 4; k++) {
+      const y = r * rh + 2 + rnd() * (rh - 4);
+      line(c, 0, y, w, y + rnd() * 2 - 1, shade(base, rnd() > 0.5 ? 0.78 : 1.15), 0.4);
+    }
+    line(c, 0, (r + 1) * rh - 0.5, w, (r + 1) * rh - 0.5, 0x2e1d10, 0.9);
+    line(c, 0, r * rh + 0.5, w, r * rh + 0.5, 0xffffff, 0.15);
+    fill(c, 0x3a3a3a, 6, r * rh + rh / 2 - 1, 2, 2);
+    fill(c, 0x3a3a3a, w - 8, r * rh + rh / 2 - 1, 2, 2);
+  }
+};
+
+/** Borda de pedra clara da piscina. */
+const coping: Painter = (c, w, h, rnd) => {
+  fill(c, 0xe3dccb);
+  speckle(c, w, h, rnd, 90, [0xcfc6b0, 0xf2ecdc, 0xb9b09a], 0.6);
+  bevel(c, 0, 0, w, h, 0.5, 0.35);
+};
+
+/** Folhagem com flores pequenas por cima (canteiro e roseira). */
+const blossoms = (petal: number, centre: number): Painter => (c, w, h, rnd) => {
+  leaves(c, w, h, rnd);
+  const alpha = c.getImageData(0, 0, w, h).data;
+  for (let i = 0; i < 90; i++) {
+    const x = 4 + rnd() * (w - 8);
+    const y = 4 + rnd() * (h * 0.8);
+    // flor só em cima de folha (o resto do cartão é transparente)
+    if (alpha[(Math.floor(y) * w + Math.floor(x)) * 4 + 3] < 128) continue;
+    disc(c, x, y, 2.2 + rnd() * 1.2, petal);
+    disc(c, x, y, 0.9, centre);
+  }
+};
+
+/** Copa do ipê florido: amarelo forte com pouco verde. */
+const ipeCrown: Painter = (c, w, h, rnd) => {
+  fill(c, 0xd9a91e);
+  speckle(c, w, h, rnd, 600, [0xf2cf3a, 0xb8860f, 0xffe46a, 0x6f8f2a], 0.75, 2);
+};
+
+/** Gota de chuva (risco) com degradê. */
+const raindrop: Painter = (c, w, h) => {
+  const g = c.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, 'rgba(200,225,255,0)');
+  g.addColorStop(1, 'rgba(220,235,255,0.85)');
+  c.fillStyle = g;
+  c.fillRect(w / 2 - 1, 0, 2, h);
+};
+
 const SPECS: Record<string, Spec> = {
+  // bloco 13
+  water: { w: 64, h: 64, paint: water, repeat: true, grain: 3 },
+  poolTile: { w: 64, h: 64, paint: poolTile, repeat: true, grain: 3 },
+  stonepath: { w: 64, h: 64, paint: stonepath, repeat: true, grain: 7 },
+  deck: { w: 64, h: 64, paint: deck, repeat: true, grain: 6 },
+  coping: { w: 32, h: 32, paint: coping, repeat: true, grain: 5 },
+  'blossoms:daisy': { w: 64, h: 64, paint: blossoms(0xf3efe2, 0xf2c744), grain: 6 },
+  'blossoms:rose': { w: 64, h: 64, paint: blossoms(0xd23b4a, 0x8a1f2a), grain: 6 },
+  ipeCrown: { w: 64, h: 64, paint: ipeCrown, repeat: true, grain: 8 },
+  raindrop: { w: 4, h: 32, paint: raindrop, grain: 0, smooth: true },
   grass: { w: 128, h: 128, paint: grass, repeat: true, grain: 9 },
   wood: { w: 128, h: 128, paint: wood, repeat: true, grain: 6 },
   carpet: { w: 64, h: 64, paint: carpet, repeat: true, grain: 10 },

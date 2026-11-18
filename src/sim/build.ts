@@ -7,6 +7,9 @@ import {
   edgeLevel,
   footprint,
   inBounds,
+  isFence,
+  isWallLike,
+  isWater,
   isWindow,
   levelOfRow,
   levelsOf,
@@ -18,8 +21,9 @@ import {
   wallBehind,
 } from './grid';
 import { roofArea } from './roof';
+import { poolProblem } from './yard';
 import { computeRooms, roomAt } from './rooms';
-import type { Catalog, Command, EdgeKind, Grid, Roof, Side, Stair, Vec, World } from './types';
+import type { Catalog, Command, EdgeKind, Grid, OpeningKind, Roof, Side, Stair, Vec, World } from './types';
 
 // Modo construção: paredes, portas e janelas nas bordas dos tiles, pisos nos
 // tiles e revestimentos nas faces das paredes. Toda mudança vira um
@@ -45,7 +49,12 @@ export type BuildProblem =
   | 'noLanding'
   | 'stairsBlocked'
   | 'cutsStairs'
-  | 'noStairs';
+  | 'noStairs'
+  // bloco 13
+  | 'holdsPool'
+  | 'onWater'
+  | 'groundOnly'
+  | 'noFence';
 
 /** O que muda no grid. `null` apaga a entrada. */
 export interface GridChange {
@@ -70,6 +79,7 @@ const BUILD_TYPES = [
   'removeStairs',
   'toggleColumn',
   'setRoof',
+  'buildFences',
 ] as const;
 
 export type BuildCommand = Extract<Command, { type: (typeof BUILD_TYPES)[number] }>;
@@ -101,9 +111,12 @@ function changeSize(c: GridChange): number {
   );
 }
 
-/** Bloco 12: a mudança mexe em por onde se anda (e precisa da validação)? */
+/**
+ * Bloco 12: a mudança mexe em por onde se anda (e precisa da validação)?
+ * Bloco 13: qualquer piso conta (a piscina abre e fecha caminho).
+ */
 export function touchesNav(c: GridChange): boolean {
-  return Object.keys(c.edges).length > 0 || !!c.stairs || Object.values(c.floor).includes(VOID);
+  return Object.keys(c.edges).length > 0 || !!c.stairs || Object.keys(c.floor).length > 0;
 }
 
 // ---------- geometria ----------
@@ -214,9 +227,11 @@ export function roomFaces(grid: Grid, x: number, y: number): string[] {
     for (const d of SIDES) {
       const nx = cur.x + d.dx;
       const ny = cur.y + d.dy;
-      if (grid.edges[edgeKey(cur.x, cur.y, nx, ny)]) {
-        faces.push(faceKey(cur.x, cur.y, d.side));
-        continue;
+      const kind = grid.edges[edgeKey(cur.x, cur.y, nx, ny)];
+      if (kind) {
+        // bloco 13: cerca e portão não fecham cômodo nem levam revestimento
+        if (isWallLike(kind)) faces.push(faceKey(cur.x, cur.y, d.side));
+        if (!isFence(kind)) continue;
       }
       if (!inBounds(grid, nx, ny) || seen.has(ny * grid.w + nx)) continue;
       seen.add(ny * grid.w + nx);
@@ -315,6 +330,14 @@ export function checkGrid(world: World, catalog: Catalog, after: Grid): BuildPro
     const def = catalog.objects[obj.defId];
     if (!def) continue;
     for (const t of footprint(obj, def)) if (inBounds(after, t.x, t.y) && catalog.floors[after.floor[t.y * after.w + t.x]]?.void) return 'holdsFloor';
+    // bloco 13: escadinha sem água, trampolim sem piscina, móvel boiando
+    const pool = poolProblem(after, catalog, obj, def);
+    if (pool === 'onWater') return 'onWater';
+    if (pool) return 'holdsPool';
+  }
+  for (const st of after.stairs ?? []) {
+    const plan = stairPlan(after, st);
+    if ([plan.entry, ...plan.run].some((t) => isWater(after, catalog, t.x, t.y))) return 'cutsStairs';
   }
 
   const worldAfter: World = { ...world, grid: after };
@@ -337,6 +360,26 @@ export function checkGrid(world: World, catalog: Catalog, after: Grid): BuildPro
     if (!usable) return 'blocksObject';
   }
   return null;
+}
+
+/**
+ * Bloco 13: borda vazia que fica entre duas cercas (ou mureta) na mesma
+ * linha: é ali que se põe o portão depois de deixar o vão.
+ */
+function gateGap(grid: Grid, key: string): boolean {
+  const [xs, ys, side] = key.split(',');
+  const x = Number(xs);
+  const y = Number(ys);
+  const along = side === 'N' ? [`${x - 1},${y},N`, `${x + 1},${y},N`] : [`${x},${y - 1},W`, `${x},${y + 1},W`];
+  // nas pontas também valem as bordas que dobram a esquina no mesmo vértice
+  const ends =
+    side === 'N'
+      ? [[`${x},${y - 1},W`, `${x},${y},W`], [`${x + 1},${y - 1},W`, `${x + 1},${y},W`]]
+      : [[`${x - 1},${y},N`, `${x},${y},N`], [`${x - 1},${y + 1},N`, `${x},${y + 1},N`]];
+  const fenced = (k: string) => isFence(grid.edges[k]);
+  const a = fenced(along[0]) || ends[0].some(fenced);
+  const b = fenced(along[1]) || ends[1].some(fenced);
+  return a || b;
 }
 
 // ---------- planos de cada comando ----------
@@ -365,7 +408,21 @@ export function planBuild(world: World, catalog: Catalog, cmd: BuildCommand): Bu
       for (const k of keys) {
         const cur = grid.edges[k];
         // meia parede vira parede inteira (e vice-versa); porta e janela ficam
-        if (!cur || ((cur === 'wall' || cur === 'half') && cur !== kind)) change.edges[k] = kind;
+        if (!cur || ((cur === 'wall' || cur === 'half') && cur !== kind) || (isFence(cur) && cur !== 'gate')) change.edges[k] = kind;
+      }
+      if (Object.keys(change.edges).some((k) => !supportedEdge(grid, catalog, k))) return fail('noSupport', change);
+      cost = Object.keys(change.edges).length * catalog.parts[kind].price;
+      break;
+    }
+    case 'buildFences': {
+      // bloco 13: cerca de ripas e mureta; trocam uma pela outra, não passam por cima de parede
+      const kind: EdgeKind = cmd.kind === 'lowwall' ? 'lowwall' : 'fence';
+      const keys = lineEdges(grid, cmd.x0, cmd.y0, cmd.x1, cmd.y1);
+      if (!keys || keys.length === 0) return fail('outside');
+      if (vertexLevel(grid, cmd.y0) !== vertexLevel(grid, cmd.y1)) return fail('outside');
+      for (const k of keys) {
+        const cur = grid.edges[k];
+        if (!cur || ((cur === 'fence' || cur === 'lowwall') && cur !== kind)) change.edges[k] = kind;
       }
       if (Object.keys(change.edges).some((k) => !supportedEdge(grid, catalog, k))) return fail('noSupport', change);
       cost = Object.keys(change.edges).length * catalog.parts[kind].price;
@@ -384,7 +441,11 @@ export function planBuild(world: World, catalog: Catalog, cmd: BuildCommand): Bu
     case 'placeOpening': {
       if (!validEdge(grid, cmd.edge)) return fail('outside');
       const cur = grid.edges[cmd.edge];
-      if (!cur || cur === 'half') return fail('noWall');
+      // bloco 13: portão só em cerca ou mureta; porta e janela só em parede inteira
+      if ((cmd.kind as OpeningKind) === 'gate') {
+        // o portão vai numa cerca ou mureta, ou no vão deixado entre duas
+        if (cur ? !isFence(cur) : !gateGap(grid, cmd.edge)) return fail('noFence');
+      } else if (!cur || cur === 'half' || isFence(cur)) return fail('noWall');
       if (!catalog.parts[cmd.kind]) return fail('unknown');
       if (cur !== cmd.kind) change.edges[cmd.edge] = cmd.kind;
       cost = changeSize(change) > 0 ? catalog.parts[cmd.kind].price : 0;
@@ -397,6 +458,8 @@ export function planBuild(world: World, catalog: Catalog, cmd: BuildCommand): Bu
       const level = levelOfRow(grid, cmd.y0);
       if (level < 0) return fail('outside');
       // no andar de cima, "grama" é tirar o piso; no térreo não existe vão
+      // bloco 13: piscina, caminho e deck são coisa do térreo
+      if (def.yard && level > 0) return fail('groundOnly');
       if (level > 0 && def.outdoor) def = catalog.floors[VOID] ?? def;
       if (level === 0 && def.void) return fail('unknown');
       const top = rowOn(grid, level, 0);
@@ -488,7 +551,7 @@ export function planBuild(world: World, catalog: Catalog, cmd: BuildCommand): Bu
       let walls = 0;
       for (const f of cmd.faces) {
         const edge = edgeOfFace(f);
-        if (!validEdge(grid, edge) || !grid.edges[edge]) continue;
+        if (!validEdge(grid, edge) || !isWallLike(grid.edges[edge])) continue;
         walls++;
         if (grid.coverings[f] !== def.id) change.coverings[f] = def.id;
       }

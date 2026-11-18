@@ -235,6 +235,43 @@ function fence(x0: number, z0: number, x1: number, z1: number): THREE.Group {
   return g;
 }
 
+/**
+ * Bloco 13: o gramado em volta (160 x 160, centrado no lote) com o lote feito
+ * tile a tile, para a piscina poder furar o chão.
+ */
+function groundMesh(w: number, h: number, hole: (x: number, y: number) => boolean): THREE.Mesh {
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const quad = (x0: number, z0: number, x1: number, z1: number) => {
+    const p = [
+      [x0, z0],
+      [x0, z1],
+      [x1, z1],
+      [x1, z0],
+    ];
+    for (const i of [0, 1, 2, 0, 2, 3]) {
+      pos.push(p[i][0], 0, p[i][1]);
+      uv.push(p[i][0] / 2, -p[i][1] / 2);
+    }
+  };
+  const X0 = w / 2 - 80;
+  const X1 = w / 2 + 80;
+  const Z0 = h / 2 - 80;
+  const Z1 = h / 2 + 80;
+  quad(X0, Z0, X1, 0);
+  quad(X0, h, X1, Z1);
+  quad(X0, 0, 0, h);
+  quad(w, 0, X1, h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (!hole(x, y)) quad(x, y, x + 1, y + 1);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, texMat('grass'));
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
 function neighbor(x: number, z: number, w: number, d: number, variant: number, turn: number): THREE.Group {
   const g = new THREE.Group();
   const wallMat = texMat(`houseWall:${variant}`);
@@ -254,17 +291,18 @@ function neighbor(x: number, z: number, w: number, d: number, variant: number, t
  * `free(x, y)`: o tile do terreno está livre (grama e sem móvel)?
  * Enfeites do quintal só aparecem onde o jogador não construiu nada.
  */
-export function buildScenery(grid: Grid, free: (x: number, y: number) => boolean = () => true): THREE.Group {
+export function buildScenery(
+  grid: Grid,
+  free: (x: number, y: number) => boolean = () => true,
+  hole: (x: number, y: number) => boolean = () => false,
+): THREE.Group {
   const g = new THREE.Group();
   const rnd = seeded(77);
   const { w, h } = grid;
 
-  // gramado enorme: o mesmo padrão cobre o terreno e o entorno
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), texMat('grass'));
-  tileUV(ground, 80, 80);
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(w / 2, 0, h / 2);
-  ground.receiveShadow = true;
+  // gramado enorme: o mesmo padrão cobre o terreno e o entorno (bloco 13:
+  // com um buraco em cada tile de piscina cavada)
+  const ground = groundMesh(w, h, hole);
   g.add(ground);
 
   // calçada e rua na frente (sul) do terreno
@@ -316,7 +354,7 @@ export function buildScenery(grid: Grid, free: (x: number, y: number) => boolean
 
   // canteiros de flores encostados nas paredes de fora viradas para a rua
   for (const [key, kind] of Object.entries(grid.edges)) {
-    if (kind === 'door') continue;
+    if (kind === 'door' || kind === 'fence' || kind === 'lowwall' || kind === 'gate') continue;
     const [xs, ys, side] = key.split(',');
     const x = Number(xs);
     const y = Number(ys);

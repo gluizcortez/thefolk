@@ -5,6 +5,7 @@ import type { Logger } from './gossip';
 import { addMemory, relationOf } from './relations';
 import { nextFloat } from './rng';
 import { skillLevel } from './skills';
+import { AUTO_WATER_BELOW } from './garden';
 import type { Catalog, Folk, InteractionDef, Mess, MessKind, ObjectDef, ObjectState, Vec, World, WorldObject } from './types';
 
 // Bloco 1, casa viva: objetos sujam e gastam com o uso, quebram com o
@@ -86,6 +87,13 @@ export function careAvailable(obj: WorldObject, it: InteractionDef): boolean {
     case 'dishes':
     case 'dump':
       return true;
+    // bloco 13: plantas (veja sim/garden.ts)
+    case 'water':
+      return !!obj.plant && obj.plant.health > 0 && obj.plant.water < 90;
+    case 'harvest':
+      return !!obj.plant && obj.plant.fruit > 0;
+    case 'replant':
+      return !!obj.plant && obj.plant.health <= 0;
     default:
       return false;
   }
@@ -103,6 +111,8 @@ export function interactionOpen(obj: WorldObject, it: InteractionDef): boolean {
   if (it.tune === 'on') return !obj.tune && !stateOf(obj).broken;
   if (it.tune === 'next') return !!obj.tune && !stateOf(obj).broken;
   if (it.tune === 'off') return !!obj.tune;
+  // bloco 13: cheirar as flores só com a planta adulta e viçosa
+  if (it.bloom) return !!obj.plant && obj.plant.growth >= 100 && obj.plant.health >= 70 && obj.plant.water >= 25;
   // bloco 9: só dá para beliscar com petisco na mesa
   if (it.snacks === 'eat') return (obj.snacks ?? 0) > 0 && !stateOf(obj).broken;
   return !stateOf(obj).broken;
@@ -271,10 +281,18 @@ export function careTick(
       if (s.wear > 0) return false;
       if (jeito >= PATCH_BELOW) s.patched = false;
       return true;
+    case 'water':
+      // bloco 13: regar enche a planta de água (veja sim/garden.ts)
+      if (!obj.plant) return true;
+      obj.plant.water = Math.min(100, obj.plant.water + WATER_PER_MINUTE);
+      return obj.plant.water >= 100;
     default:
       return false;
   }
 }
+
+/** bloco 13: água que cada minuto de rega dá */
+export const WATER_PER_MINUTE = 7;
 
 function finishRepair(world: World, log: Logger, folk: Folk, s: ObjectState, def: ObjectDef, jeito: number): void {
   s.broken = false;
@@ -404,6 +422,12 @@ export function objectCareScore(obj: WorldObject, it: InteractionDef): number {
     case 'empty':
       if (s.fill < AUTO_EMPTY_AT) return 0;
       return s.fill >= BIN_FULL ? 42 : 12 + (s.fill - AUTO_EMPTY_AT) * 0.5;
+    // bloco 13: regar o que está com sede, colher o que amadureceu
+    case 'water':
+      if (!obj.plant || obj.plant.water >= AUTO_WATER_BELOW) return 0;
+      return 12 + (AUTO_WATER_BELOW - obj.plant.water) * 0.5;
+    case 'harvest':
+      return obj.plant && obj.plant.fruit > 0 ? 18 + obj.plant.fruit * 2 : 0;
     default:
       return 0;
   }

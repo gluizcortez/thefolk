@@ -204,6 +204,15 @@ const RAW: NeighborSeed[] = [
     career: null,
     service: 'social',
   },
+  // bloco 13: o jardineiro rega, colhe e conhece as plantas de todo o bairro
+  {
+    name: 'Tião Mangueira',
+    traits: ['gentil', 'reservado'],
+    look: { skin: 3, hair: 2, shirt: 2, pants: 0 },
+    skills: { tidiness: 900, fitness: 540 },
+    career: null,
+    service: 'gardener',
+  },
 ];
 
 /**
@@ -224,6 +233,8 @@ export const NEIGHBOR_TIES: RelationSeed[] = [
   { a: 'Rita Vidraça', b: 'Dora Alpendre', friendship: 30 },
   { a: 'Edu Manilha', b: 'Caio Telhado', friendship: 35 },
   { a: 'Lúcio Batente', b: 'Nina Varal', friendship: 25 },
+  // bloco 13
+  { a: 'Tião Mangueira', b: 'Marta Rodapé', friendship: 30 },
 ];
 
 /** Bloco 5: o temperamento dos vizinhos sai dos traços e o mês, do temperamento. */

@@ -5,6 +5,8 @@ import {
   edgeLevel,
   inBounds,
   isDoorway,
+  isFence,
+  splitsRoom,
   levelOfRow,
   levelsOf,
   roofHeights,
@@ -14,7 +16,7 @@ import {
   stairPlan,
   strideOf,
 } from '../../sim';
-import { box, colorMat, cyl, setShadows, texMat } from './build';
+import { ball, box, colorMat, cyl, rod, setShadows, texMat } from './build';
 import { PAL } from './palette';
 
 export type WallMode = 'cutaway' | 'down' | 'up';
@@ -151,6 +153,7 @@ export class House {
     }
     this.enclosed = enclosedTiles(grid);
     this.buildFloors();
+    this.buildYard();
     this.buildWalls();
     this.buildPosts();
     this.buildPath();
@@ -196,9 +199,79 @@ export class House {
     return this.walls.filter((w) => level === undefined || w.level === level).map((w) => ({ edge: w.key, object: w.isTall ? w.tall : w.low }));
   }
 
-  /** Bloco 12: paredes inteiras à vista (para o clique não atravessar parede). */
+  /** Bloco 12: paredes inteiras à vista (para o clique não atravessar parede). Cerca não conta. */
   solidWalls(): THREE.Object3D[] {
-    return this.walls.filter((w) => w.isTall && w.tall.visible && this.levels[w.level]?.visible).map((w) => w.tall);
+    return this.walls
+      .filter((w) => w.isTall && w.tall.visible && this.levels[w.level]?.visible && !isFence(this.grid.edges[w.key]))
+      .map((w) => w.tall);
+  }
+
+  /** Bloco 13: materiais que a tela anima (a água da piscina ondula). */
+  readonly waterMats: THREE.MeshPhongMaterial[] = [];
+
+  /**
+   * Bloco 13: chão do quintal no térreo: caminho de pedras, deck e a piscina
+   * (fundo e paredes de pastilha, borda de pedra clara e a água por cima).
+   * O gramado do cenário tem um buraco onde a piscina foi cavada.
+   */
+  private buildYard(): void {
+    const { grid } = this;
+    const floors = this.floors;
+    if (!floors) return;
+    const kindAt = (x: number, y: number) => (inBounds(grid, x, y) && levelOfRow(grid, y) === 0 ? grid.floor[y * grid.w + x] : '');
+    const wet = (x: number, y: number) => !!floors[kindAt(x, y)]?.water;
+    const quads: Record<string, number[]> = {};
+    const uvs: Record<string, number[]> = {};
+    const push = (tex: string, p: number[][], uv: number[][]) => {
+      (quads[tex] ??= []).push(...p[0], ...p[1], ...p[2], ...p[0], ...p[2], ...p[3]);
+      (uvs[tex] ??= []).push(...uv[0], ...uv[1], ...uv[2], ...uv[0], ...uv[2], ...uv[3]);
+    };
+    const D = POOL_DEPTH;
+    const S = POOL_SURFACE;
+    for (let y = 0; y < grid.h; y++) {
+      for (let x = 0; x < grid.w; x++) {
+        const f = kindAt(x, y);
+        if (f === 'stonepath' || f === 'deck') {
+          push(f, [[x, 0.014, y], [x, 0.014, y + 1], [x + 1, 0.014, y + 1], [x + 1, 0.014, y]], [[x, -y], [x, -(y + 1)], [x + 1, -(y + 1)], [x + 1, -y]]);
+          continue;
+        }
+        if (!wet(x, y)) continue;
+        // fundo
+        push('poolTile', [[x, -D, y], [x, -D, y + 1], [x + 1, -D, y + 1], [x + 1, -D, y]], [[x, -y], [x, -(y + 1)], [x + 1, -(y + 1)], [x + 1, -y]]);
+        // água
+        push('water', [[x, -S, y], [x, -S, y + 1], [x + 1, -S, y + 1], [x + 1, -S, y]], [[x, -y], [x, -(y + 1)], [x + 1, -(y + 1)], [x + 1, -y]]);
+        // paredes de dentro, viradas para a água
+        const vu = (a: number, b: number) => [[a, 0], [a, -D], [b, -D], [b, 0]];
+        if (!wet(x, y - 1)) push('poolTile', [[x, 0, y], [x, -D, y], [x + 1, -D, y], [x + 1, 0, y]], vu(x, x + 1));
+        if (!wet(x, y + 1)) push('poolTile', [[x + 1, 0, y + 1], [x + 1, -D, y + 1], [x, -D, y + 1], [x, 0, y + 1]], vu(x + 1, x));
+        if (!wet(x - 1, y)) push('poolTile', [[x, 0, y + 1], [x, -D, y + 1], [x, -D, y], [x, 0, y]], vu(y + 1, y));
+        if (!wet(x + 1, y)) push('poolTile', [[x + 1, 0, y], [x + 1, -D, y], [x + 1, -D, y + 1], [x + 1, 0, y + 1]], vu(y, y + 1));
+      }
+    }
+    for (const tex of Object.keys(quads)) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(quads[tex], 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs[tex], 2));
+      geo.computeVertexNormals();
+      const water = tex === 'water';
+      const mat = water ? texMat('water', { gloss: 0.9, opacity: 0.78, unique: true }) : texMat(tex, { gloss: tex === 'poolTile' ? 0.5 : 0.1 });
+      if (water) this.waterMats.push(mat);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.receiveShadow = !water;
+      if (water) mesh.renderOrder = 2;
+      this.levels[0].add(mesh);
+    }
+    // borda de pedra em volta da água
+    const coping = texMat('coping', { gloss: 0.15 });
+    for (let y = 0; y < grid.h; y++) {
+      for (let x = 0; x < grid.w; x++) {
+        if (!wet(x, y)) continue;
+        if (!wet(x, y - 1)) this.levels[0].add(box(1.2, 0.07, 0.28, coping, x + 0.5, 0, y - 0.1));
+        if (!wet(x, y + 1)) this.levels[0].add(box(1.2, 0.07, 0.28, coping, x + 0.5, 0, y + 1.1));
+        if (!wet(x - 1, y)) this.levels[0].add(box(0.28, 0.07, 1.2, coping, x - 0.1, 0, y + 0.5));
+        if (!wet(x + 1, y)) this.levels[0].add(box(0.28, 0.07, 1.2, coping, x + 1.1, 0, y + 0.5));
+      }
+    }
   }
 
   private buildFloors(): void {
@@ -288,7 +361,11 @@ export class House {
       const tall = new THREE.Group();
       const low = new THREE.Group();
 
-      if (isDoorway(kind)) {
+      if (isFence(kind)) {
+        // bloco 13: cerca, mureta e portão: baixos, iguais nas duas versões
+        tall.add(fencePart(kind));
+        low.add(fencePart(kind));
+      } else if (isDoorway(kind)) {
         const style = DOORS[kind as DoorKind];
         const width = style.width;
         const jamb = (1 - width) / 2;
@@ -373,9 +450,9 @@ export class House {
     }
   }
 
-  /** Pilares onde as paredes fazem quina, se cruzam ou terminam. */
+  /** Pilares onde as paredes fazem quina, se cruzam ou terminam (cerca tem os próprios mourões). */
   private buildPosts(): void {
-    const byKey = new Map(this.walls.map((w) => [w.key, w]));
+    const byKey = new Map(this.walls.filter((w) => !isFence(this.grid.edges[w.key])).map((w) => [w.key, w]));
     const side = colorMat(PAL.trim);
     const cap = colorMat(PAL.wallCap);
     const mats = [side, side, cap, cap, side, side];
@@ -647,6 +724,42 @@ export class House {
   }
 }
 
+/** Bloco 13: fundura da piscina e a altura da água abaixo da borda. */
+export const POOL_DEPTH = 1.35;
+export const POOL_SURFACE = 0.16;
+
+/** Bloco 13: um metro de cerca de ripas, de mureta de tijolo ou o portão de ripas entreaberto. */
+function fencePart(kind: EdgeKind): THREE.Group {
+  const g = new THREE.Group();
+  const white = colorMat(PAL.white);
+  if (kind === 'lowwall') {
+    const brick = texMat('wallExterior', { color: 0xf2d6c4 });
+    const m = box(1, 0.66, 0.2, [brick, brick, brick, brick, brick, brick], 0, 0, 0);
+    g.add(m, box(1.06, 0.07, 0.28, colorMat(PAL.wallCap), 0, 0.66, 0));
+    return g;
+  }
+  const picket = texMat('picket', { alphaTest: 0.5, doubleSide: true });
+  const post = (x: number) => box(0.09, 1.0, 0.09, white, x, 0, 0);
+  g.add(post(-0.5), post(0.5));
+  if (kind === 'fence') {
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.85), picket);
+    panel.position.y = 0.43;
+    g.add(panel, box(1, 0.05, 0.04, white, 0, 0.62, 0.03), box(1, 0.05, 0.04, white, 0, 0.22, 0.03));
+    return g;
+  }
+  // portão: folha de ripas presa num mourão, entreaberta
+  const leaf = new THREE.Group();
+  const panel = new THREE.Mesh(new THREE.PlaneGeometry(0.86, 0.8), picket);
+  panel.position.set(0.43, 0.42, 0);
+  leaf.add(panel, box(0.86, 0.05, 0.04, white, 0.43, 0.6, 0.03), box(0.86, 0.05, 0.04, white, 0.43, 0.22, 0.03));
+  leaf.add(rod([0.05, 0.24, 0.03], [0.82, 0.6, 0.03], 0.018, white));
+  leaf.add(ball(0.03, 0.03, 0.03, colorMat(0x26262b), 0.8, 0.45, 0.05, 6));
+  leaf.position.x = -0.45;
+  leaf.rotation.y = -0.5;
+  g.add(leaf, box(0.11, 1.1, 0.11, white, -0.5, 0, 0), box(0.11, 1.1, 0.11, white, 0.5, 0, 0));
+  return g;
+}
+
 type DoorKind = 'door' | 'doorGlass' | 'doorDouble' | 'arch';
 type WindowKind = 'window' | 'windowTall' | 'windowHigh';
 
@@ -732,10 +845,7 @@ function enclosedTiles(grid: Grid): Uint8Array {
       if (!grid.edges[`0,${y},W`]) visit(0, y);
       if (!grid.edges[`${w},${y},W`]) visit(w - 1, y);
     }
-    const blocks = (k: string) => {
-      const e = grid.edges[k] as EdgeKind | undefined;
-      return e !== undefined && e !== 'half';
-    };
+    const blocks = (k: string) => splitsRoom(grid.edges[k] as EdgeKind | undefined);
     while (queue.length > 0) {
       const i = queue.shift()!;
       const x = i % w;

@@ -4,6 +4,7 @@ import { admire, clean, dishes, lightOff, lightOn, repair, service, tuning } fro
 import { FURNITURE } from './furniture';
 import { REWARDS } from './rewards';
 import { KID_OBJECTS, homework } from './kids';
+import { YARD_OBJECTS, replantPlant, waterPlant } from './yard';
 
 // Catálogo de objetos. Tudo aqui é dado: para criar um objeto novo, adicione
 // uma entrada, os textos em i18n e (opcional) um modelo em game/art/furniture.ts
@@ -365,9 +366,9 @@ const list: ObjectDef[] = [
     art: 'plant',
     size: { w: 1, h: 1 },
     ambience: 14,
-    interactions: [
-      { id: 'water', label: 'act.water', duration: 10, effects: { fun: 0.4, ambience: 0.4 } },
-    ],
+    // bloco 13: o vaso também vive: pede água e murcha se esquecido
+    plant: { kind: 'pot', thirst: 1.1, grow: 0, bloom: 2 },
+    interactions: [waterPlant(), replantPlant(70)],
   },
   {
     id: 'lamp',
@@ -912,4 +913,4 @@ const list: ObjectDef[] = [
   },
 ];
 
-export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries([...list, ...FURNITURE, ...REWARDS, ...KID_OBJECTS].map((o) => [o.id, o]));
+export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries([...list, ...FURNITURE, ...REWARDS, ...KID_OBJECTS, ...YARD_OBJECTS].map((o) => [o.id, o]));

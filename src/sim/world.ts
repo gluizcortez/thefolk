@@ -125,7 +125,7 @@ export function firstBillAfter(tick: number): number {
 
 /** Despensa, correio e serviços de uma casa nova (bloco 2). */
 export function freshHousehold(pantry: number): Omit<World['household'], 'funds' | 'nextBills'> {
-  return { lastBill: 0, pantry, takeout: 0, bills: [], orders: [], maid: false, paperDay: -1, readDay: -1, lightMinutes: 0, unlocked: [], expecting: null };
+  return { lastBill: 0, pantry, takeout: 0, bills: [], orders: [], maid: false, gardener: false, paperDay: -1, readDay: -1, lightMinutes: 0, unlocked: [], expecting: null };
 }
 
 /** Vizinhos com ids novos a partir de `nextId`. */
@@ -270,6 +270,7 @@ export function createWorld(seed: WorldSeed): World {
     party: null,
     lastParty: null,
     call: null,
+    rain: null,
   };
   seedRelations(world, seed.relations ?? []);
   seedWorkplaceTies(world);

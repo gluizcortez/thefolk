@@ -4,6 +4,8 @@ import { PAL, mix, seeded, shade } from './palette';
 import { FURNITURE4 } from './furniture4';
 import { REWARD_ART } from './rewards';
 import { KID_ART } from './kids';
+import { YARD_ART, livingPot } from './yard';
+import type { PlantState } from '../../sim';
 import { getTexture } from './textures';
 
 // Modelos 3D dos objetos. As formas são arredondadas, com esmalte, vinil e
@@ -31,6 +33,8 @@ export interface TickInfo {
   ringing?: boolean;
   /** bloco 9: porções na mesa de petiscos */
   stock?: number;
+  /** bloco 13: estado da planta viva */
+  plant?: PlantState;
 }
 
 export interface FurnitureModel {
@@ -1350,11 +1354,13 @@ const SPECS: Record<string, FurnitureSpec> = {
 };
 
 export function furnitureSpec(art: string): FurnitureSpec {
-  return SPECS[art] ?? FURNITURE4[art] ?? REWARD_ART[art] ?? KID_ART[art] ?? fallback;
+  return SPECS[art] ?? FURNITURE4[art] ?? REWARD_ART[art] ?? KID_ART[art] ?? YARD_ART[art] ?? fallback;
 }
 
 export function buildFurniture(art: string, seed: number, paint?: number): FurnitureModel {
-  const model = furnitureSpec(art).build(seed, paint);
+  let model = furnitureSpec(art).build(seed, paint);
+  // bloco 13: o vaso da casa também vive (murcha sem água)
+  if (art === 'plant') model = livingPot(model);
   DETAILS[art]?.(model.group, seed);
   setShadows(model.group);
   model.group.traverse((o) => {
