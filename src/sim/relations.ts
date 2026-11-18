@@ -136,8 +136,15 @@ export function addMemory(world: World, catalog: Catalog, from: number, to: numb
 
 export function setDating(world: World, a: number, b: number, on: boolean): void {
   ensureRelation(world, a, b);
-  world.relations[relKey(a, b)].dating = on;
-  world.relations[relKey(b, a)].dating = on;
+  for (const k of [relKey(a, b), relKey(b, a)]) {
+    const rel = world.relations[k];
+    rel.dating = on;
+    // bloco 10: terminar desfaz o noivado (e o casamento vira passado)
+    if (!on && rel.bond) {
+      if (rel.bond === 'married') rel.ex = true;
+      delete rel.bond;
+    }
+  }
 }
 
 /** Bloco 8: quanto a amizade cai por dia sem contato (Afeto 5). */
@@ -172,7 +179,9 @@ export function coolRelations(world: World): void {
     const k = coolFactor(warmth.get(from));
     if (rel.friendship > 0) rel.friendship = Math.max(0, rel.friendship - FRIEND_COOL * k * (rel.friendship >= 75 ? 0.5 : 1));
     else if (rel.friendship < -10) rel.friendship = Math.min(-10, rel.friendship + 1);
-    if (rel.romance > 0) rel.romance = Math.max(0, rel.romance - ROMANCE_COOL * k * (rel.dating ? 1 / 3 : 1));
+    // bloco 10: casados esfriam ainda mais devagar que namorados
+    const keep = rel.dating ? (rel.bond === 'married' ? 0.2 : 1 / 3) : 1;
+    if (rel.romance > 0) rel.romance = Math.max(0, rel.romance - ROMANCE_COOL * k * keep);
   }
 }
 
@@ -191,7 +200,10 @@ export function friendshipLabel(rel: Relation | undefined): string {
 /** Rótulo do romance, ou null se não há nada no ar. */
 export function romanceLabel(rel: Relation | undefined): string | null {
   if (!rel) return null;
+  if (rel.bond === 'married' && rel.dating) return 'rel.married';
+  if (rel.bond === 'engaged' && rel.dating) return 'rel.engaged';
   if (rel.dating) return 'rel.dating';
+  if (rel.ex) return 'rel.exSpouse';
   if (rel.romance >= 60) return 'rel.inLove';
   if (rel.romance >= 25) return 'rel.crush';
   return null;

@@ -38,6 +38,16 @@ const list: MemoryDef[] = [
   { id: 'leftAtDoor', label: 'mem.leftAtDoor', weight: -2 },
   { id: 'turnedAway', label: 'mem.turnedAway', weight: -3 },
   { id: 'goodTip', label: 'mem.goodTip', weight: 1 },
+  // bloco 10: vida a dois
+  { id: 'engaged', label: 'mem.engaged', weight: 6, log: 'log.engagedMemory' },
+  { id: 'proposalRefused', label: 'mem.proposalRefused', weight: -3 },
+  { id: 'refusedProposal', label: 'mem.refusedProposal', weight: -1 },
+  { id: 'married', label: 'mem.married', weight: 8 },
+  { id: 'sleptTogether', label: 'mem.sleptTogether', weight: 2, once: true },
+  { id: 'divorced', label: 'mem.divorced', weight: -6 },
+  { id: 'gotDivorced', label: 'mem.gotDivorced', weight: -8 },
+  { id: 'toldToLeave', label: 'mem.toldToLeave', weight: -5 },
+  { id: 'atWedding', label: 'mem.atWedding', weight: 2, once: true },
 ];
 
 export const MEMORIES: Record<string, MemoryDef> = Object.fromEntries(list.map((m) => [m.id, m]));

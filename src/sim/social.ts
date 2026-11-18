@@ -47,12 +47,13 @@ export function socialAllowed(world: World, catalog: Catalog, def: SocialDef, a:
   if (req.romance !== undefined && (rel?.romance ?? 0) < req.romance) return false;
   if (req.dating !== undefined && (rel?.dating ?? false) !== req.dating) return false;
   if (req.grudge && memoryWeight(catalog, relationOf(world, b.id, a.id)) > -3) return false;
+  if (req.bond && !req.bond.includes(rel?.dating ? (rel.bond ?? 'dating') : 'none')) return false;
   return true;
 }
 
 /** Interações que `a` pode puxar com `b`, na ordem do catálogo. */
 export function availableSocials(world: World, catalog: Catalog, a: Folk, b: Folk): SocialDef[] {
-  return Object.values(catalog.socials).filter((def) => socialAllowed(world, catalog, def, a, b));
+  return Object.values(catalog.socials).filter((def) => !def.hidden && socialAllowed(world, catalog, def, a, b));
 }
 
 /**

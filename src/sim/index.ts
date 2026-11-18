@@ -30,3 +30,4 @@ export * from './music';
 export * from './topics';
 export * from './circles';
 export * from './cliques';
+export * from './marriage';

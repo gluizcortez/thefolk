@@ -434,7 +434,7 @@ barulho depois das 22h. Panelinhas e rivais (briga vira notícia). Conversas
 relembrar, aperto de mão, esnobar, mandar embora; cumprimento na porta pela
 relação; desvio local. Save v13.
 
-## Bloco 10 — Vida a dois: noivado, casamento, morar junto (save v14)
+## Bloco 10 — Vida a dois: noivado, casamento, morar junto (save v14) — feito em 18/11/2026
 
 **Escopo**
 - Pedido de noivado (aceito pelo nível de romance e humor), anel como objeto,

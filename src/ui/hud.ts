@@ -93,6 +93,10 @@ import {
   favoriteTopics,
   hatedTopics,
   sharedTopics,
+  bondOf,
+  ringOnLot,
+  surname,
+  weddingNames,
 } from '../sim';
 import type {
   Action,
@@ -107,6 +111,7 @@ import type {
   ServiceOrder,
   SocialCategory,
   Speed,
+  SurnameChoice,
   WorldObject,
 } from '../sim';
 import { iconSvg, topicSvg } from './icons';
@@ -353,9 +358,11 @@ export class Hud {
     if (party) {
       const here = world.folks.filter((f) => f.visit?.party && f.visit.admitted).length;
       const vibe = party.samples ? Math.round(party.score / party.samples) : null;
+      const kind = party.wedding ? 'wedding' : 'party';
       text = world.tick < party.start
-        ? t('party.soon', { time: formatClock(party.start), n: party.guests.length })
-        : t('party.on', { n: here, vibe: vibe === null ? '…' : String(vibe) });
+        ? t(`${kind}.soon`, { time: formatClock(party.start), n: party.guests.length })
+        : t(`${kind}.on`, { n: here, vibe: vibe === null ? '…' : String(vibe) });
+      if (party.wedding?.stage === 'done') text = `${t('wedding.done')} · ${text}`;
       title = t('party.until', { time: formatClock(party.end) });
     } else if (last && world.tick - last.tick < 6 * 60) {
       text = `${t('party.last')} ${'★'.repeat(last.grade)}${'☆'.repeat(5 - last.grade)}`;
@@ -690,6 +697,7 @@ export class Hud {
     }
     if (action.serviceId) return t(`act.call.${action.serviceId}`);
     if (action.kind === 'circle') return t('act.circle');
+    if (action.wedding && action.guests) return t('act.weddingFor', { n: action.guests.length });
     if (action.guests) return t('act.partyFor', { n: action.guests.length });
     if ((action.interactionId === 'call' || action.interactionId === 'answer') && action.otherId !== undefined) {
       const n = this.ctrl.world.neighbors.find((x) => x.id === action.otherId);
@@ -1117,22 +1125,46 @@ export class Hud {
   }
 
   /** Bloco 9: quem chamar para a festa (com aviso de rivais na mesma lista). */
-  openPartyMenu(x: number, y: number, picked?: Set<number>): void {
+  openPartyMenu(x: number, y: number, picked?: Set<number>, wedding?: { partner: number; surname: SurnameChoice }): void {
     const folk = this.ctrl.folk;
     const world = this.ctrl.world;
     const people = world.neighbors
-      .filter((n) => !isServiceNeighbor(n) && relationOf(world, folk.id, n.id))
+      .filter((n) => !isServiceNeighbor(n) && relationOf(world, folk.id, n.id) && n.id !== wedding?.partner)
       .sort((a, b) => (relationOf(world, folk.id, b.id)?.friendship ?? 0) - (relationOf(world, folk.id, a.id)?.friendship ?? 0) || a.id - b.id);
     const chosen = picked ?? new Set(people.filter((n) => (relationOf(world, folk.id, n.id)?.friendship ?? 0) >= 20).slice(0, 6).map((n) => n.id));
     const cliques = findCliques(world);
     const nameOf = (id: number) => first(this.nameOf(id));
-    this.menuEl.replaceChildren(el('div', 'menu-title', t('party.title')));
+    const partnerName = wedding ? this.nameOf(wedding.partner) : '';
+    this.menuEl.replaceChildren(el('div', 'menu-title', wedding ? t('wedding.title', { name: first(partnerName) }) : t('party.title')));
     if (world.party) {
       this.menuEl.append(el('div', 'menu-note menu-warn', t('problem.partyOn')));
       this.showMenuAt(x, y);
       return;
     }
-    this.menuEl.append(el('div', 'menu-note party-hint', t('party.hint', { max: PARTY_MAX_GUESTS })));
+    this.menuEl.append(el('div', 'menu-note party-hint', wedding ? t('wedding.hint') : t('party.hint', { max: PARTY_MAX_GUESTS })));
+    if (wedding) {
+      // sobrenome: o de quem marca, o do par, os dois juntos ou cada um o seu
+      this.menuEl.append(el('div', 'menu-group', t('wedding.surname')));
+      const row = el('div', 'surname-row');
+      const choices: SurnameChoice[] = ['host', 'partner', 'both', 'keep'];
+      for (const c of choices) {
+        const [hn] = weddingNames(folk.name, partnerName, c);
+        const label =
+          c === 'host'
+            ? t('wedding.surname.host', { name: first(folk.name), surname: surname(folk.name) })
+            : c === 'partner'
+              ? t('wedding.surname.partner', { name: first(partnerName), surname: surname(partnerName) })
+              : c === 'both'
+                ? t('wedding.surname.both', { surname: surname(hn) })
+                : t('wedding.surname.keep');
+        const b = el('button', `menu-item surname${wedding.surname === c ? ' picked' : ''}`);
+        b.append(el('span', 'menu-dot'), el('span', '', label));
+        b.addEventListener('click', () => this.openPartyMenu(x, y, chosen, { ...wedding, surname: c }));
+        row.append(b);
+      }
+      this.menuEl.append(row);
+      if (chosen.size === 0) this.menuEl.append(el('div', 'menu-note', t('wedding.noGuests')));
+    }
     const pairs = rivalPairs(world, [...chosen, folk.id]);
     if (pairs.length) {
       this.menuEl.append(el('div', 'menu-note menu-warn party-hint', t('party.rivals', { list: pairs.map(([a, b]) => `${nameOf(a)} × ${nameOf(b)}`).join(', ') })));
@@ -1147,7 +1179,7 @@ export class Hud {
       check.addEventListener('change', () => {
         if (check.checked) chosen.add(n.id);
         else chosen.delete(n.id);
-        this.openPartyMenu(x, y, chosen);
+        this.openPartyMenu(x, y, chosen, wedding);
       });
       const face = el('span', 'menu-face');
       face.innerHTML = faceSvg(n.look, 18);
@@ -1159,10 +1191,11 @@ export class Hud {
       box.append(row);
     }
     this.menuEl.append(box);
-    const go = el('button', 'btn party-go', t('party.call', { n: chosen.size }));
-    go.disabled = chosen.size === 0;
+    const go = el('button', 'btn party-go', t(wedding ? 'wedding.call' : 'party.call', { n: chosen.size }));
+    go.disabled = chosen.size === 0 && !wedding;
     go.addEventListener('click', () => {
-      this.ctrl.commandOrExplain({ type: 'throwParty', folkId: folk.id, guestIds: [...chosen] });
+      if (wedding) this.ctrl.commandOrExplain({ type: 'planWedding', folkId: folk.id, partnerId: wedding.partner, guestIds: [...chosen], surname: wedding.surname });
+      else this.ctrl.commandOrExplain({ type: 'throwParty', folkId: folk.id, guestIds: [...chosen] });
       this.closeMenu();
       this.update();
     });
@@ -1273,6 +1306,13 @@ export class Hud {
         this.menuEl.append(b);
       }
     }
+    // bloco 10: noivos marcam o casamento daqui
+    if (!folk.away && !folk.visit && bondOf(world, folk.id, other.id) === 'engaged' && !world.party) {
+      const b = el('button', 'menu-item');
+      b.append(el('span', 'menu-dot'), el('span', '', t('soc.wedding')), el('span', 'menu-extra', '›'));
+      b.addEventListener('click', () => this.openPartyMenu(x, y, undefined, { partner: other.id, surname: 'host' }));
+      this.menuEl.append(b);
+    }
     const list = availableSocials(world, this.ctrl.sim.catalog, folk, other);
     if (!folk.away && list.some((d) => d.topic)) {
       const b = el('button', 'menu-item');
@@ -1289,6 +1329,11 @@ export class Hud {
         for (const def of defs) {
           const b = el('button', `menu-item soc cat-${cat}`);
           b.append(el('span', 'menu-dot'), el('span', '', t(def.label)));
+          if (def.special === 'engage' && !ringOnLot(world, catalog)) {
+            b.append(el('span', 'menu-extra', t('soc.noRing')));
+            b.classList.add('reluctant');
+            b.title = t('problem.noRing');
+          }
           b.addEventListener('click', () => {
             this.ctrl.commandOrExplain({ type: 'queueSocial', folkId: folk.id, otherId: other.id, socialId: def.id });
             this.closeMenu();

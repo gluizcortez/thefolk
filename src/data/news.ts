@@ -23,6 +23,12 @@ const list: NewsDef[] = [
   // bloco 9: festas
   { id: 'greatParty', label: 'news.greatParty', reputation: 3, opinion: { friendship: 2 }, juicy: 0.6, days: 6 },
   { id: 'flopParty', label: 'news.flopParty', reputation: -2, opinion: { respect: -1 }, juicy: 0.75, days: 5 },
+  // bloco 10: vida a dois
+  { id: 'engaged', label: 'news.engaged', reputation: 1, opinion: { friendship: 1 }, juicy: 0.7, days: 6 },
+  { id: 'proposalRefused', label: 'news.proposalRefused', reputation: -1, juicy: 0.85, days: 5 },
+  { id: 'wedding', label: 'news.wedding', reputation: 3, opinion: { friendship: 2 }, juicy: 0.65, days: 7 },
+  { id: 'divorce', label: 'news.divorce', reputation: -1, juicy: 0.9, days: 8 },
+  { id: 'movedOut', label: 'news.movedOut', reputation: 0, juicy: 0.6, days: 5 },
   { id: 'partyBrawl', label: 'news.partyBrawl', reputation: -3, opinion: { friendship: -2, respect: -1 }, juicy: 0.9, days: 6 },
 ];
 

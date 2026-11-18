@@ -30,6 +30,7 @@ import {
   onLotWitnesses,
   pickGossip,
   reputationOf,
+  partnersOf,
   romanticAct,
   spreadNews,
 } from './gossip';
@@ -97,7 +98,7 @@ import { MINUTES_PER_DAY, clockOf } from './clock';
 import type { PlaceProblem } from './economy';
 import { billAmount, checkPlacement, formatMoney, objectBusy, sellValue } from './economy';
 import type { Nav } from './grid';
-import { buildNav, nearestFootprintTile, useTiles } from './grid';
+import { blocksStep, buildNav, edgeKey, nearestFootprintTile, useTiles } from './grid';
 import { NEED_MAX, applyEffects, clampNeed, decayNeeds, moodOf } from './needs';
 import { isDark, lightsIn, roomAt, roomsOf, shining } from './rooms';
 import { NOISY_SLEEP, danceBonus, favoriteStation, isStereo, playing, pressTune, stereosIn } from './music';
@@ -186,6 +187,25 @@ import {
 } from './services';
 import type { ServiceKind, ServiceOrder, ServiceVisit } from './types';
 import {
+  ARCH_BONUS,
+  DIVORCE_SHARE,
+  VOWS_AT,
+  VOWS_LAST_CALL,
+  WEDDING_BONUS,
+  belongingsOf,
+  bondOf,
+  fianceOf,
+  placeFree,
+  rename,
+  restoreName,
+  ringOnLot,
+  savingsOf,
+  setBond,
+  spouseOf,
+  weddingNames,
+} from './marriage';
+import type { Outfit, Party, SurnameChoice, Wedding } from './types';
+import {
   SEAT_REACH,
   TABLE_BONUS,
   TABLE_COMPANY,
@@ -240,7 +260,11 @@ export type CommandProblem =
   | 'noRoom'
   | 'partyOn'
   | 'noGuests'
-  | 'noCall';
+  | 'noCall'
+  | 'noRing'
+  | 'notEngaged'
+  | 'alreadyEngaged'
+  | 'lastResident';
 
 /** Resultado de uma conversa, para a tela mostrar o que mudou (não vai no save). */
 export interface SocialOutcome {
@@ -254,6 +278,8 @@ export interface SocialOutcome {
   toSelf: RelDelta;
 }
 
+/** Bloco 10: minutos esperando os noivos chegarem ao arco antes de casar onde estão. */
+const ARCH_PATIENCE = 12;
 /** Moradores no máximo (quem chama para morar junto esbarra nisso). */
 export const MAX_RESIDENTS = 8;
 /** Gente no lote ao mesmo tempo, moradores e visitas. */
@@ -325,7 +351,7 @@ const COLLAPSE_ENERGY_PER_MINUTE = 0.3;
 
 type ActionSeed = Pick<
   Action,
-  'kind' | 'objectId' | 'interactionId' | 'target' | 'otherId' | 'socialId' | 'messId' | 'serviceId' | 'welcome' | 'circleId' | 'topic' | 'guests'
+  'kind' | 'objectId' | 'interactionId' | 'target' | 'otherId' | 'socialId' | 'messId' | 'serviceId' | 'welcome' | 'circleId' | 'topic' | 'guests' | 'wedding'
 >;
 
 /** minutos de conversa na porta antes de decidir */
@@ -517,7 +543,16 @@ export class Sim {
         if (other.away) return this.fail('away');
         if (other.visit && !other.visit.admitted) return this.fail('atDoor');
         if (!onLot(other) || !socialAllowed(this.world, this.catalog, def, folk, other)) return this.fail('socialNotNow');
+        if (def.hidden) return false;
         if (def.special === 'moveIn' && this.residents().length >= MAX_RESIDENTS) return this.fail('houseFull');
+        // bloco 10: pedido precisa de aliança; ninguém sai se for o último da casa
+        if (def.special === 'engage') {
+          if (!ringOnLot(this.world, this.catalog)) return this.fail('noRing');
+          if (fianceOf(this.world, folk.id) || spouseOf(this.world, folk.id) || fianceOf(this.world, other.id) || spouseOf(this.world, other.id)) {
+            return this.fail('alreadyEngaged');
+          }
+        }
+        if (def.special === 'moveOut' && this.residents().length < 2) return this.fail('lastResident');
         // bloco 9: "puxar assunto" escolhe o assunto do papo
         const topic = def.topic && cmd.topic && this.catalog.topics[cmd.topic] ? cmd.topic : undefined;
         return this.enqueuePlayer(folk, { kind: 'social', otherId: other.id, socialId: def.id, topic });
@@ -564,6 +599,8 @@ export class Sim {
         if (!best) return this.fail('noPhone');
         return this.enqueuePlayer(folk, { kind: 'use', objectId: best.obj.id, interactionId: best.it.id, guests });
       }
+      case 'planWedding':
+        return this.planWedding(cmd.folkId, cmd.partnerId, cmd.guestIds, cmd.surname);
       case 'answerPhone': {
         const folk = this.findFolk(cmd.folkId);
         if (!folk) return false;
@@ -1063,8 +1100,9 @@ export class Sim {
     else if (it.special === 'fair') buyAtFair(this.world, this.catalog, this.logger, folk);
     else if (it.special === 'call' && action.otherId !== undefined) this.resolveCall(folk, action.otherId);
     else if (it.special === 'answer') this.resolveAnswer(folk);
-    else if (it.special === 'party' && action.guests) this.resolveParty(folk, action.guests);
+    else if (it.special === 'party' && action.guests) this.resolveParty(folk, action.guests, action.wedding);
     else if (it.special === 'buffet') this.setBuffet(folk, action);
+    else if (it.special === 'unpack') this.unpack(folk, action);
   }
 
   // ---------- trabalho ----------
@@ -1670,6 +1708,7 @@ export class Sim {
         action.phase = 'using';
         if (obj) action.slot = this.freeSlot(obj.id, folk);
         this.faceObject(folk, action);
+        if (obj && it?.couple) this.callPartner(folk, obj, it);
       }
     }
 
@@ -1755,7 +1794,12 @@ export class Sim {
     if (partners.length === 0) return;
     applyEffects(folk, { effects: it.duo.effects } as InteractionDef);
     for (const p of partners) {
-      applyDelta(this.world, this.catalog, folk, p, { friendship: it.duo.friendship / partners.length });
+      // bloco 10: casal na mesma cama (ou abraçadinho) fica mais apaixonado
+      const couple = !!it.duo.romance && !!relationOf(this.world, folk.id, p.id)?.dating;
+      applyDelta(this.world, this.catalog, folk, p, couple ? { friendship: it.duo.friendship / partners.length, romance: it.duo.romance! } : { friendship: it.duo.friendship / partners.length });
+      if (couple && isSleep(it) && addMemory(this.world, this.catalog, folk.id, p.id, 'sleptTogether') && folk.id < p.id) {
+        this.log('log.sleptTogether', { name: folk.name, other: p.name });
+      }
       if (action.elapsed % 30 === 0) touch(this.world, folk.id, p.id);
       if (addMemory(this.world, this.catalog, folk.id, p.id, 'playedTogether') && folk.id < p.id) {
         this.log('log.playedTogether', { name: folk.name, other: p.name, object: def.name });
@@ -2057,7 +2101,8 @@ export class Sim {
       reaction = reactionTo(this.catalog, other, action.topic);
       p = Math.max(0.03, Math.min(0.97, p + REACTION_ACCEPT[reaction]));
     }
-    action.accepted = nextFloat(this.world) < p;
+    // bloco 10: o que sempre vale (votos, divórcio, mudar para fora) nunca falha
+    action.accepted = nextFloat(this.world) < p || def.accept >= 1;
     // bloco 6: quem ouve mostra no balão se está gostando da conversa
     const minutes = action.accepted ? def.duration : REJECT_MINUTES;
     if (action.topic && reaction) {
@@ -2095,6 +2140,7 @@ export class Sim {
     }
     if (mem?.target) addMemory(world, this.catalog, other.id, folk.id, mem.target);
     if (ok && def.special) this.socialSpecial(folk, other, def.special);
+    if (!ok && def.special === 'engage') this.proposalRefused(folk, other);
     if (!folk.visit) wishOnTalk(world, this.catalog, this.logger, folk, other.id, def, ok);
     if (!other.visit) wishOnTalk(world, this.catalog, this.logger, other, folk.id, def, ok);
     // quem puxou também diz o que achou
@@ -2137,19 +2183,235 @@ export class Sim {
     } else if (special === 'sendHome') {
       if (other.visit) this.startLeaving(other);
     } else if (special === 'moveIn') {
-      if (!other.visit || this.residents().length >= MAX_RESIDENTS) {
-        this.log('log.houseFull', names);
-        return;
-      }
-      const n = this.world.neighbors.find((x) => x.id === other.id);
-      other.visit = null;
-      this.world.neighbors = this.world.neighbors.filter((x) => x.id !== other.id);
-      // quem se muda traz o emprego junto
-      const career = n?.career && this.catalog.careers[n.career.id] ? n.career : null;
-      other.job = career ? { ...newJob(career.id), level: Math.min(career.level, this.catalog.careers[career.id].levels.length - 1) } : null;
-      if (n?.boss) this.log('log.bossMovedIn', names);
-      this.log('log.movedIn', names);
+      this.moveIn(other, folk);
+    } else if (special === 'engage') {
+      this.engage(folk, other);
+    } else if (special === 'wed') {
+      this.marry(folk, other);
+    } else if (special === 'divorce') {
+      this.divorce(folk, other);
+    } else if (special === 'moveOut') {
+      if (other.visit || this.residents().length < 2) return;
+      createNews(this.world, this.catalog, this.logger, 'movedOut', other.id, folk.id, onLotWitnesses(this.world, folk, [folk.id, other.id]));
+      this.moveOut(other, 0);
     }
+  }
+
+  // ---------- bloco 10: vida a dois ----------
+
+  /**
+   * Visita vira moradora: o emprego vem junto, as economias entram no caixa
+   * da casa e a mala fica no chão até ela desfazer (aí saem os móveis dela).
+   */
+  private moveIn(other: Folk, host: Folk): boolean {
+    const names = { name: host.name, other: other.name };
+    if (!other.visit || this.residents().length >= MAX_RESIDENTS) {
+      this.log('log.houseFull', names);
+      return false;
+    }
+    const n = this.world.neighbors.find((x) => x.id === other.id);
+    other.visit = null;
+    this.world.neighbors = this.world.neighbors.filter((x) => x.id !== other.id);
+    if (n?.bornName) other.bornName = n.bornName;
+    // quem se muda traz o emprego junto
+    const career = n?.career && this.catalog.careers[n.career.id] ? n.career : null;
+    other.job = career ? { ...newJob(career.id), level: Math.min(career.level, this.catalog.careers[career.id].levels.length - 1) } : null;
+    if (n?.boss) this.log('log.bossMovedIn', names);
+    this.log('log.movedIn', names);
+    const money = n ? savingsOf(n) : 0;
+    if (money > 0) {
+      this.world.household.funds += money;
+      this.log('log.movedInMoney', { name: other.name, amount: money });
+    }
+    const bag = placeFree(this.world, this.catalog, 'suitcase', other);
+    if (bag) {
+      other.queue = other.queue.filter((a) => a.source === 'player');
+      other.queue.unshift(this.makeAction({ kind: 'use', objectId: bag.id, interactionId: 'unpack' }, 'player'));
+      other.path = [];
+      this.replanAll();
+    } else this.unpackFor(other);
+    return true;
+  }
+
+  /** Desfazer a mala: a mala some e os móveis de quem chegou aparecem. */
+  private unpack(folk: Folk, action: Action): void {
+    if (action.objectId !== undefined) this.removeObject(action.objectId);
+    this.unpackFor(folk);
+  }
+
+  private unpackFor(folk: Folk): void {
+    const got: string[] = [];
+    let sold = 0;
+    for (const defId of belongingsOf(this.catalog, folk)) {
+      const def = this.catalog.objects[defId];
+      if (placeFree(this.world, this.catalog, defId, folk)) got.push(defId);
+      else sold += Math.round(def.price / 2);
+    }
+    for (const id of got) this.log('log.unpacked', { name: folk.name, item: this.catalog.objects[id].name });
+    if (sold > 0) {
+      this.world.household.funds += sold;
+      this.log('log.noRoomSold', { name: folk.name, amount: sold });
+    }
+    this.replanAll();
+  }
+
+  /**
+   * Morador vira vizinho: o emprego vai junto, frila e negócio acabam, leva
+   * `money` do caixa e sai pela calçada com a mala na mão.
+   */
+  private moveOut(folk: Folk, money: number): boolean {
+    const world = this.world;
+    if (folk.visit || folk.away || this.residents().length < 2) return false;
+    const c = circleOfFolk(world, folk.id);
+    if (c) this.dropFromCircle(folk, c, true);
+    const take = Math.max(0, Math.min(money, world.household.funds));
+    world.household.funds -= take;
+    const n: Neighbor = {
+      id: folk.id,
+      name: folk.name,
+      traits: [...folk.traits],
+      look: { ...folk.look },
+      temper: { ...folk.temper },
+      month: folk.month,
+      skills: { ...folk.skills },
+      career: folk.job ? { id: folk.job.careerId, level: folk.job.level } : null,
+      interests: folk.interests ? { ...folk.interests } : undefined,
+      funds: take,
+    };
+    if (folk.bornName) n.bornName = folk.bornName;
+    world.neighbors = world.neighbors.filter((x) => x.id !== folk.id);
+    world.neighbors.push(n);
+    if (folk.business) this.log('log.businessGone', { name: folk.name });
+    folk.job = null;
+    folk.gig = null;
+    folk.business = null;
+    folk.wishes = [];
+    folk.alarm = false;
+    folk.collapsed = 0;
+    folk.visit = { until: world.tick, leaving: false, hostId: 0, admitted: true, rang: -1, service: null, moving: true };
+    this.log(take > 0 ? 'log.movedOutMoney' : 'log.movedOut', { name: folk.name, amount: take });
+    this.startLeaving(folk);
+    return true;
+  }
+
+  /** Pedido aceito: noivado, o estojo da aliança sai da casa e vira notícia. */
+  private engage(folk: Folk, other: Folk): void {
+    const ring = ringOnLot(this.world, this.catalog);
+    if (ring) this.removeObject(ring.id);
+    setBond(this.world, folk.id, other.id, 'engaged');
+    this.log('log.engaged', { name: folk.name, other: other.name });
+    createNews(this.world, this.catalog, this.logger, 'engaged', folk.id, other.id, onLotWitnesses(this.world, folk, [folk.id, other.id]));
+  }
+
+  /** Pedido recusado: vira fofoca (e dói). */
+  private proposalRefused(folk: Folk, other: Folk): void {
+    folk.needs.comfort = Math.max(0, folk.needs.comfort - 15);
+    folk.needs.fun = Math.max(0, folk.needs.fun - 10);
+    this.log('log.proposalRefused', { name: folk.name, other: other.name });
+    createNews(this.world, this.catalog, this.logger, 'proposalRefused', folk.id, other.id, onLotWitnesses(this.world, folk, [folk.id, other.id]));
+  }
+
+  /** Votos trocados: casados, sobrenome novo, festa animada e quem é de fora se muda. */
+  private marry(folk: Folk, other: Folk): void {
+    const world = this.world;
+    const party = world.party;
+    const wedding = party?.wedding;
+    // quem deu a festa é o "host" na escolha do sobrenome
+    const hostFirst = !party || party.host === folk.id;
+    const [host, partner] = hostFirst ? [folk, other] : [other, folk];
+    setBond(world, folk.id, other.id, 'married');
+    const choice: SurnameChoice = wedding?.surname ?? 'keep';
+    const [hn, pn] = weddingNames(host.name, partner.name, choice);
+    const before = { name: host.name, other: partner.name };
+    rename(world, host.id, hn);
+    rename(world, partner.id, pn);
+    this.log('log.married', before);
+    if (hn !== before.name || pn !== before.other) this.log('log.newNames', { name: hn, other: pn });
+    const guests = world.folks.filter((f) => f !== folk && f !== other && onLot(f) && !f.visit?.service);
+    for (const g of guests) {
+      g.needs.fun = Math.min(100, g.needs.fun + 12);
+      g.needs.social = Math.min(100, g.needs.social + 10);
+      addMemory(world, this.catalog, g.id, folk.id, 'atWedding');
+      addMemory(world, this.catalog, g.id, other.id, 'atWedding');
+      applyDelta(world, this.catalog, g, folk, { friendship: 3 });
+      applyDelta(world, this.catalog, g, other, { friendship: 3 });
+    }
+    createNews(world, this.catalog, this.logger, 'wedding', folk.id, other.id, guests.map((g) => g.id));
+    if (wedding) wedding.stage = 'done';
+    // casou com alguém de fora: muda para a casa (se couber)
+    const outsider = [folk, other].find((f) => f.visit);
+    if (outsider) {
+      const resident = outsider === folk ? other : folk;
+      if (this.residents().length < MAX_RESIDENTS) {
+        if (outsider.visit) outsider.visit.party = false;
+        this.moveIn(outsider, resident);
+      } else this.log('log.marriedApart', { name: outsider.name });
+    }
+  }
+
+  /** Divórcio: casamento desfeito, lembrança amarga, fofoca e a divisão do dinheiro. */
+  private divorce(folk: Folk, other: Folk): void {
+    const world = this.world;
+    if (bondOf(world, folk.id, other.id) !== 'married') return;
+    setDating(world, folk.id, other.id, false);
+    applyDelta(world, this.catalog, other, folk, { romance: -45, friendship: -18 });
+    applyDelta(world, this.catalog, folk, other, { romance: -30, friendship: -8 });
+    addMemory(world, this.catalog, folk.id, other.id, 'divorced');
+    addMemory(world, this.catalog, other.id, folk.id, 'gotDivorced');
+    other.needs.comfort = Math.max(0, other.needs.comfort - 25);
+    other.needs.fun = Math.max(0, other.needs.fun - 20);
+    const names = { name: folk.name, other: other.name };
+    restoreName(world, folk.id);
+    restoreName(world, other.id);
+    this.log('log.divorce', names);
+    createNews(world, this.catalog, this.logger, 'divorce', folk.id, other.id, onLotWitnesses(world, folk, [folk.id, other.id]));
+    // os dois moravam juntos: quem foi deixado sai levando metade do caixa
+    if (!folk.visit && !other.visit && this.residents().length >= 2) {
+      const share = Math.max(0, Math.floor(world.household.funds * DIVORCE_SHARE));
+      this.moveOut(other, share);
+    }
+  }
+
+  /** Marca o casamento: liga para os convidados pelo telefone (como a festa). */
+  private planWedding(folkId: number, partnerId: number, guestIds: number[], surname: SurnameChoice): boolean {
+    const folk = this.findFolk(folkId);
+    if (!folk) return false;
+    if (folk.visit) return this.fail('visitor');
+    if (this.world.party) return this.fail('partyOn');
+    if (bondOf(this.world, folk.id, partnerId) !== 'engaged') return this.fail('notEngaged');
+    const guests = [...new Set(guestIds)].filter((id) => {
+      if (id === partnerId) return false;
+      const n = this.world.neighbors.find((x) => x.id === id);
+      return n && !isServiceNeighbor(n);
+    });
+    if (guests.length > PARTY_MAX_GUESTS) return this.fail('invalid');
+    const best = this.nearestSpecial(folk, 'party');
+    if (!best) return this.fail('noPhone');
+    return this.enqueuePlayer(folk, { kind: 'use', objectId: best.obj.id, interactionId: best.it.id, guests, wedding: { partner: partnerId, surname } });
+  }
+
+  /** Par de quem quer se aconchegar: cônjuge, noivo ou namorado no lote. */
+  private sweetheartOf(folk: Folk): Folk | undefined {
+    const ids = [spouseOf(this.world, folk.id), fianceOf(this.world, folk.id), ...partnersOf(this.world, folk.id)];
+    for (const id of ids) {
+      const f = id ? this.findFolk(id) : undefined;
+      if (f && onLot(f) && !(f.visit && !f.visit.admitted)) return f;
+    }
+    return undefined;
+  }
+
+  /** Bloco 10: coisa de casal começou; o par vem junto se puder. */
+  private callPartner(folk: Folk, obj: WorldObject, it: InteractionDef): void {
+    const p = this.sweetheartOf(folk);
+    if (!p || p.visit) return;
+    const head = p.queue[0];
+    if (head?.kind === 'use' && head.objectId === obj.id) return;
+    if (head?.kind === 'work' || head?.source === 'player' || talkingWith(p) !== 0 || this.urgent(p)) return;
+    if (head?.kind === 'use' && head.phase === 'using' && this.interactionOf(head)?.pose === 'lie') return;
+    p.queue = p.queue.filter((a) => a.source === 'player');
+    p.queue.unshift(this.makeAction({ kind: 'use', objectId: obj.id, interactionId: it.id }, 'player'));
+    p.path = [];
+    this.log('log.snuggleCall', { name: folk.name, other: p.name });
   }
 
   /** Termina a conversa de quem puxou e libera quem ouvia. */
@@ -3064,18 +3326,27 @@ export class Sim {
   // ---------- bloco 9: festas ----------
 
   /** Fim da ligação para a turma: quem topa vem; a festa fica marcada. */
-  private resolveParty(host: Folk, guestIds: number[]): void {
+  private resolveParty(host: Folk, guestIds: number[], wedding?: Action['wedding']): void {
     const world = this.world;
     if (world.party) return;
+    // bloco 10: casamento só com os dois ainda noivos
+    if (wedding && bondOf(world, host.id, wedding.partner) !== 'engaged') {
+      this.log('log.weddingOff', { name: host.name });
+      return;
+    }
     const hour = clockOf(world.tick).hour;
     if (hour >= 21 || hour < 8) {
       this.log('log.partyLate', { name: host.name });
       return;
     }
     const start = world.tick + PARTY_LEAD;
-    const party = { host: host.id, start, end: start + PARTY_MINUTES, guests: [] as number[], score: 0, samples: 0, brawls: 0, complaints: 0, buffet: false };
+    const party: Party = { host: host.id, start, end: start + PARTY_MINUTES, guests: [] as number[], score: 0, samples: 0, brawls: 0, complaints: 0, buffet: false };
+    if (wedding) party.wedding = { partner: wedding.partner, surname: wedding.surname, stage: 'waiting' };
     const no: string[] = [];
-    for (const id of guestIds) {
+    // o par de fora vem sempre (é o casamento dele)
+    const partnerOut = wedding && !this.residents().some((r) => r.id === wedding.partner) ? wedding.partner : 0;
+    const ids = partnerOut ? [partnerOut, ...guestIds.filter((g) => g !== partnerOut)] : guestIds;
+    for (const id of ids) {
       const n = world.neighbors.find((x) => x.id === id);
       if (!n || isServiceNeighbor(n)) continue;
       const here = this.findFolk(n.id);
@@ -3092,6 +3363,8 @@ export class Sim {
       }
       const rel = relationOf(world, n.id, host.id);
       const p =
+        (n.id === partnerOut ? 9 : 0) +
+        (wedding ? 0.15 : 0) +
         0.55 +
         (rel?.friendship ?? 0) / 120 +
         reputationOf(world, host.id) / 250 +
@@ -3103,12 +3376,13 @@ export class Sim {
         world.pendingVisits.push({ neighborId: n.id, at: start - 10 + nextInt(world, 40), hostId: host.id, party: true });
       } else no.push(n.name);
     }
-    if (party.guests.length === 0) {
+    if (party.guests.length === 0 && !wedding) {
       this.log('log.partyNobody', { name: host.name });
       return;
     }
     world.party = party;
-    this.log('log.partyPlanned', { name: host.name, n: party.guests.length, minutes: PARTY_LEAD });
+    if (wedding) this.log('log.weddingPlanned', { name: host.name, other: this.nameOfPerson(wedding.partner), n: party.guests.filter((g) => g !== wedding.partner).length, minutes: PARTY_LEAD });
+    else this.log('log.partyPlanned', { name: host.name, n: party.guests.length, minutes: PARTY_LEAD });
     if (no.length) this.log('log.partyDeclined', { names: no.map((x) => x.split(' ')[0]).join(', ') });
     wishOnHost(world, this.catalog, this.logger, host);
   }
@@ -3153,6 +3427,7 @@ export class Sim {
       party.score += sum / guests.length;
       party.samples++;
     }
+    if (party.wedding) this.stepWedding(party, party.wedding, since);
     // panelinhas: rivais na mesma festa acabam brigando
     if (since > 0 && since % 60 === 20 && guests.length >= 2) this.partyFriction(party, guests);
     // barulho tarde da noite: algum vizinho reclama
@@ -3166,6 +3441,95 @@ export class Sim {
       }
     }
     if (world.tick >= party.end) this.endParty('time');
+  }
+
+  /** Bloco 10: a cerimônia no meio da festa (os votos entram na fila do casal). */
+  private stepWedding(party: Party, w: Wedding, since: number): void {
+    const world = this.world;
+    const host = this.findFolk(party.host);
+    const partner = this.findFolk(w.partner);
+    if (w.stage === 'vows') {
+      // a troca de votos foi interrompida: tenta de novo
+      const busy = host?.queue.some((a) => a.kind === 'social' && a.socialId === 'vows');
+      if (!busy) w.stage = 'waiting';
+      // demorou para chegar ao arco (alguém no caminho): casa onde estiver
+      else if (world.tick - (w.vowsAt ?? world.tick) > ARCH_PATIENCE) {
+        for (const f of [host, partner]) {
+          if (f && f.queue[0]?.kind === 'goto') {
+            f.queue.shift();
+            f.path = [];
+          }
+        }
+      }
+      return;
+    }
+    if (w.stage !== 'waiting' || since < VOWS_AT) return;
+    if (world.tick >= party.end - VOWS_LAST_CALL) {
+      w.stage = 'missed';
+      this.log('log.weddingMissed', { name: host?.name ?? this.nameOfPerson(party.host), other: partner?.name ?? this.nameOfPerson(w.partner) });
+      return;
+    }
+    if (!host || !partner || !onLot(host) || !onLot(partner) || (partner.visit && !partner.visit.admitted)) return;
+    if (talkingWith(host) !== 0 && talkingWith(host) !== partner.id) return;
+    // os dois de gala
+    w.outfits ??= {};
+    for (const f of [host, partner]) {
+      if (w.outfits[f.id] === undefined) w.outfits[f.id] = f.outfit;
+      f.outfit = 'formal';
+      const c = circleOfFolk(world, f.id);
+      if (c) this.dropFromCircle(f, c, true);
+    }
+    // com arco de flores, os dois vão para a frente dele
+    const spots = this.archSpots();
+    host.queue = [this.makeAction({ kind: 'social', otherId: partner.id, socialId: 'vows' }, 'player')];
+    if (spots) host.queue.unshift(this.makeAction({ kind: 'goto', target: spots[1] }, 'player'));
+    host.path = [];
+    partner.queue = spots ? [this.makeAction({ kind: 'goto', target: spots[0] }, 'player')] : [];
+    partner.path = [];
+    w.stage = 'vows';
+    w.vowsAt = world.tick;
+    this.log('log.weddingVows', { name: host.name, other: partner.name });
+  }
+
+  /** Os dois lugares na frente do arco de flores (ou null se não há arco livre). */
+  private archSpots(): [Vec, Vec] | null {
+    const fronts: Vec[] = [
+      { x: 0, y: 1 },
+      { x: 1, y: 0 },
+      { x: 0, y: -1 },
+      { x: -1, y: 0 },
+    ];
+    for (const o of this.world.objects) {
+      if (!this.defOf(o)?.arch) continue;
+      const along = o.rot % 2 === 0 ? { x: 1, y: 0 } : { x: 0, y: 1 };
+      // na frente, ou atrás se a frente der para uma parede
+      for (const f of [fronts[o.rot], fronts[(o.rot + 2) % 4]]) {
+        const a = { x: o.x + (f.x > 0 ? 1 : f.x), y: o.y + (f.y > 0 ? 1 : f.y) };
+        const b = { x: a.x + along.x, y: a.y + along.y };
+        const open = [a, b].every((t) => {
+          const from = { x: t.x - f.x, y: t.y - f.y };
+          return this.nav.isFree(t.x, t.y) && !blocksStep(this.world.grid.edges[edgeKey(from.x, from.y, t.x, t.y)]);
+        });
+        if (open) return [a, b];
+      }
+    }
+    return null;
+  }
+
+  /** Fim da festa de casamento: quem não casou fica noivo; roupa de volta. */
+  private endWedding(party: Party, w: Wedding): void {
+    if (w.stage === 'waiting' || w.stage === 'vows') {
+      this.log('log.weddingMissed', { name: this.nameOfPerson(party.host), other: this.nameOfPerson(w.partner) });
+    }
+    for (const [id, outfit] of Object.entries(w.outfits ?? {})) {
+      const f = this.findFolk(Number(id));
+      if (f && !f.visit) f.outfit = outfit as Outfit;
+    }
+  }
+
+  /** Nome de qualquer pessoa (morador, visita ou vizinho). */
+  private nameOfPerson(id: number): string {
+    return this.findFolk(id)?.name ?? this.world.neighbors.find((n) => n.id === id)?.name ?? '';
   }
 
   private partyFriction(party: NonNullable<World['party']>, guests: Folk[]): void {
@@ -3211,7 +3575,10 @@ export class Sim {
     world.party = null;
     const guests = this.partyGuests();
     const avg = party.samples ? party.score / party.samples : 35;
-    const score = Math.max(0, Math.min(100, Math.round(avg - party.brawls * 8 - party.complaints * 5 + (party.buffet ? 4 : 0))));
+    const w = party.wedding;
+    const wed = w?.stage === 'done' ? WEDDING_BONUS + (world.objects.some((o) => this.defOf(o)?.arch) ? ARCH_BONUS : 0) : 0;
+    const score = Math.max(0, Math.min(100, Math.round(avg - party.brawls * 8 - party.complaints * 5 + (party.buffet ? 4 : 0) + wed)));
+    if (w) this.endWedding(party, w);
     const grade = partyGrade(score);
     world.lastParty = { tick: world.tick, host: party.host, guests: party.guests.length, score, grade, brawls: party.brawls, complaints: party.complaints };
     const host = this.findFolk(party.host);

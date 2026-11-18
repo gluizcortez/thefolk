@@ -58,6 +58,8 @@ export interface FolkFrame {
   hold?: HeldProp;
   /** bloco 6: energia (0..100); com pouca, cara de cansaço e cabeça pesada */
   energy?: number;
+  /** bloco 10: aliança no dedo (noivo ou casado) */
+  ring?: boolean;
 }
 
 export const FOLK_HEIGHT = 1.8;
@@ -390,6 +392,9 @@ export class FolkModel {
   private plate = new THREE.Group();
   private rag = new THREE.Group();
   private cup = new THREE.Group();
+  /** bloco 10: mala na mão de quem se muda e aliança no dedo */
+  private bag = new THREE.Group();
+  private ring = new THREE.Group();
   private faceMat: THREE.MeshPhongMaterial;
   private faceKey = '';
   private pose = rest();
@@ -630,7 +635,23 @@ export class FolkModel {
         );
         this.rag.visible = false;
         this.cup.visible = false;
-        fore.add(this.rag, this.cup);
+        // bloco 10: mala de mudança pendurada na mão direita
+        const leather = colorMat(0x7a4222, { gloss: 0.35 });
+        this.bag.add(
+          rbox(0.08, 0.3, 0.42, 0.03, leather, 0, -FOREARM - 0.38, 0.02),
+          rod([0, -FOREARM - 0.06, -0.04], [0, -FOREARM - 0.06, 0.08], 0.012, colorMat(0x3a2418), 6),
+          box(0.085, 0.02, 0.43, colorMat(0x3a2418), 0, -FOREARM - 0.2, 0.02),
+        );
+        this.bag.visible = false;
+        fore.add(this.rag, this.cup, this.bag);
+      } else {
+        // bloco 10: aliança dourada no anelar da mão esquerda
+        const band = new THREE.Mesh(new THREE.TorusGeometry(0.013, 0.005, 5, 10), colorMat(PAL.brass, { gloss: 1 }));
+        band.position.set(0.012, -FOREARM - 0.08, 0.012);
+        band.rotation.x = Math.PI / 2;
+        this.ring.add(band);
+        this.ring.visible = false;
+        fore.add(this.ring);
       }
       if (sx === -1 && !longSleeve && kind !== 'swim') {
         // relógio de pulso
@@ -780,6 +801,8 @@ export class FolkModel {
     this.plate.visible = hold === 'plate';
     this.rag.visible = hold === 'rag';
     this.cup.visible = hold === 'cup';
+    this.bag.visible = hold === 'suitcase';
+    this.ring.visible = !!f.ring;
     const lying = f.anim === 'sleep' || f.anim === 'collapsed';
     this.blob.visible = f.anim !== 'sleep' && f.anim !== 'sit';
     this.blob.scale.setScalar(f.anim === 'collapsed' ? 1.9 : 1);

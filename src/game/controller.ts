@@ -64,6 +64,13 @@ const NOTICES: [string, string][] = [
   ['log.accident', 'bladder'],
   ['log.allWishes', 'spark'],
   ['log.missedWork', 'alarm'],
+  // bloco 10: vida a dois
+  ['log.engaged', 'spark'],
+  ['log.married', 'spark'],
+  ['log.divorce', 'no'],
+  ['log.proposalRefused', 'no'],
+  ['log.movedOut', 'house'],
+  ['log.movedOutMoney', 'house'],
 ];
 
 /** Ícone do cartão de aviso para esta linha do log (null = aviso passageiro). */

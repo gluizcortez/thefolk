@@ -1,4 +1,5 @@
 import { fullNeeds } from './needs';
+import { savingsOf } from './marriage';
 import { introduce } from './gossip';
 import { personOf } from './people';
 import { ensureRelation } from './relations';
@@ -137,6 +138,8 @@ export function seedNeighbors(seeds: NeighborSeed[], nextId: number): Neighbor[]
     month: n.month ?? 0,
     skills: { ...n.skills },
     career: n.career ? { ...n.career } : null,
+    // bloco 10: economias (vêm junto quando se muda para a casa)
+    funds: savingsOf({ id: nextId + i, career: n.career, funds: n.funds }),
   }));
 }
 

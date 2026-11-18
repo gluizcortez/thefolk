@@ -36,6 +36,20 @@ const nap = (energy: number, comfort: number): InteractionDef => ({
   pose: 'lie',
   onObject: true,
 });
+/** Bloco 10: deitar abraçadinho com o par (chama o outro para junto). */
+const snuggle = (comfort: number): InteractionDef => ({
+  id: 'snuggle',
+  label: 'act.snuggle',
+  duration: 40,
+  effects: { comfort, fun: 0.5, social: 0.5 },
+  autonomous: false,
+  residentOnly: true,
+  couple: true,
+  pose: 'lie',
+  onObject: true,
+  duo: { effects: { social: 1.2, fun: 0.6 }, friendship: 0.05, romance: 0.18 },
+});
+
 /** Bloco 5: trocar de roupa no guarda-roupa. */
 const dress = (outfit: Outfit): InteractionDef => ({
   id: `dress_${outfit}`,
@@ -191,8 +205,24 @@ export const FURNITURE: ObjectDef[] = [
     slots: 2,
     colors: ['plum', 'red', 'blue', 'green', 'mustard'],
     ambience: 10,
-    // quem dorme junto acorda um pouco mais perto
-    interactions: [sleep(0.27, 0.3, { effects: { comfort: 0.05 }, friendship: 0.004 }), nap(0.32, 0.6)],
+    // quem dorme junto acorda um pouco mais perto (casal, mais apaixonado)
+    interactions: [sleep(0.27, 0.3, { effects: { comfort: 0.05 }, friendship: 0.004, romance: 0.01 }), nap(0.32, 0.6), snuggle(0.9)],
+  },
+  {
+    // bloco 10: cama de casal de preço médio
+    id: 'bedcouple',
+    name: 'obj.bedcouple',
+    tier: 1,
+    line: 'bed',
+    room: 'bedroom',
+    price: 640,
+    category: 'beds',
+    art: 'bedcouple',
+    size: { w: 2, h: 2 },
+    slots: 2,
+    colors: ['blue', 'green', 'red', 'mustard', 'plum'],
+    ambience: 4,
+    interactions: [sleep(0.2, 0.12, { effects: { comfort: 0.04 }, friendship: 0.004, romance: 0.01 }), nap(0.24, 0.35), snuggle(0.6)],
   },
   // ---------- sofás e poltronas ----------
   {

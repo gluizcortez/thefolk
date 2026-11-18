@@ -53,7 +53,9 @@ export interface InteractionDef {
    * 'services' = liga para um serviço (`serviceId` da ação); 'payBills' =
    * paga as contas da caixa de correio; 'fair' = compra na feira da rua.
    */
-  special?: 'invite' | 'services' | 'payBills' | 'fair' | 'call' | 'answer' | 'party' | 'buffet';
+  special?: 'invite' | 'services' | 'payBills' | 'fair' | 'call' | 'answer' | 'party' | 'buffet' | 'unpack';
+  /** bloco 10: coisa de casal (cama): chama o par para junto, se ele puder vir */
+  couple?: boolean;
   /** bloco 9: petisco da mesa de festa (só com petisco na mesa) */
   snacks?: 'eat';
   /** bloco 2: porções que tira da despensa ao começar (sem estoque, não dá) */
@@ -115,7 +117,7 @@ export type Outfit = 'day' | 'formal' | 'sleep' | 'swim' | 'work';
 /** O que o folk pode estar vestindo: a roupa de sempre ou o roupão do banho. */
 export type Wear = Outfit | 'bath';
 /** Coisa que aparece na mão do folk. */
-export type HeldProp = 'plate' | 'book' | 'phone' | 'rag' | 'cup';
+export type HeldProp = 'plate' | 'book' | 'phone' | 'rag' | 'cup' | 'suitcase';
 
 /** Mês de nascimento: temperamento sugerido e com quem combina. */
 export interface MonthDef {
@@ -203,6 +205,8 @@ export interface DuoDef {
   effects: Partial<Needs>;
   /** amizade por minuto entre os dois (antes da afinidade e do cansaço) */
   friendship: number;
+  /** bloco 10: romance por minuto quando os dois namoram (ou são casados) */
+  romance?: number;
 }
 
 export type CareKind = 'clean' | 'repair' | 'service' | 'empty' | 'dishes' | 'dump';
@@ -296,6 +300,10 @@ export interface ObjectDef {
   dining?: Dining;
   /** bloco 8: só entra no catálogo quando alguém da casa chega a este cargo */
   reward?: { career: string; level: number };
+  /** bloco 10: guarda uma aliança (o pedido de casamento leva o estojo) */
+  ring?: boolean;
+  /** bloco 10: arco de flores (casamento debaixo dele vale mais) */
+  arch?: boolean;
 }
 
 export type ObjectLayer = 'wall' | 'floor' | 'ceiling';
@@ -553,7 +561,12 @@ export interface SocialRequires {
   resident?: boolean;
   /** o outro guarda mágoa de quem puxa (lembranças somando -3 ou menos) */
   grudge?: boolean;
+  /** bloco 10: estágio do namoro entre os dois ('none' = nem namoram) */
+  bond?: (Bond | 'none')[];
 }
+
+/** Bloco 10: estágio de um casal (namoro, noivado, casamento). */
+export type Bond = 'dating' | 'engaged' | 'married';
 
 export interface SocialDef {
   id: string;
@@ -580,7 +593,9 @@ export interface SocialDef {
   rejectMemory?: { self?: string; target?: string };
   /** a IA pode escolher sozinha (padrão: true) */
   autonomous?: boolean;
-  special?: 'date' | 'moveIn' | 'sendHome' | 'breakUp' | 'gossip';
+  special?: 'date' | 'moveIn' | 'sendHome' | 'breakUp' | 'gossip' | 'engage' | 'wed' | 'divorce' | 'moveOut';
+  /** bloco 10: não aparece no menu nem para a IA (votos, só na cerimônia) */
+  hidden?: boolean;
   /** bloco 9: a conversa tem assunto (quem ouve reage ao gosto dele) */
   topic?: boolean;
   skill?: { id: string; xpPerMinute: number };
@@ -604,6 +619,10 @@ export interface Relation {
   respect: number;
   /** namorando (vale para os dois lados) */
   dating: boolean;
+  /** bloco 10: noivos ou casados (vale para os dois lados; dating continua true) */
+  bond?: 'engaged' | 'married';
+  /** bloco 10: já foram casados */
+  ex?: boolean;
   /** tick do último contato */
   last: number;
   /** cansaço de repetir interações em pouco tempo (reduz o ganho) */
@@ -630,6 +649,10 @@ export interface Neighbor {
   wasFired?: boolean;
   /** bloco 9: gosto por assunto (-5 a 5); veja sim/topics.ts */
   interests?: Record<string, number>;
+  /** bloco 10: economias (vêm junto quando se muda para a casa) */
+  funds?: number;
+  /** bloco 10: nome de solteiro, quando trocou de sobrenome no casamento */
+  bornName?: string;
 }
 
 export interface Visit {
@@ -647,6 +670,8 @@ export interface Visit {
   service: ServiceVisit | null;
   /** bloco 9: convidado da festa (fica até a festa acabar) */
   party?: boolean;
+  /** bloco 10: está se mudando da casa (sai com a mala) */
+  moving?: boolean;
 }
 
 // ---------- Bloco 2: despensa, correio e serviços ----------
@@ -897,6 +922,8 @@ export interface Action {
   topic?: string;
   /** bloco 9: convidados chamados para a festa (use com 'party') */
   guests?: number[];
+  /** bloco 10: a festa marcada é casamento com este par */
+  wedding?: { partner: number; surname: SurnameChoice };
   phase: ActionPhase;
   elapsed: number;
 }
@@ -955,6 +982,8 @@ export interface Folk {
   interests?: Record<string, number>;
   /** bloco 9: minutos parado esperando alguém sair da frente */
   blocked?: number;
+  /** bloco 10: nome de solteiro, quando trocou de sobrenome no casamento */
+  bornName?: string;
 }
 
 /** Aparência: índices nas paletas da arte. */
@@ -1186,6 +1215,24 @@ export interface Party {
   complaints: number;
   /** a mesa de petiscos foi montada */
   buffet: boolean;
+  /** bloco 10: a festa é um casamento */
+  wedding?: Wedding;
+}
+
+/** Bloco 10: sobrenome depois do casamento. */
+export type SurnameChoice = 'host' | 'partner' | 'both' | 'keep';
+
+/** Bloco 10: casamento em casa (uma festa com cerimônia no meio). */
+export interface Wedding {
+  /** o par de quem dá a festa */
+  partner: number;
+  surname: SurnameChoice;
+  /** cerimônia: 'waiting' (antes), 'vows' (trocando votos), 'done', 'missed' */
+  stage: 'waiting' | 'vows' | 'done' | 'missed';
+  /** roupa de antes da cerimônia (os noivos se vestem de gala), por id */
+  outfits?: Record<string, Outfit>;
+  /** tick em que a troca de votos foi chamada */
+  vowsAt?: number;
 }
 
 export interface PartyResult {
@@ -1248,6 +1295,8 @@ export type Command =
   | { type: 'phoneFriend'; folkId: number; neighborId: number }
   | { type: 'throwParty'; folkId: number; guestIds: number[] }
   | { type: 'answerPhone'; folkId: number }
+  // bloco 10
+  | { type: 'planWedding'; folkId: number; partnerId: number; guestIds: number[]; surname: SurnameChoice }
   // modo construção: linhas de paredes vão de vértice a vértice do grid
   | { type: 'buildWalls'; x0: number; y0: number; x1: number; y1: number }
   | { type: 'eraseWalls'; x0: number; y0: number; x1: number; y1: number }

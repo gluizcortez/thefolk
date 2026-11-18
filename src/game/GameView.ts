@@ -16,6 +16,7 @@ import {
   planBuild,
   roomFaces,
   wallBehind,
+  wearsRing,
 } from '../sim';
 import type {
   Action,
@@ -1118,7 +1119,9 @@ export class GameView {
     // bloco 7: dança no ritmo da estação que está tocando
     const station = anim === 'dance' && entry ? stationDef(entry.obj.tune) : undefined;
     const time = station ? this.animTime * (station.bpm / 110) : this.animTime;
-    view.model.update({ anim, ...place, mood, time, dt, expr, hold: it?.hold, energy: folk.needs.energy });
+    // bloco 10: quem se muda sai com a mala; noivos e casados usam aliança
+    const hold = folk.visit?.moving ? 'suitcase' : it?.hold;
+    view.model.update({ anim, ...place, mood, time, dt, expr, hold, energy: folk.needs.energy, ring: wearsRing(sim.world, folk.id) });
 
     const iconKey = social?.icon ?? (thought ? `th:${thought.kind}:${thought.icon}` : undefined);
     view.icon.visible = !!iconKey;
@@ -1143,7 +1146,8 @@ export class GameView {
     }
 
     const head = view.model.headTop(this.tmp);
-    const asleep = anim === 'sleep' || anim === 'collapsed';
+    // bloco 10: deitado abraçadinho não está dormindo (sem os Zs)
+    const asleep = (anim === 'sleep' && !it?.couple) || anim === 'collapsed';
     view.zzz.forEach((s, i) => {
       s.visible = asleep;
       if (!asleep) return;

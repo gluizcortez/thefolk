@@ -392,6 +392,35 @@ npm run preview  # serve o dist/ localmente
   cumprimento varia com a relação (beijo, abraço, aperto de mão ou aceno).
   Folks param de se atravessar: esperam, contornam e se afastam de quem está
   parado no mesmo lugar.
+- **Pedido de casamento (bloco 10)**: compre um estojo de aliança (decoração,
+  450 ⟡) e, namorando com romance 70 ou mais, use "Pedir em casamento". A
+  chance sobe com o romance, a amizade e o humor de quem ouve. O sim leva o
+  estojo (a aliança aparece na mão dos dois) e vira notícia; o não dói, deixa
+  lembrança e também corre de boca em boca. Noivado pode ser desfeito com
+  "Terminar".
+- **Casamento em casa (bloco 10)**: com noivos, o menu de conversa mostra
+  "Marcar o casamento ›": escolha os convidados (a festa do bloco 9) e o
+  sobrenome (o de um, o do outro, os dois juntos ou cada um o seu). Uns 40
+  minutos depois de a festa começar, os noivos se vestem de gala, vão para a
+  frente do arco de flores (se houver) e trocam os votos. Convidados guardam a
+  lembrança, a notícia corre e a festa ganha pontos (mais ainda com arco).
+  Casou com alguém de fora: a pessoa se muda junto.
+- **Morar junto (bloco 10)**: quem se muda traz as economias (somadas ao caixa),
+  o emprego e uma mala que fica no chão até ser desfeita; ao desfazer, saem os
+  móveis dela (um pelo gosto, como cavalete ou tabuleiro, e uma planta). O que
+  não couber é vendido.
+- **Mudar alguém para fora (bloco 10)**: "Pedir para se mudar" manda um
+  morador embora (menos o último): ele vira vizinho, leva o emprego, sai pela
+  calçada com a mala e pode voltar de visita.
+- **Divórcio (bloco 10)**: casado não "termina", pede o divórcio. Quem foi
+  deixado sai de casa levando metade do caixa e volta ao nome de solteiro; os
+  dois guardam lembrança amarga, a fofoca corre e o painel passa a mostrar
+  "ex-cônjuge". Casamento não acaba sozinho quando o romance esfria.
+- **Cama de casal (bloco 10)**: a "Dois Travesseiros" (640 ⟡) e a estofada
+  têm "Deitar abraçadinho", que chama o par para junto e sobe o romance.
+  Dormir na mesma cama também aproxima o casal e deixa a lembrança da primeira
+  noite. Conversas novas de casal: aconchego, falar manso, massagem nos
+  ombros e dançar coladinho.
 
 ## Deploy na Vercel
 
@@ -430,6 +459,7 @@ src/
     services.ts     bloco 2: despensa, cartas de conta, penhora, jornal, pedidos e campainha
     rooms.ts        bloco 3: cômodos, nota de ambiente, luz do dia e das luminárias, nome do cômodo
     furnish.ts      bloco 4: faixas, depreciação, objeto querido, lugar à mesa, atividades a dois
+    marriage.ts     bloco 10: noivado, casamento, sobrenome, economias e mudança
     build.ts        modo construção: planos de obra, custo, validação, desfazer
   data/       conteúdo como dados: objetos (com preço e categoria), pisos,
               revestimentos e preço de parede, porta e janela (build.ts), traços,
@@ -604,6 +634,17 @@ Decisões principais do núcleo:
   por `audio/cues.ts`. As vagas ficam em `platform/slots.ts` (atrás de
   `SaveBackend`; o IndexedDB é `idbBackend` em `saveStore.ts`), com
   exportar/importar; os cartões Jogos e Som estão em `ui/system.ts`.
+- **Vida a dois (bloco 10)** mora em `sim/marriage.ts` (estágio do casal,
+  sobrenome, economias, móveis da mudança, lugar livre perto). `Relation`
+  ganhou `bond` ('engaged' | 'married', com `dating` ainda true) e `ex`;
+  `Neighbor` ganhou `funds` e `bornName`; `Folk`, `bornName`; `Visit`,
+  `moving`; `Party`, `wedding` (par, sobrenome, estágio da cerimônia e roupas
+  de antes). Conversas especiais `engage`, `wed` (votos, `hidden`), `divorce` e
+  `moveOut`; `SocialRequires.bond` filtra pelo estágio. Comando `planWedding`
+  usa o telefone como a festa; `stepWedding` põe os votos na fila. Objetos
+  com `ring` (estojo) e `arch` (arco); a mala é o objeto `suitcase` com
+  `special: 'unpack'`. `InteractionDef.couple` chama o par e `DuoDef.romance`
+  dá romance por minuto a quem namora. Save v14.
 - **Catálogo e atividades a dois (bloco 4)** moram em `sim/furnish.ts`.
   `ObjectDef` ganhou `tier` (0, 1, 2), `line` (a função que agrupa as faixas;
   frilas e negócios aceitam qualquer objeto da mesma `line`), `colors` e
@@ -721,6 +762,10 @@ Decisões principais do núcleo:
   (`sim/music.ts`, com o gosto por eixo) e o estilo de mesmo id em `STYLES`
   (`audio/compose.ts`), mais o texto `station.<id>` e a cor da nota em
   `art/textures.ts`.
+- **Conversa de casal**: em `socials.ts`, `requires.bond` com os estágios
+  ('none', 'dating', 'engaged', 'married'); `hidden: true` tira do menu.
+- **Móvel que vem na mudança**: a habilidade e o objeto em `BELONGINGS`
+  (`sim/marriage.ts`).
 - **Mudou o formato do `World`?** Aumente `SAVE_VERSION` em `src/sim/save.ts` e
   registre a migração no mesmo arquivo.
 
@@ -761,7 +806,28 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
   de até quatro, telefone social, festa com convites, buffet, nota, fama ou
   fofoca e reclamação de barulho, panelinhas e rivais que brigam, conversas
   novas, cumprimento na porta e desvio local (save v13).
-- Próximo: bloco 10, noivado, casamento e morar junto.
+- **Bloco 10 (feito)**: pedido de casamento com aliança, casamento em casa
+  com cerimônia e sobrenome, morar junto com economias, mala e móveis,
+  mudar alguém para fora, divórcio com divisão do dinheiro, cama de casal
+  com deitar abraçadinho e conversas de casal (save v14).
+- Próximo: bloco 11, bebês, crianças e escola.
+
+## Limitações conhecidas do bloco 10
+
+- O estojo de aliança é um objeto no chão (um expositor); não há loja nem
+  anel no inventário. A aliança na mão é pequena e quase não se vê de longe.
+- A cerimônia é a conversa "Trocar os votos" dos dois noivos; convidados não
+  se sentam nem se viram para o altar. Sem arco de flores, casam onde estiverem.
+  Se os noivos demoram a chegar ao arco (alguém no caminho), casam onde estão.
+- Quem sai de casa só leva a mala e o emprego (e metade do caixa no
+  divórcio); os móveis ficam. Quem chega traz sempre dois móveis fixos pelo
+  gosto, sem escolha.
+- Casado com alguém de fora numa casa cheia continua morando fora; não há
+  como "chamar o cônjuge" depois sem abrir vaga e convidar para morar.
+- Deitar abraçadinho só chama o par que mora na casa e está livre; visita
+  não deita na cama.
+- Saves antigos ganham economias para os vizinhos pelo cargo; namoros
+  continuam namoros (ninguém vira noivo sozinho).
 
 ## Limitações conhecidas do bloco 9
 
@@ -892,8 +958,8 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
 - A fofoca é sobre fatos que a simulação conhece (as notícias de
   `news.ts`); não há boato inventado nem fofoca falsa. Fora do lote ela anda
   uma vez por dia, de uma vez, e não aparece na tela quem contou para quem.
-- Não há casamento, noivado, filhos nem divórcio; namoro continua sendo o
-  vínculo mais forte. Também não há conversa em grupo.
+- (Resolvido nos blocos 9 e 10: conversa em grupo, noivado, casamento e
+  divórcio. Filhos chegam no bloco 11.)
 - A reputação é um número só (não separa fama no trabalho e fama no
   bairro) e volta devagar para o meio todo dia.
 - Os três chefes e a colega nova usam os mesmos rostos e corpos dos outros
@@ -942,8 +1008,8 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
 - Visitas não comem, não tomam banho nem dormem na casa, e vão embora com
   fome ou cansadas. Não há visita de grupo nem "toque a campainha": quem chega
   já entra.
-- Não dá para mudar alguém para fora de casa, nem criar folks novos: os
-  moradores novos só vêm da vizinhança fixa (dez pessoas).
+- Não dá para criar folks novos fora do criar família: os moradores novos só
+  vêm da vizinhança fixa. (Mudar alguém para fora chegou no bloco 10.)
 - A casa pronta tem duas camas de solteiro; com três ou quatro moradores, quem
   ficar sem cama espera vagar ou acaba desmaiando de sono (compre outra).
 - Os vizinhos usam os mesmos cinco tipos de rosto e cabelo, com cores

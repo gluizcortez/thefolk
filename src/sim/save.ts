@@ -1,6 +1,7 @@
 import { relKey } from './relations';
 import type { Catalog, Grid, Neighbor, Vec, World, WorldObject } from './types';
 import { checkPlacement } from './economy';
+import { savingsOf } from './marriage';
 import { footprint, objectSize } from './grid';
 import { computeRooms, lightsIn } from './rooms';
 import { START_PANTRY } from './services';
@@ -11,7 +12,7 @@ import { seedInterests } from './topics';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 13;
+export const SAVE_VERSION = 14;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -211,6 +212,13 @@ const migrations: Record<number, Migration> = {
     world.party = null;
     world.lastParty = null;
     world.call = null;
+    return { ...save, world: world as unknown as Obj };
+  },
+  // bloco 10: noivado, casamento e mudanças. Os vizinhos ganham economias
+  // (que entram no caixa quando alguém se muda); namoros continuam namoros.
+  13: (save) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    world.neighbors = (world.neighbors ?? []).map((n) => ({ ...n, funds: savingsOf(n) }));
     return { ...save, world: world as unknown as Obj };
   },
 };

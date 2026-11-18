@@ -155,7 +155,8 @@ export function jealousy(
   const names = { name: partner.name, other: cheater.name, third: third?.name ?? '' };
   if (partner.resident || cheater.resident || saw) log(saw ? 'log.jealousSaw' : 'log.jealousHeard', names);
   const rel = relationOf(world, partnerId, cheaterId);
-  if (rel?.dating && rel.romance < BREAKUP_ROMANCE) breakUp(world, catalog, log, partnerId, cheaterId, 'cheated');
+  // bloco 10: casamento não acaba sozinho (só com o pedido de divórcio)
+  if (rel?.dating && rel.bond !== 'married' && rel.romance < BREAKUP_ROMANCE) breakUp(world, catalog, log, partnerId, cheaterId, 'cheated');
 }
 
 /** `fromId` termina com `toId`. */
@@ -170,12 +171,14 @@ export function breakUp(
   const from = personOf(world, fromId);
   const to = personOf(world, toId);
   if (!from || !to || !relationOf(world, fromId, toId)?.dating) return;
+  const engaged = relationOf(world, fromId, toId)?.bond === 'engaged';
   setDating(world, fromId, toId, false);
   applyDelta(world, catalog, to, from, { romance: -30, friendship: why === 'faded' ? -4 : -12 });
   applyDelta(world, catalog, from, to, { romance: why === 'faded' ? -10 : -20 });
   addMemory(world, catalog, fromId, toId, 'brokeUp');
   addMemory(world, catalog, toId, fromId, 'gotDumped');
   touch(world, fromId, toId);
+  if (engaged) log('log.engagementOff', { name: from.name, other: to.name });
   log(why === 'cheated' ? 'log.breakUpCheated' : why === 'faded' ? 'log.breakUpFaded' : 'log.breakUp', {
     name: from.name,
     other: to.name,
@@ -314,7 +317,7 @@ export function dailyHearts(world: World, catalog: Catalog, log: Logger): void {
     seen.add(k);
     seen.add(relKey(b, a));
     const back = world.relations[relKey(b, a)];
-    if (!back) continue;
+    if (!back || rel.bond === 'married') continue;
     if (rel.romance < FADED_ROMANCE || back.romance < FADED_ROMANCE) {
       const [from, to] = rel.romance <= back.romance ? [a, b] : [b, a];
       breakUp(world, catalog, log, from, to, 'faded');

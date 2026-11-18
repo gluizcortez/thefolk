@@ -89,6 +89,156 @@ const buffet: FurnitureSpec = {
   },
 };
 
+// ---------- bloco 10: vida a dois ----------
+
+/** Cama de casal média: cabeceira de madeira clara com dois travesseiros. */
+const COUPLE_TOP = 0.48;
+const bedcouple: FurnitureSpec = {
+  lie: { x: -0.45, y: COUPLE_TOP + 0.12, z: 0.9, heading: 0 },
+  lies: [
+    { x: -0.45, y: COUPLE_TOP + 0.12, z: 0.9, heading: 0 },
+    { x: 0.45, y: COUPLE_TOP + 0.12, z: 0.9, heading: 0 },
+  ],
+  build(_seed, paint) {
+    const wood = texMat('pine', { gloss: 0.45 });
+    const white = colorMat(0xf2eee2);
+    const color = paint ?? 0x3f6aa8;
+    const duvet = tileUV(box(1.8, 0.08, 1.2, texMat('duvet', { color: mix(0xffffff, color, 0.6) }), 0, COUPLE_TOP, 0.34), 2.5, 2);
+    const g = group(
+      ...feet(1.86, 1.86, 0.16, wood, 0.04),
+      box(1.9, 0.16, 1.9, wood, 0, 0.14, 0.02),
+      rbox(1.82, 0.2, 1.8, 0.06, white, 0, 0.29, 0.04),
+      // cabeceira de ripas com travessa curva em cima
+      box(1.96, 0.9, 0.08, wood, 0, 0.14, -0.94),
+      rbox(2.02, 0.1, 0.12, 0.04, wood, 0, 1.02, -0.94),
+      // pezeira baixa
+      box(1.96, 0.36, 0.06, wood, 0, 0.14, 0.94),
+      duvet,
+      // dobra do lençol
+      rbox(1.8, 0.08, 0.16, 0.03, white, 0, COUPLE_TOP, -0.24),
+    );
+    for (const sx of [-1, 1]) {
+      g.add(rbox(0.6, 0.14, 0.32, 0.07, white, sx * 0.45, COUPLE_TOP - 0.02, -0.66));
+      // ripas da cabeceira
+      for (let i = 0; i < 3; i++) g.add(box(0.06, 0.62, 0.02, colorMat(shade(0xc89a5a, 0.82)), sx * (0.25 + i * 0.25), 0.3, -0.895));
+    }
+    let raised = 1;
+    return {
+      group: g,
+      tick({ using }) {
+        const target = using ? 3 : 1;
+        raised += (target - raised) * 0.2;
+        duvet.scale.y = raised;
+        duvet.position.y = COUPLE_TOP + 0.04 * raised;
+      },
+    };
+  },
+};
+
+/** Expositor de canto com o estojo de veludo aberto e a aliança brilhando. */
+const ringbox: FurnitureSpec = {
+  build() {
+    const wood = texMat('walnut', { gloss: 0.6 });
+    const velvet = colorMat(0x8a1f3a, { gloss: 0.15 });
+    const gold = colorMat(PAL.brass, { gloss: 1 });
+    const g = group(
+      // coluninha torneada
+      lathe(
+        [
+          [0.2, 0],
+          [0.2, 0.05],
+          [0.09, 0.1],
+          [0.07, 0.45],
+          [0.1, 0.7],
+          [0.2, 0.74],
+          [0.2, 0.8],
+        ],
+        14,
+        wood,
+      ),
+      // toalhinha de renda
+      cyl(0.19, 0.19, 0.01, 16, colorMat(0xf4efdf), 0, 0.8, 0),
+      // estojo: base e tampa aberta
+      rbox(0.18, 0.08, 0.15, 0.03, velvet, 0, 0.81, 0.01),
+    );
+    const lid = rbox(0.18, 0.08, 0.03, 0.02, velvet, 0, 0.0, 0);
+    const hinge = group(lid);
+    hinge.position.set(0, 0.89, -0.06);
+    hinge.rotation.x = -0.35;
+    g.add(hinge, box(0.14, 0.012, 0.11, colorMat(0xf1e6c6, { gloss: 0.4 }), 0, 0.885, 0.015));
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.008, 6, 16), gold);
+    ring.position.set(0, 0.92, 0.02);
+    const stone = ball(0.012, 0.014, 0.012, colorMat(0xe8f4ff, { gloss: 1 }), 0, 0.955, 0.02, 8);
+    g.add(ring, stone);
+    let t = 0;
+    return {
+      group: g,
+      tick() {
+        t += 0.016;
+        ring.rotation.y = t * 0.8;
+        (stone.material as THREE.MeshPhongMaterial).emissive.setHex(Math.sin(t * 4) > 0.6 ? 0x445566 : 0x000000);
+      },
+    };
+  },
+};
+
+/** Arco de flores: duas colunas brancas com treliça e flores por cima. */
+const weddingarch: FurnitureSpec = {
+  build(seed) {
+    const white = colorMat(0xf4f1e6, { gloss: 0.5 });
+    const leaf = colorMat(PAL.leaf);
+    const g = group();
+    for (const sx of [-1, 1]) {
+      // vaso na base e coluna de treliça
+      g.add(cyl(0.16, 0.13, 0.26, 12, colorMat(0xe8e0cc, { gloss: 0.6 }), sx * 0.82, 0, 0));
+      g.add(rod([sx * 0.82 - 0.05, 0.26, 0], [sx * 0.82 - 0.05, 1.7, 0], 0.02, white), rod([sx * 0.82 + 0.05, 0.26, 0], [sx * 0.82 + 0.05, 1.7, 0], 0.02, white));
+      for (let i = 0; i < 6; i++) g.add(rod([sx * 0.82 - 0.05, 0.35 + i * 0.24, 0], [sx * 0.82 + 0.05, 0.47 + i * 0.24, 0], 0.01, white, 5));
+    }
+    // arco de cima, feito de gomos
+    const steps = 14;
+    const pts: [number, number, number][] = [];
+    for (let i = 0; i <= steps; i++) {
+      const a = Math.PI - (i / steps) * Math.PI;
+      pts.push([Math.cos(a) * 0.82, 1.7 + Math.sin(a) * 0.5, 0]);
+    }
+    for (let i = 0; i < steps; i++) g.add(rod(pts[i], pts[i + 1], 0.035, white, 6));
+    // flores e folhas em cachos ao longo do arco e das colunas
+    const rnd = seeded(seed + 21);
+    const cols = [0xf3efe2, 0xe07aa8, 0xf2c744, 0xd9483f, 0xf6c7d4];
+    for (let i = 0; i < 34; i++) {
+      const p = i < 22 ? pts[Math.floor(rnd() * pts.length)] : ([(rnd() < 0.5 ? -1 : 1) * 0.82, 0.4 + rnd() * 1.3, 0] as [number, number, number]);
+      const x = p[0] + (rnd() - 0.5) * 0.12;
+      const y = p[1] + (rnd() - 0.5) * 0.1;
+      const z = (rnd() - 0.5) * 0.14;
+      if (i % 3 === 0) g.add(ball(0.06, 0.025, 0.04, leaf, x, y, z, 6));
+      else g.add(ball(0.045, 0.04, 0.045, colorMat(cols[i % cols.length]), x, y, z, 7));
+    }
+    // fita pendurada no meio
+    g.add(box(0.05, 0.3, 0.01, colorMat(0xe07aa8), 0, 1.9, 0.03));
+    return { group: g };
+  },
+};
+
+/** Mala de couro com alça e cantoneiras (de quem acabou de chegar). */
+const suitcase: FurnitureSpec = {
+  build(seed) {
+    const leather = colorMat(seed % 2 ? 0x8a4a22 : 0x4a5a7a, { gloss: 0.35 });
+    const metal = colorMat(PAL.brass, { gloss: 0.9 });
+    const g = group(
+      rbox(0.62, 0.42, 0.24, 0.04, leather, 0, 0.02, 0),
+      box(0.64, 0.03, 0.26, colorMat(0x3a2418), 0, 0.2, 0),
+      rod([-0.1, 0.46, 0], [-0.1, 0.52, 0], 0.012, metal, 5),
+      rod([0.1, 0.46, 0], [0.1, 0.52, 0], 0.012, metal, 5),
+      rod([-0.1, 0.52, 0], [0.1, 0.52, 0], 0.016, colorMat(0x3a2418), 6),
+    );
+    for (const sx of [-1, 1]) g.add(box(0.05, 0.05, 0.02, metal, sx * 0.28, 0.4, 0.12), box(0.04, 0.03, 0.02, metal, sx * 0.12, 0.33, 0.125));
+    // etiqueta de viagem
+    g.add(box(0.08, 0.05, 0.005, colorMat(0xf4efdf), 0.2, 0.3, 0.125));
+    g.rotation.y = 0.3;
+    return { group: g };
+  },
+};
+
 // ---------- camas ----------
 
 const bedcot: FurnitureSpec = {
@@ -1065,6 +1215,10 @@ export const FURNITURE4: Record<string, FurnitureSpec> = {
   wardrobe,
   bedcot,
   bedqueen,
+  bedcouple,
+  ringbox,
+  weddingarch,
+  suitcase,
   sofacheap,
   sofaluxe,
   armchaircheap,

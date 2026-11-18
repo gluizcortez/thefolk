@@ -837,6 +837,63 @@ const list: ObjectDef[] = [
     ],
     upkeep: { dirt: 0.25 },
   },
+  // ---------- bloco 10: vida a dois ----------
+  {
+    // expositor com o estojo da aliança: o pedido de casamento aceito leva o estojo
+    id: 'ringbox',
+    name: 'obj.ringbox',
+    price: 450,
+    category: 'decor',
+    room: 'bedroom',
+    art: 'ringbox',
+    size: { w: 1, h: 1 },
+    ambience: 2,
+    ring: true,
+    interactions: [
+      {
+        id: 'admireRing',
+        label: 'act.admireRing',
+        duration: 6,
+        effects: { fun: 0.6, comfort: 0.3 },
+        autonomous: false,
+      },
+    ],
+  },
+  {
+    // arco de flores para casar em casa
+    id: 'weddingarch',
+    name: 'obj.weddingarch',
+    price: 380,
+    category: 'decor',
+    room: 'living',
+    art: 'weddingarch',
+    size: { w: 2, h: 1 },
+    ambience: 8,
+    arch: true,
+    interactions: [],
+  },
+  {
+    // mala de quem acabou de se mudar (não se compra)
+    id: 'suitcase',
+    name: 'obj.suitcase',
+    price: 0,
+    buyable: false,
+    category: 'decor',
+    art: 'suitcase',
+    size: { w: 1, h: 1 },
+    ambience: -1,
+    interactions: [
+      {
+        id: 'unpack',
+        label: 'act.unpack',
+        duration: 25,
+        effects: { comfort: 0.3, fun: 0.2 },
+        residentOnly: true,
+        special: 'unpack',
+        skill: { id: 'tidiness', xpPerMinute: 0.2 },
+      },
+    ],
+  },
 ];
 
 export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries([...list, ...FURNITURE, ...REWARDS].map((o) => [o.id, o]));
