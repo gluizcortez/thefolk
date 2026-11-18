@@ -1,5 +1,5 @@
 import { relKey } from './relations';
-import type { Catalog, Folk, Grid, Neighbor, Vec, World, WorldObject } from './types';
+import type { Catalog, Folk, Grid, Look, Neighbor, Vec, World, WorldObject } from './types';
 import { favoriteChannel } from './activity';
 import { checkPlacement } from './economy';
 import { savingsOf } from './marriage';
@@ -16,7 +16,7 @@ import type { TownPlan } from './town';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 24;
+export const SAVE_VERSION = 25;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -376,6 +376,25 @@ const migrations: Record<number, Migration> = {
       return out;
     });
     return { ...save, world: world as unknown as Obj };
+  },
+  // plano 2, bloco 5: rosto em camadas. Toda aparência gravada (moradores,
+  // vizinhos, famílias guardadas, álbum) ganha as peças do rosto; o antigo
+  // "rosto 1" (sardas) vira marca, e o campo `face` fica só para os óculos.
+  24: (save) => {
+    const fix = (v: unknown): unknown => {
+      if (Array.isArray(v)) return v.map(fix);
+      if (!v || typeof v !== 'object') return v;
+      const out: Obj = {};
+      for (const [k, x] of Object.entries(v as Obj)) {
+        if (k === 'look' && x && typeof x === 'object' && 'skin' in (x as Obj)) {
+          const old = x as Partial<Look>;
+          const freckles = old.face === 1;
+          out[k] = { ...fullLook({ ...old, face: freckles ? 0 : old.face }), ...(freckles ? { marks: 1 } : {}) };
+        } else out[k] = fix(x);
+      }
+      return out;
+    };
+    return { ...save, world: fix(save.world) as Obj };
   },
 };
 

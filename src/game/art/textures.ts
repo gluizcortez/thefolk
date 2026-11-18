@@ -1344,16 +1344,108 @@ function thoughtIcon(kind: string, raw: string): Painter {
 
 // ---------- folks ----------
 
-export type Expression = 'happy' | 'neutral' | 'sad' | 'talk' | 'angry' | 'tired';
+export type Expression =
+  | 'neutral'
+  | 'happy'
+  | 'sad'
+  | 'angry'
+  | 'tired'
+  | 'sick'
+  | 'love'
+  | 'scared'
+  | 'focused'
+  | 'laugh'
+  | 'cry'
+  /** fala sem emoção marcada (a boca mexe; o resto é neutro) */
+  | 'talk';
+
+export const EXPRESSIONS: Expression[] = ['neutral', 'happy', 'sad', 'angry', 'tired', 'sick', 'love', 'scared', 'focused', 'laugh', 'cry'];
+
+/** Plano 2, bloco 5: as peças do rosto que vão pintadas na textura. */
+export interface FaceLook {
+  skin: number;
+  hair: number;
+  eyes: number;
+  eyeColor: number;
+  lashes: number;
+  brows: number;
+  nose: number;
+  mouth: number;
+  beard: number;
+  marks: number;
+  /** 0 liso, 1 rugas de idoso */
+  wrinkles: number;
+}
+
+/** O que muda de um quadro para o outro: expressão, pálpebra, boca falando e olhar. */
+export interface FaceState {
+  expr: Expression;
+  /** olhos fechados (piscar, dormir) */
+  closed: boolean;
+  /** boca falando: 0 fechada, 1 meio aberta, 2 aberta */
+  talk: 0 | 1 | 2;
+  /** pupilas: -1 para a direita da tela, 0 no meio, 1 para a esquerda */
+  gaze: -1 | 0 | 1;
+}
+
+/** Cor dos olhos: castanho, escuro, mel, verde, azul. */
+export const EYE_COLORS = [0x5a3a22, 0x2a1d16, 0x9a6a2a, 0x4f7a3c, 0x3f6fa8];
+
+type MouthShape = 'line' | 'smile' | 'grin' | 'frown' | 'grimace' | 'wavy' | 'o' | 'small' | 'smallSmile' | 'yawn' | 'wail';
+
+/** Cada expressão, como dado: sobrancelha, pálpebras, boca, cor do rosto. */
+interface ExprSpec {
+  /** inclinação da sobrancelha: + desce no meio (bravo), - sobe no meio (triste) */
+  tilt: number;
+  /** sobrancelha mais alta (+) ou mais baixa (-) */
+  raise: number;
+  /** pálpebra de cima cobrindo o olho (0 a 1); negativo arregala */
+  lid: number;
+  /** pálpebra de baixo subindo (sorriso nos olhos) */
+  low: number;
+  /** olhos fechados em arco: 1 para cima (riso), -1 apertados (choro) */
+  arc?: 1 | -1;
+  pupil?: number;
+  heart?: boolean;
+  mouth: MouthShape;
+  blush: number;
+  bags?: boolean;
+  green?: number;
+  tears?: boolean;
+}
+
+const EXPR: Record<Expression, ExprSpec> = {
+  neutral: { tilt: 0, raise: 0, lid: 0.08, low: 0, mouth: 'line', blush: 0.2 },
+  talk: { tilt: 0, raise: 0.3, lid: 0.05, low: 0, mouth: 'line', blush: 0.22 },
+  happy: { tilt: -0.5, raise: 0.5, lid: 0, low: 0.3, mouth: 'smile', blush: 0.38 },
+  sad: { tilt: -1.7, raise: 0.4, lid: 0.3, low: 0, mouth: 'frown', blush: 0.14 },
+  angry: { tilt: 2.4, raise: -1.1, lid: 0.32, low: 0.15, mouth: 'grimace', blush: 0.34 },
+  tired: { tilt: -0.4, raise: -0.4, lid: 0.55, low: 0, mouth: 'small', blush: 0.1, bags: true },
+  sick: { tilt: -1.1, raise: 0.2, lid: 0.38, low: 0.1, mouth: 'wavy', blush: 0, green: 0.22, bags: true },
+  love: { tilt: -0.7, raise: 0.9, lid: 0.1, low: 0.25, heart: true, mouth: 'smallSmile', blush: 0.6 },
+  scared: { tilt: -1.3, raise: 1.8, lid: -0.35, low: 0, pupil: 0.65, mouth: 'o', blush: 0 },
+  focused: { tilt: 1.1, raise: -0.6, lid: 0.3, low: 0.2, mouth: 'small', blush: 0.15 },
+  laugh: { tilt: -0.6, raise: 1.1, lid: 0, low: 0, arc: 1, mouth: 'grin', blush: 0.48 },
+  cry: { tilt: -2.2, raise: 0.6, lid: 0, low: 0, arc: -1, mouth: 'wail', blush: 0.4, tears: true },
+};
+
+/** Boca que já está aberta na expressão (falar não muda). */
+const OPEN_MOUTHS = new Set<MouthShape>(['grin', 'o', 'wail', 'yawn']);
 
 /**
- * Pele da cabeça, que dá a volta inteira (u = 0.5 é o centro do rosto).
- * O rosto é discreto, de proporção realista: os olhos ficam na altura do meio.
+ * Pele da cabeça, que dá a volta inteira (u = 0.5 é o centro do rosto). Plano
+ * 2, bloco 5: o dobro da resolução das outras texturas (256 x 128), com o
+ * rosto em camadas: rugas, marcas, olhos (formato, cor, cílios), sobrancelhas,
+ * sombra do nariz, barba e boca. As medidas são do desenho antigo (128 x 64),
+ * multiplicadas por `S`; as linhas finas de 1 pixel ficam com metade da
+ * espessura, que é o que dá mais detalhe sem perder os pixels nítidos.
  */
-function face(skinIdx: number, hairIdx: number, expr: Expression, eyesClosed: boolean, variant = 0): Painter {
+function face(f: FaceLook, st: FaceState): Painter {
   return (c, w, h, rnd) => {
-    const skin = SKIN[skinIdx % SKIN.length];
-    const hair = HAIR[hairIdx % HAIR.length];
+    const S = w / 128;
+    const e = EXPR[st.expr] ?? EXPR.neutral;
+    const skin = SKIN[f.skin % SKIN.length];
+    const hair = HAIR[f.hair % HAIR.length];
     fill(c, skin);
     wrapShade(c, w, h, 0.2);
     const g = c.createLinearGradient(0, 0, 0, h);
@@ -1363,79 +1455,302 @@ function face(skinIdx: number, hairIdx: number, expr: Expression, eyesClosed: bo
     g.addColorStop(1, 'rgba(0,0,0,0.3)');
     c.fillStyle = g;
     c.fillRect(0, 0, w, h);
+    const cx = w / 2;
+    const ey = h * 0.52;
+    const at = (dx: number, dy: number): [number, number] => [cx + dx * S, ey + dy * S];
+
+    // enjoado: o rosto esverdeia
+    if (e.green) {
+      const gr = c.createRadialGradient(cx, ey + 4 * S, 2 * S, cx, ey + 4 * S, 22 * S);
+      gr.addColorStop(0, css(0x8fbf6a, e.green));
+      gr.addColorStop(1, css(0x8fbf6a, 0));
+      c.fillStyle = gr;
+      c.fillRect(0, 0, w, h);
+    }
+
     // couro cabeludo: alto da cabeça, nuca e costeletas já saem na cor do cabelo
     const top = h * 0.2;
     fill(c, hair, 0, 0, w, top);
-    for (let x = 0; x < w; x += 2) fill(c, hair, x, top, 2, 1 + ((x * 7) % 5) * 0.7);
+    for (let x = 0; x < w; x += 2) fill(c, hair, x, top, 2, (1 + ((x * 7) % 5) * 0.7) * S * 0.75);
     fill(c, hair, 0, 0, w * 0.27, h * 0.66);
     fill(c, hair, w * 0.73, 0, w * 0.27, h * 0.66);
     fill(c, hair, w * 0.27, 0, w * 0.035, h * 0.5);
     fill(c, hair, w * 0.695, 0, w * 0.035, h * 0.5);
-    fill(c, 0x000000, w * 0.27, top, w * 0.46, 2, 0.18);
-    const cx = w / 2;
-    const ey = h * 0.52;
-    // corado das bochechas e sombra das órbitas
-    oval(c, cx - 11, ey + 8, 5, 3.5, 0xd9655a, expr === 'happy' ? 0.38 : 0.2);
-    oval(c, cx + 11, ey + 8, 5, 3.5, 0xd9655a, expr === 'happy' ? 0.38 : 0.2);
-    for (const s of [-1, 1]) {
-      const ex = cx + s * 7.5;
-      oval(c, ex, ey - 0.5, 5.5, 3.6, shade(skin, 0.72), 0.45);
-      if (eyesClosed) {
-        line(c, ex - 3.2, ey + 0.5, ex + 3.2, ey + 0.5, 0x2a1d16, 1, 1.4);
-      } else {
-        oval(c, ex, ey, 3.4, expr === 'sad' ? 1.8 : 2.3, 0xf7f3ea);
-        disc(c, ex + s * 0.2, ey + 0.1, 1.8, 0x33241a);
-        fill(c, 0xffffff, Math.round(ex - 1), Math.round(ey - 1.3), 1, 1, 0.9);
-        line(c, ex - 3.6, ey - 2.2, ex + 3.6, ey - 2.2, 0x2a1d16, 0.85, 1);
-        if (expr === 'tired') {
-          // bloco 6: pálpebra caída até o meio do olho e olheira
-          oval(c, ex, ey - 1.4, 3.8, 1.9, shade(skin, 0.86));
-          line(c, ex - 3.6, ey - 0.1, ex + 3.6, ey - 0.1, 0x2a1d16, 0.9, 1.2);
-          oval(c, ex, ey + 3, 3.2, 1, shade(skin, 0.62), 0.5);
-        }
+    fill(c, 0x000000, w * 0.27, top, w * 0.46, 2 * S, 0.18);
+
+    const shadow = shade(skin, 0.62);
+    // rugas de idoso: testa, pés de galinha e o bigode chinês
+    if (f.wrinkles) {
+      for (const dy of [-12, -9.5]) line(c, ...at(-8, dy), ...at(8, dy - 0.3), shadow, 0.35, 0.6 * S);
+      for (const s of [-1, 1]) {
+        line(c, ...at(s * 12.5, -1), ...at(s * 14.5, -2), shadow, 0.45, 0.5 * S);
+        line(c, ...at(s * 12.5, 0.5), ...at(s * 14.5, 1), shadow, 0.45, 0.5 * S);
+        line(c, ...at(s * 4.5, 9), ...at(s * 6.5, 15), shadow, 0.35, 0.6 * S);
       }
-      const tilt = expr === 'sad' ? -1.5 : expr === 'happy' ? 0.5 : expr === 'angry' ? 2.2 : 0;
-      line(c, ex - 4.2, ey - 5.5 + s * tilt, ex + 4.2, ey - 5.5 - s * tilt, shade(hair, 0.85), 1, 1.8);
     }
-    // sombra sob o nariz (o nariz mesmo é modelado) e narinas
-    oval(c, cx, ey + 8.5, 3.2, 1.3, shade(skin, 0.62), 0.7);
-    fill(c, shade(skin, 0.4), cx - 2, Math.round(ey + 8), 1, 1, 0.9);
-    fill(c, shade(skin, 0.4), cx + 1, Math.round(ey + 8), 1, 1, 0.9);
-    // lábio de baixo
-    oval(c, cx, ey + 16.2, 3.6, 1.4, 0xb5625a, 0.55);
-    // boca
-    const my = ey + 15;
-    c.strokeStyle = css(0x8a352f);
-    c.lineWidth = 1.7;
-    c.lineCap = 'round';
-    c.beginPath();
-    if (expr === 'happy') c.arc(cx, my - 5, 6, 0.2 * Math.PI, 0.8 * Math.PI);
-    else if (expr === 'sad' || expr === 'angry') c.arc(cx, my + 5, 5.5, 1.22 * Math.PI, 1.78 * Math.PI);
-    else if (expr === 'tired') {
-      // meio bocejo
-      c.stroke();
-      oval(c, cx, my + 0.5, 2.2, 1.6, 0x5a2420, 0.85);
-      c.beginPath();
-    }
-    else if (expr === 'talk') {
-      c.stroke();
-      oval(c, cx, my + 0.5, 3, 2.2, 0x5a2420);
-      c.beginPath();
-    } else {
-      c.moveTo(cx - 4, my);
-      c.lineTo(cx + 4, my);
-    }
-    c.stroke();
-    oval(c, cx, my + 3.5, 4, 1.2, shade(skin, 0.7), 0.4);
-    // bloco 5: sardas nas bochechas e no nariz
-    if (variant === 1) {
-      for (let i = 0; i < 22; i++) {
+
+    // corado das bochechas (mais forte com bochecha rosada)
+    // na pele escura o corado aparece menos
+    const blush = (e.blush + (f.marks === 3 ? 0.2 : 0)) * (f.skin % SKIN.length >= 2 ? 0.55 : 1);
+    for (const s of [-1, 1]) oval(c, ...at(s * 11, 8), 5 * S, 3.5 * S, st.expr === 'angry' ? 0xc94a3a : 0xd9655a, blush);
+
+    // marcas: sardas, pinta perto da boca
+    if (f.marks === 1) {
+      for (let i = 0; i < 34; i++) {
         const s = i % 2 ? 1 : -1;
-        const fx = cx + s * (4 + rnd() * 11);
-        const fy = ey + 4 + rnd() * 6;
-        fill(c, shade(skin, 0.62), Math.round(fx), Math.round(fy), 1, 1, 0.8);
+        const [fx, fy] = at(s * (3 + rnd() * 12), 3 + rnd() * 7);
+        fill(c, shade(skin, 0.66), Math.round(fx), Math.round(fy), S * 0.5 + 0.5, S * 0.5 + 0.5, 0.85);
+      }
+    } else if (f.marks === 2) {
+      const [mx, my] = at(5.5, 12.5);
+      fill(c, shade(skin, 0.38), Math.round(mx), Math.round(my), S, S);
+    }
+
+    // olhos
+    const EYES: [number, number, number][] = [
+      [3.4, 2.3, 0],
+      [3.0, 2.8, 0],
+      [3.6, 1.7, 0.8],
+      [3.4, 2.2, -0.8],
+    ];
+    const [erx, ery0, slant] = EYES[f.eyes % EYES.length];
+    const ery = ery0 * (1 - Math.min(0, e.lid) * -0.6);
+    const iris = EYE_COLORS[f.eyeColor % EYE_COLORS.length];
+    const ink = 0x2a1d16;
+    const lash = f.lashes ? 1.4 : 0.9;
+    for (const s of [-1, 1]) {
+      const [ex, eyY] = at(s * 7.5, 0);
+      // sombra da órbita
+      oval(c, ex, eyY - 0.5 * S, 5.5 * S, 3.6 * S, shade(skin, 0.72), 0.45);
+      if (e.bags) oval(c, ex, eyY + 3 * S, 3.2 * S, 1 * S, shade(skin, 0.6), 0.5);
+      const outer = s * slant * S; // canto de fora sobe (puxado) ou desce (caído)
+      if (st.closed || e.arc) {
+        c.strokeStyle = css(ink);
+        c.lineWidth = lash * S;
+        c.lineCap = 'round';
+        c.beginPath();
+        if (e.arc === 1 && !st.closed) c.arc(ex, eyY + 2 * S, 3.2 * S, 1.15 * Math.PI, 1.85 * Math.PI);
+        else if (e.arc === -1) {
+          c.moveTo(ex - 3.4 * S, eyY - s * 0.8 * S);
+          c.lineTo(ex, eyY + 0.6 * S);
+          c.lineTo(ex + 3.4 * S, eyY + s * 0.8 * S);
+        } else {
+          c.moveTo(ex - 3.2 * S, eyY + 0.5 * S - (s < 0 ? outer : 0));
+          c.quadraticCurveTo(ex, eyY + 1.6 * S, ex + 3.2 * S, eyY + 0.5 * S - (s > 0 ? outer : 0));
+        }
+        c.stroke();
+      } else {
+        // branco do olho, íris colorida, pupila e brilho
+        c.save();
+        c.beginPath();
+        c.ellipse(ex, eyY, erx * S, ery * S, -s * slant * 0.12, 0, Math.PI * 2);
+        c.clip();
+        fill(c, 0xf7f3ea, ex - erx * S, eyY - ery * S, erx * 2 * S, ery * 2 * S);
+        const gx = ex + (s * 0.15 - st.gaze * 1.1) * S;
+        const ir = 1.75 * S * (e.pupil ? 0.85 : 1);
+        disc(c, gx, eyY + 0.1 * S, ir, iris);
+        disc(c, gx, eyY + 0.1 * S, ir * 0.45 * (e.pupil ?? 1), 0x120c08);
+        if (e.heart) {
+          // apaixonado: o brilho vira um coraçãozinho
+          const hx = gx;
+          const hy = eyY;
+          disc(c, hx - 0.5 * S, hy - 0.3 * S, 0.6 * S, 0xe0455a);
+          disc(c, hx + 0.5 * S, hy - 0.3 * S, 0.6 * S, 0xe0455a);
+          c.fillStyle = css(0xe0455a);
+          c.beginPath();
+          c.moveTo(hx - 1.05 * S, hy - 0.1 * S);
+          c.lineTo(hx + 1.05 * S, hy - 0.1 * S);
+          c.lineTo(hx, hy + 1.2 * S);
+          c.fill();
+        } else fill(c, 0xffffff, Math.round(gx - 0.9 * S), Math.round(eyY - 1.2 * S), S * 0.75, S * 0.75, 0.95);
+        // pálpebras: de cima (sono, raiva, desconfiança) e de baixo (sorriso)
+        if (e.lid > 0) {
+          const lidH = ery * 2 * e.lid * S;
+          fill(c, shade(skin, 0.86), ex - erx * S - 1, eyY - ery * S - 1, erx * 2 * S + 2, lidH + 1);
+          if (st.expr === 'angry' || st.expr === 'focused') {
+            // corte em diagonal, mais baixo do lado do nariz
+            c.fillStyle = css(shade(skin, 0.86));
+            c.beginPath();
+            c.moveTo(ex - s * erx * S, eyY - ery * S + lidH);
+            c.lineTo(ex - s * erx * S, eyY + 0.2 * S);
+            c.lineTo(ex + s * erx * S, eyY - ery * S + lidH);
+            c.fill();
+          }
+        }
+        if (e.low > 0) fill(c, shade(skin, 0.9), ex - erx * S - 1, eyY + ery * S * (1 - e.low * 2), erx * 2 * S + 2, ery * S * e.low * 2 + 1);
+        c.restore();
+        // linha dos cílios em cima, mais grossa no canto de fora
+        const lidY = eyY - ery * S + Math.max(0, e.lid) * ery * 2 * S;
+        line(c, ex - (erx + 0.2) * S, lidY + (s < 0 ? outer * 0.3 : 0), ex + (erx + 0.2) * S, lidY + (s > 0 ? outer * 0.3 : 0), ink, 0.9, lash * S * 0.6);
+        if (f.lashes) {
+          const ox = ex + s * erx * S;
+          line(c, ox, lidY, ox + s * 1.3 * S, lidY - 1.1 * S, ink, 0.9, 0.6 * S);
+          line(c, ox - s * 1.2 * S, lidY - 0.3 * S, ox - s * 0.6 * S, lidY - 1.4 * S, ink, 0.8, 0.5 * S);
+        }
+        line(c, ex - erx * S * 0.8, eyY + ery * S + 0.4 * S, ex + erx * S * 0.8, eyY + ery * S + 0.4 * S, shade(skin, 0.7), 0.5, 0.5 * S);
+      }
+      // lágrimas escorrendo
+      if (e.tears) {
+        fill(c, 0x9ad4f0, ex + s * 2 * S, eyY + 2 * S, S, 7 * S, 0.85);
+        fill(c, 0xffffff, ex + s * 2 * S, eyY + 3 * S, S * 0.5, 2 * S, 0.8);
+      }
+
+      // sobrancelha: formato da pessoa, inclinação da expressão
+      const BROWS = [0.7, 1.2, 2.0, 1.2];
+      const bw = BROWS[f.brows % BROWS.length] * S;
+      const by = eyY + (-5.5 - e.raise) * S;
+      const tilt = e.tilt * S;
+      const inner = ex - s * 4.2 * S;
+      const outerX = ex + s * 4.2 * S;
+      c.strokeStyle = css(shade(hair, 0.85));
+      c.lineWidth = bw;
+      c.lineCap = 'round';
+      c.beginPath();
+      c.moveTo(inner, by + tilt * 0.5);
+      if (f.brows % 4 === 3) c.quadraticCurveTo(ex + s * 0.8 * S, by - 2.2 * S, outerX, by + 0.8 * S - tilt * 0.5);
+      else c.lineTo(outerX, by - tilt * 0.5 + (f.brows % 4 === 0 ? 0.4 * S : 0));
+      c.stroke();
+    }
+
+    // sombra sob o nariz (o nariz mesmo é modelado) e narinas, pela largura do nariz
+    const NOSE = [0.8, 1, 1.35, 1.05];
+    const nw = NOSE[f.nose % NOSE.length];
+    const [nx, ny] = at(0, 8.5);
+    oval(c, nx, ny, 3.2 * nw * S, 1.3 * S, shadow, 0.7);
+    for (const s of [-1, 1]) fill(c, shade(skin, 0.4), Math.round(nx + s * 1.6 * nw * S - S * 0.5), Math.round(ny - 0.5 * S), S, S * 0.75, 0.9);
+    // nariz adunco: sombra do dorso mais marcada
+    if (f.nose % 4 === 3) line(c, nx + 1.2 * S, ny - 7 * S, nx + 1.5 * S, ny - 1.5 * S, shadow, 0.4, S);
+
+    // barba: por fazer (pontinhos), bigode, cavanhaque, cheia
+    const beardC = shade(hair, 0.95);
+    if (f.beard === 1 || f.beard === 4) {
+      for (let i = 0; i < (f.beard === 4 ? 0 : 260); i++) {
+        const a = rnd() * Math.PI;
+        const r = 12 + rnd() * 7;
+        const [bx, byy] = at(Math.cos(a) * r * 0.95, 9 + Math.sin(a) * r * 0.62);
+        fill(c, beardC, Math.round(bx), Math.round(byy), S * 0.5, S * 0.5, 0.55);
       }
     }
+    if (f.beard === 4) {
+      // cheia: o maxilar todo, das costeletas ao queixo, com a boca aberta no meio
+      c.save();
+      c.beginPath();
+      c.rect(0, ey + 6 * S, w, h);
+      c.clip();
+      oval(c, cx, ey + 12 * S, 17 * S, 13 * S, beardC);
+      c.restore();
+      oval(c, cx, ey + 15 * S, 5.6 * S, 2.6 * S, shade(skin, 0.92));
+      // fios: pontinhos mais escuros e mais claros por cima
+      for (let i = 0; i < 220; i++) {
+        const a = rnd() * Math.PI;
+        const r = rnd();
+        const [bx, byy] = at(Math.cos(a) * 15 * r, 6 + Math.sin(a) * 14 * r);
+        fill(c, shade(beardC, rnd() > 0.5 ? 0.7 : 1.3), Math.round(bx), Math.round(byy), S * 0.5, S, 0.6);
+      }
+    }
+    if (f.beard === 3) oval(c, ...at(0, 19.5), 4 * S, 3.2 * S, beardC, 0.95);
+    if (f.beard >= 2) {
+      c.fillStyle = css(beardC);
+      c.beginPath();
+      c.ellipse(cx, ey + 12.4 * S, 5.4 * S, 1.6 * S, 0, 0, Math.PI * 2);
+      c.fill();
+      if (f.beard !== 4) for (const s of [-1, 1]) fill(c, beardC, cx + s * 5 * S - S * 0.75, ey + 12.4 * S, S * 1.5, 2.6 * S);
+    }
+
+    // boca: largura e lábio do jeito da pessoa, forma da expressão, aberta falando
+    const MOUTHS: [number, number][] = [
+      [1, 1],
+      [0.9, 0.55],
+      [1, 1.6],
+      [1.25, 1],
+    ];
+    const [mw, lip] = MOUTHS[f.mouth % MOUTHS.length];
+    const my = ey + 15 * S;
+    const W = 4 * mw * S;
+    const lipC = 0xb5625a;
+    const lineC = 0x8a352f;
+    const dark = 0x4a1c18;
+    const open = OPEN_MOUTHS.has(e.mouth) ? 0 : st.talk;
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    if (open > 0) {
+      // falando: a boca abre em oval, os cantos seguem a emoção
+      const oh = (open === 2 ? 2.6 : 1.5) * S;
+      const curl = e.mouth === 'smile' || e.mouth === 'smallSmile' ? -1 : e.mouth === 'frown' || e.mouth === 'grimace' ? 1 : 0;
+      oval(c, cx, my + 0.4 * S, W * 0.8, oh, dark);
+      if (open === 2) fill(c, 0xf4efe6, cx - W * 0.5, my + 0.4 * S - oh + 0.3 * S, W, S * 0.8);
+      oval(c, cx, my + 0.6 * S + oh * 0.6, W * 0.45, oh * 0.35, 0xc8706a, 0.8);
+      line(c, cx - W * 0.85, my + 0.4 * S + curl * S, cx - W * 0.8 - S, my + 0.4 * S + curl * 1.6 * S, lineC, 0.8, 0.8 * S);
+      line(c, cx + W * 0.85, my + 0.4 * S + curl * S, cx + W * 0.8 + S, my + 0.4 * S + curl * 1.6 * S, lineC, 0.8, 0.8 * S);
+    } else {
+      // lábio de baixo
+      if (e.mouth !== 'o' && e.mouth !== 'wail' && e.mouth !== 'grin') oval(c, cx, my + 1.2 * S, 3.6 * mw * S, 1.4 * lip * S * 0.8, lipC, 0.55);
+      c.strokeStyle = css(lineC);
+      c.lineWidth = 1.5 * S * 0.75;
+      c.beginPath();
+      switch (e.mouth) {
+        case 'smile':
+          c.arc(cx, my - 5 * S, 6 * mw * S, 0.25 * Math.PI, 0.75 * Math.PI);
+          break;
+        case 'smallSmile':
+          c.arc(cx, my - 3 * S, 3.8 * mw * S, 0.28 * Math.PI, 0.72 * Math.PI);
+          break;
+        case 'frown':
+          c.arc(cx, my + 5 * S, 5.5 * mw * S, 1.25 * Math.PI, 1.75 * Math.PI);
+          break;
+        case 'grimace':
+          c.moveTo(cx - W, my + 1.2 * S);
+          c.lineTo(cx - W * 0.6, my);
+          c.lineTo(cx + W * 0.6, my);
+          c.lineTo(cx + W, my + 1.2 * S);
+          break;
+        case 'wavy':
+          c.moveTo(cx - W, my + 0.5 * S);
+          c.quadraticCurveTo(cx - W * 0.5, my - 1.2 * S, cx, my + 0.3 * S);
+          c.quadraticCurveTo(cx + W * 0.5, my + 1.6 * S, cx + W, my - 0.2 * S);
+          break;
+        case 'small':
+          c.moveTo(cx - W * 0.45 + 0.6 * S, my + 0.2 * S);
+          c.lineTo(cx + W * 0.45 + 0.6 * S, my);
+          break;
+        case 'grin': {
+          // riso aberto: meia-lua com os dentes de cima
+          c.stroke();
+          c.fillStyle = css(dark);
+          c.beginPath();
+          c.moveTo(cx - W * 1.25, my - 1.2 * S);
+          c.quadraticCurveTo(cx, my - 2.2 * S, cx + W * 1.25, my - 1.2 * S);
+          c.quadraticCurveTo(cx, my + 6.5 * S, cx - W * 1.25, my - 1.2 * S);
+          c.fill();
+          fill(c, 0xf4efe6, cx - W * 0.85, my - 1.6 * S, W * 1.7, 1.4 * S);
+          oval(c, cx, my + 2.6 * S, W * 0.55, 1.1 * S, 0xc8706a, 0.85);
+          c.beginPath();
+          break;
+        }
+        case 'o':
+          c.stroke();
+          oval(c, cx, my + 0.8 * S, 1.9 * S, 2.6 * S, dark);
+          c.beginPath();
+          break;
+        case 'wail': {
+          c.stroke();
+          c.fillStyle = css(dark);
+          c.beginPath();
+          c.moveTo(cx - W, my + 2.5 * S);
+          c.quadraticCurveTo(cx, my - 2.8 * S, cx + W, my + 2.5 * S);
+          c.quadraticCurveTo(cx, my + 4.2 * S, cx - W, my + 2.5 * S);
+          c.fill();
+          c.beginPath();
+          break;
+        }
+        default:
+          c.moveTo(cx - W, my);
+          c.lineTo(cx + W, my);
+      }
+      c.stroke();
+    }
+    // sombra do queixo
+    oval(c, cx, my + 3.5 * S + (open ? 1.5 * S : 0), 4 * S, 1.2 * S, shade(skin, 0.7), f.beard >= 3 ? 0 : 0.4);
   };
 }
 
@@ -2025,8 +2340,25 @@ function specFor(name: string): Spec | undefined {
   const parts = name.split(':');
   const n = Number(parts[1]);
   switch (parts[0]) {
-    case 'face':
-      return { w: 128, h: 64, paint: face(n, Number(parts[2]), parts[3] as Expression, parts[4] === '1', Number(parts[5] ?? 0)), grain: 3 };
+    case 'face': {
+      // face:pele:cabelo:olhos:cor:cílios:sobrancelha:nariz:boca:barba:marcas:rugas:expressão:fechado:fala:olhar
+      const v = parts.slice(1, 12).map(Number);
+      const look: FaceLook = {
+        skin: v[0],
+        hair: v[1],
+        eyes: v[2],
+        eyeColor: v[3],
+        lashes: v[4],
+        brows: v[5],
+        nose: v[6],
+        mouth: v[7],
+        beard: v[8],
+        marks: v[9],
+        wrinkles: v[10],
+      };
+      const st: FaceState = { expr: parts[12] as Expression, closed: parts[13] === '1', talk: Number(parts[14]) as 0 | 1 | 2, gaze: Number(parts[15]) as -1 | 0 | 1 };
+      return { w: 256, h: 128, paint: face(look, st), grain: 3 };
+    }
     case 'uni': {
       const part = parts[1];
       const big = part === 'torso';
@@ -2101,6 +2433,7 @@ export function getTexture(name: string): THREE.CanvasTexture {
   return tex;
 }
 
-export function faceTextureName(skin: number, hair: number, expr: Expression, eyesClosed: boolean, variant = 0): string {
-  return `face:${skin}:${hair}:${expr}:${eyesClosed ? 1 : 0}:${variant === 1 ? 1 : 0}`;
+/** Plano 2, bloco 5: nome da textura do rosto (peças da pessoa + estado do quadro). */
+export function faceTextureName(f: FaceLook, st: FaceState): string {
+  return `face:${f.skin}:${f.hair}:${f.eyes}:${f.eyeColor}:${f.lashes}:${f.brows}:${f.nose}:${f.mouth}:${f.beard}:${f.marks}:${f.wrinkles}:${st.expr}:${st.closed ? 1 : 0}:${st.talk}:${st.gaze}`;
 }

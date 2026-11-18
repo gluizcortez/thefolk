@@ -446,7 +446,8 @@ export function chance(tick: number, folkId: number, n: number): number {
   h ^= h >>> 15;
   h = Math.imul(h, 0x2c1b3c6d) >>> 0;
   h ^= h >>> 12;
-  return h % n;
+  // o xor devolve inteiro com sinal: sem o >>> 0 o índice podia sair negativo
+  return (h >>> 0) % n;
 }
 
 // ---------- postura e etapas ----------

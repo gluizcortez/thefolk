@@ -3,7 +3,7 @@ import { NEED_MAX, clampNeed } from './needs';
 import { ensureRelation } from './relations';
 import { nextFloat, nextInt } from './rng';
 import { skillLevel } from './skills';
-import { TEMPER_AXES, TEMPER_MAX, fitTemper, monthFor } from './temper';
+import { FACE_ROWS, LOOK_LIMITS, TEMPER_AXES, TEMPER_MAX, fitTemper, monthFor } from './temper';
 import type {
   Age,
   BabyCare,
@@ -211,6 +211,17 @@ export function inheritTraits(world: World, parents: Parent[]): string[] {
   return out.slice(0, 2);
 }
 
+function inheritFace(world: World, parents: Parent[]): Pick<Look, (typeof FACE_ROWS)[number]> {
+  const out = {} as Pick<Look, (typeof FACE_ROWS)[number]>;
+  for (const k of FACE_ROWS) {
+    const from = parents.map((p) => p.look[k]).filter((v): v is number => typeof v === 'number');
+    out[k] = from.length && nextInt(world, 5) > 0 ? from[nextInt(world, from.length)] : nextInt(world, LOOK_LIMITS[k]);
+  }
+  // barba não passa para bebê; cresce (ou não) depois
+  out.beard = 0;
+  return out;
+}
+
 /** Cara de quem nasce: pele e cabelo dos pais, o resto da sorte. */
 export function inheritLook(world: World, parents: Parent[]): Look {
   const pick = <T>(xs: T[], fallback: T) => (xs.length ? xs[nextInt(world, xs.length)] : fallback);
@@ -227,6 +238,8 @@ export function inheritLook(world: World, parents: Parent[]): Look {
     formal: nextInt(world, 4),
     sleepwear: nextInt(world, 4),
     swimwear: nextInt(world, 4),
+    // plano 2, bloco 5: cada peça do rosto vem de um dos pais (ou da sorte, sem pais)
+    ...inheritFace(world, parents),
   };
 }
 

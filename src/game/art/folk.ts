@@ -1,63 +1,24 @@
 import * as THREE from 'three';
 import { ball, box, colorMat, cyl, loft, rbox, rod, texMat } from './build';
 import type { Ring } from './build';
-import { PAL, SHIRT, SKIN, mix, shade } from './palette';
+import { HAIR, PAL, SHIRT, SKIN, mix, shade } from './palette';
 import { faceTextureName, getTexture } from './textures';
-import type { Expression } from './textures';
+import type { Expression, FaceLook } from './textures';
+import { PoseMixer, rest, variantOf } from './anims';
+import type { FolkAnim, Pose } from './anims';
 import type { Age, HeldProp, Look, UniformDef, Wear } from '../../sim/types';
 
 // Folk em 3D: um adulto de proporção realista (cerca de sete cabeças de
-// altura), modelado com cascas suaves para tronco, braços e pernas, roupa e
-// rosto pintados em textura e animação por juntas (sem esqueleto pesado).
-// A emoção aparece na expressão do rosto e na postura do corpo.
-// Trocar por um modelo definitivo depois é trocar só esta classe.
+// altura), modelado com cascas suaves, roupa e rosto pintados em textura e
+// animação por juntas (sem esqueleto pesado). Plano 2, bloco 5: quadril que
+// balança, tronco em duas partes (barriga e peito), pescoço, ombros que
+// sobem, pulsos, mãos que abrem, fecham, seguram e apontam, tornozelos. As
+// animações são dados (anims/), tocadas com mistura entre uma e outra; o
+// rosto é feito de peças (formato da cabeça, olhos, sobrancelhas, nariz,
+// boca, orelhas, barba, marcas) e expressões, com piscar, olhar para quem
+// fala e a boca mexendo com a fala.
 
-export type FolkAnim =
-  | 'idle'
-  | 'walk'
-  | 'sit'
-  | 'sleep'
-  | 'collapsed'
-  | 'dance'
-  | 'reach'
-  | 'phone'
-  | 'read'
-  | 'watch'
-  | 'scrub'
-  | 'talk'
-  | 'listen'
-  | 'laugh'
-  | 'wave'
-  | 'hug'
-  | 'kiss'
-  | 'argue'
-  // bloco 6: recusa (cruza os braços e balança a cabeça) e comemoração (desejo cumprido)
-  | 'refuse'
-  | 'cheer'
-  // bloco 11: bebê no colo (braços dobrados na frente, embalando)
-  | 'cradle'
-  // bloco 13: nadando (de peito, cabeça fora d'água) e o pulo do trampolim
-  | 'swim'
-  | 'dive'
-  // bloco 14: pânico (braços sacudindo por cima da cabeça), apagando fogo e o Seu Sereno de lanterna erguida
-  | 'panic'
-  | 'spray'
-  | 'lantern'
-  // plano 2, bloco 1: gestos de quem está parado esperando ordem (veja sim/pace.ts)
-  | 'g_look'
-  | 'g_stretch'
-  | 'g_arms'
-  | 'g_scratch'
-  | 'g_belly'
-  | 'g_yawn'
-  | 'g_fidget'
-  // plano 2, bloco 4: meio sentado (sentando, levantando), comendo no colo,
-  // chorando com a novela, susto e o controle remoto
-  | 'perch'
-  | 'eat'
-  | 'cry'
-  | 'gasp'
-  | 'remote';
+export type { FolkAnim } from './anims';
 
 export type FolkLook = Look;
 
@@ -76,7 +37,7 @@ export interface FolkFrame {
   time: number;
   /** segundos reais desde o último quadro */
   dt: number;
-  /** expressão forçada (conversa), no lugar da que vem do humor */
+  /** expressão forçada (conversa, reação), no lugar da que vem do humor */
   expr?: Expression;
   /** bloco 5: o que está na mão */
   hold?: HeldProp;
@@ -86,6 +47,12 @@ export interface FolkFrame {
   ring?: boolean;
   /** plano 2, bloco 4: sentado (as pernas dobram; o resto do corpo segue a animação) */
   seated?: boolean;
+  /** plano 2, bloco 5: para onde olhar (posição no mundo de quem fala, da TV) */
+  lookAt?: { x: number; z: number };
+  /** plano 2, bloco 5: falando (a boca abre e fecha) */
+  speaking?: boolean;
+  /** plano 2, bloco 5: semente das variações do laço (o id do folk) */
+  seed?: number;
 }
 
 export const FOLK_HEIGHT = 1.8;
@@ -97,571 +64,64 @@ export const TEEN_SCALE = 0.86;
 export const ELDER_SCALE = 0.96;
 /** índice do cinza em HAIR */
 export const ELDER_HAIR = 4;
-const HIPS_Y = 0.9;
 const THIGH = 0.42;
 const SHIN = 0.41;
 const UPPER_ARM = 0.28;
 const FOREARM = 0.24;
+/** onde o tronco se divide em barriga e peito */
+const WAIST = 0.24;
+const SHOULDER_Y = 0.42 - WAIST;
+/** formato da cabeça: oval, redonda, comprida, quadrada (escala do crânio) */
+const HEAD_SHAPES: [number, number, number][] = [
+  [1, 1, 1],
+  [1.06, 0.94, 1.04],
+  [0.95, 1.07, 0.97],
+  [1.04, 0.98, 1],
+];
 
-interface Pose {
-  hipsY: number;
-  lie: number;
-  torsoX: number;
-  torsoY: number;
-  torsoZ: number;
-  headX: number;
-  headY: number;
-  headZ: number;
-  armLX: number;
-  armRX: number;
-  armLOut: number;
-  armROut: number;
-  elbowL: number;
-  elbowR: number;
-  legLX: number;
-  legRX: number;
-  legOut: number;
-  kneeL: number;
-  kneeR: number;
-}
-
-function rest(): Pose {
+/** Peças do rosto que vão na textura, a partir da aparência e da idade. */
+export function faceLookOf(look: Look, age?: Age): FaceLook {
+  const grown = age !== 'baby' && age !== 'child';
   return {
-    hipsY: HIPS_Y,
-    lie: 0,
-    torsoX: 0,
-    torsoY: 0,
-    torsoZ: 0,
-    headX: 0,
-    headY: 0,
-    headZ: 0,
-    armLX: 0,
-    armRX: 0,
-    armLOut: 0.07,
-    armROut: 0.07,
-    elbowL: -0.12,
-    elbowR: -0.12,
-    legLX: 0,
-    legRX: 0,
-    legOut: 0.02,
-    kneeL: 0,
-    kneeR: 0,
+    skin: look.skin,
+    hair: look.hair,
+    eyes: look.eyes ?? 0,
+    eyeColor: look.eyeColor ?? 0,
+    lashes: look.lashes ?? 0,
+    brows: look.brows ?? 1,
+    nose: look.nose ?? 1,
+    mouth: look.mouth ?? 0,
+    beard: grown && age !== 'teen' ? (look.beard ?? 0) : 0,
+    marks: look.marks ?? (look.face === 1 ? 1 : 0),
+    wrinkles: age === 'elder' ? 1 : 0,
   };
 }
 
-/** Pose-alvo de cada animação. Ângulos em radianos; frente do corpo = +z. */
-function poseFor(anim: FolkAnim, t: number, mood: number, energy = 100, seated = false): Pose {
-  const p = rest();
-  const breathe = Math.sin(t * 1.8);
-  // bloco 6: cansado, a cabeça pesa e os braços caem
-  const tired = Math.min(1, Math.max(0, (25 - energy) / 20));
-  // postura: cabisbaixo quando o humor está ruim, peito aberto quando está ótimo
-  const slump = Math.min(1, Math.max(0, (55 - mood) / 40));
-  const perky = Math.min(1, Math.max(0, (mood - 70) / 30));
-  p.torsoX = 0.02 * breathe + 0.2 * slump - 0.04 * perky;
-  // a cabeça fica um pouco erguida para o rosto aparecer para a câmera alta
-  p.headX = -0.12 + 0.24 * slump - 0.06 * perky + 0.16 * tired;
-  p.torsoX += 0.08 * tired;
+/** Expressão que vem do humor quando nada mais pede uma. */
+export function moodExpression(mood: number, energy = 100): Expression {
+  if (energy < 22) return 'tired';
+  if (mood >= 62) return 'happy';
+  if (mood >= 40) return 'neutral';
+  return 'sad';
+}
 
-  switch (anim) {
-    case 'walk': {
-      const s = Math.sin(t * 9);
-      const c = Math.cos(t * 9);
-      const stride = 0.55 - 0.15 * slump;
-      p.legLX = -stride * s;
-      p.legRX = stride * s;
-      p.kneeL = 0.12 + 0.8 * Math.max(0, c);
-      p.kneeR = 0.12 + 0.8 * Math.max(0, -c);
-      p.armLX = 0.45 * s;
-      p.armRX = -0.45 * s;
-      p.elbowL = -0.35;
-      p.elbowR = -0.35;
-      p.hipsY = HIPS_Y - 0.025 + 0.03 * Math.abs(c) + 0.015 * perky * Math.abs(s);
-      p.torsoX += 0.06;
-      p.torsoY = 0.09 * s;
-      break;
-    }
-    case 'sit': {
-      p.hipsY = 0.1;
-      p.legLX = -1.5;
-      p.legRX = -1.5;
-      p.kneeL = 1.45;
-      p.kneeR = 1.45;
-      p.legOut = 0.06;
-      p.torsoX += -0.18;
-      p.armLX = -0.4;
-      p.armRX = -0.4;
-      p.elbowL = -0.85;
-      p.elbowR = -0.85;
-      p.headY = 0.12 * Math.sin(t * 0.7);
-      break;
-    }
-    case 'sleep':
-    case 'collapsed': {
-      p.lie = 1;
-      p.torsoX = 0;
-      p.headX = 0;
-      p.armLOut = anim === 'collapsed' ? 0.9 : 0.14;
-      p.armROut = anim === 'collapsed' ? 0.6 : 0.14;
-      p.legOut = anim === 'collapsed' ? 0.2 : 0.04;
-      p.headZ = anim === 'collapsed' ? 0.4 : 0.1;
-      p.elbowL = -0.1;
-      p.elbowR = -0.1;
-      break;
-    }
-    case 'dance': {
-      const s = Math.sin(t * 8);
-      p.hipsY = HIPS_Y - 0.03 + 0.04 * Math.abs(s);
-      p.torsoY = 0.4 * Math.sin(t * 4);
-      p.torsoZ = 0.1 * s;
-      p.torsoX = 0;
-      p.armLX = -2.4 + 0.4 * s;
-      p.armRX = -2.4 - 0.4 * s;
-      p.armLOut = 0.4;
-      p.armROut = 0.4;
-      p.elbowL = -0.6 - 0.3 * s;
-      p.elbowR = -0.6 + 0.3 * s;
-      p.legLX = -0.3 * Math.max(0, s);
-      p.kneeL = 0.6 * Math.max(0, s);
-      p.legRX = -0.3 * Math.max(0, -s);
-      p.kneeR = 0.6 * Math.max(0, -s);
-      p.headZ = 0.12 * Math.sin(t * 4);
-      p.headX = -0.05;
-      break;
-    }
-    case 'reach': {
-      const s = Math.sin(t * 5);
-      p.armLX = -1.15 + 0.12 * s;
-      p.armRX = -1.05 - 0.12 * s;
-      p.elbowL = -0.45;
-      p.elbowR = -0.55;
-      p.torsoX += 0.12;
-      p.headX += 0.15;
-      break;
-    }
-    case 'phone': {
-      p.armRX = -0.55;
-      p.armROut = 0.3;
-      p.elbowR = -2.35;
-      p.headZ = -0.14;
-      p.headY = 0.1 * Math.sin(t * 1.3);
-      p.headX += 0.06 * Math.sin(t * 3.1);
-      p.armLX = -0.25 + 0.15 * Math.sin(t * 2.2);
-      p.elbowL = -0.8 - 0.3 * Math.sin(t * 2.2);
-      break;
-    }
-    case 'read': {
-      p.armLX = -0.6;
-      p.armRX = -0.6;
-      p.armLOut = -0.12;
-      p.armROut = -0.12;
-      p.elbowL = -1.5;
-      p.elbowR = -1.5;
-      p.headX += 0.35;
-      p.headY = 0.08 * Math.sin(t * 0.9);
-      break;
-    }
-    case 'watch': {
-      p.armLX = -0.3;
-      p.armRX = -0.3;
-      p.armLOut = -0.3;
-      p.armROut = -0.3;
-      p.elbowL = -1.7;
-      p.elbowR = -1.6;
-      p.headY = 0.1 * Math.sin(t * 0.8);
-      p.torsoZ = 0.03 * Math.sin(t * 0.6);
-      break;
-    }
-    case 'scrub': {
-      const s = Math.sin(t * 6);
-      p.armLX = -2.5 + 0.3 * s;
-      p.armRX = -2.5 - 0.3 * s;
-      p.armLOut = 0.15;
-      p.armROut = 0.15;
-      p.elbowL = -1.6 - 0.3 * s;
-      p.elbowR = -1.6 + 0.3 * s;
-      p.torsoY = 0.2 * Math.sin(t * 3);
-      p.headX = -0.1;
-      break;
-    }
-    case 'talk': {
-      // fala gesticulando com a mão direita
-      const s = Math.sin(t * 4);
-      p.armRX = -0.55 + 0.25 * s;
-      p.armROut = 0.18;
-      p.elbowR = -1.25 + 0.35 * Math.sin(t * 3.1);
-      p.armLX = -0.15;
-      p.elbowL = -0.55 - 0.2 * Math.max(0, Math.sin(t * 2.3));
-      p.headY = 0.1 * Math.sin(t * 1.7);
-      p.headX += 0.05 * Math.sin(t * 5);
-      p.torsoY = 0.05 * s;
-      break;
-    }
-    case 'listen': {
-      // braços cruzados, balança a cabeça concordando
-      p.armLX = -0.35;
-      p.armRX = -0.35;
-      p.armLOut = -0.28;
-      p.armROut = -0.28;
-      p.elbowL = -1.65;
-      p.elbowR = -1.55;
-      p.headX += 0.09 * Math.max(0, Math.sin(t * 2.4));
-      p.headZ = 0.06;
-      break;
-    }
-    case 'laugh': {
-      const k = Math.abs(Math.sin(t * 11));
-      p.torsoX += 0.05 + 0.08 * k;
-      p.headX = -0.28 + 0.1 * k;
-      p.armLX = -0.45;
-      p.armRX = -0.45;
-      p.armLOut = -0.1;
-      p.armROut = -0.1;
-      p.elbowL = -1.25;
-      p.elbowR = -1.25;
-      p.hipsY = HIPS_Y - 0.015 * k;
-      break;
-    }
-    case 'wave': {
-      p.armRX = -2.7;
-      p.armROut = 0.25 + 0.3 * Math.sin(t * 9);
-      p.elbowR = -0.35;
-      p.armLX = 0.05;
-      p.headZ = 0.08;
-      break;
-    }
-    case 'hug': {
-      p.torsoX += 0.12;
-      p.armLX = -1.35;
-      p.armRX = -1.35;
-      p.armLOut = -0.45;
-      p.armROut = -0.45;
-      p.elbowL = -0.75;
-      p.elbowR = -0.75;
-      p.headX += 0.12;
-      p.headZ = 0.18;
-      p.torsoZ = 0.03 * Math.sin(t * 1.5);
-      break;
-    }
-    case 'cradle': {
-      p.torsoX -= 0.06;
-      p.armLX = -0.75;
-      p.armRX = -0.55;
-      p.armLOut = -0.2;
-      p.armROut = -0.32;
-      p.elbowL = -1.35;
-      p.elbowR = -1.5;
-      p.headX += 0.32;
-      p.torsoY = 0.12 * Math.sin(t * 1.4);
-      break;
-    }
-    case 'kiss': {
-      p.torsoX += 0.2;
-      p.headX += 0.14;
-      p.headZ = 0.22;
-      p.armLX = -0.85;
-      p.armRX = -0.85;
-      p.armLOut = -0.3;
-      p.armROut = -0.3;
-      p.elbowL = -0.65;
-      p.elbowR = -0.65;
-      break;
-    }
-    case 'argue': {
-      // aponta o dedo com uma mão, a outra na cintura
-      const s = Math.sin(t * 7);
-      p.armRX = -1.2 + 0.4 * s;
-      p.armROut = 0.1;
-      p.elbowR = -0.35 + 0.25 * s;
-      p.armLX = 0.25;
-      p.armLOut = 0.55;
-      p.elbowL = -1.7;
-      p.torsoX += 0.1;
-      p.headY = 0.12 * Math.sin(t * 5.3);
-      p.headX += 0.06;
-      break;
-    }
-    case 'g_look': {
-      // olha em volta devagar, o corpo acompanhando um pouco
-      p.headY = 0.75 * Math.sin(t * 1.1);
-      p.torsoY = 0.12 * Math.sin(t * 1.1 - 0.4);
-      break;
-    }
-    case 'g_stretch': {
-      // espreguiça: braços para cima, peito para trás, na ponta do fôlego
-      const k = 0.5 + 0.5 * Math.sin(t * 1.4);
-      p.armLX = -2.6 - 0.3 * k;
-      p.armRX = -2.6 - 0.3 * k;
-      p.armLOut = 0.22;
-      p.armROut = 0.22;
-      p.elbowL = -0.25;
-      p.elbowR = -0.25;
-      p.torsoX -= 0.12 * k;
-      p.headX -= 0.2 * k;
-      p.hipsY = HIPS_Y + 0.015 * k;
-      break;
-    }
-    case 'g_arms': {
-      // braços cruzados, o peso passando de uma perna para a outra
-      const w = Math.sin(t * 0.9);
-      p.armLX = -1.1;
-      p.armRX = -1.1;
-      p.armLOut = -0.5;
-      p.armROut = -0.5;
-      p.elbowL = -1.9;
-      p.elbowR = -1.9;
-      p.torsoZ = 0.05 * w;
-      p.legOut = 0.04;
-      p.kneeL = Math.max(0, 0.18 * w);
-      p.kneeR = Math.max(0, -0.18 * w);
-      p.headY = 0.2 * Math.sin(t * 0.5);
-      break;
-    }
-    case 'g_scratch': {
-      // coça a cabeça com a mão direita, cabeça de lado
-      p.armRX = -2.3;
-      p.armROut = 0.55;
-      p.elbowR = -2.1 + 0.25 * Math.sin(t * 14);
-      p.headZ = 0.14;
-      p.headX += 0.06;
-      break;
-    }
-    case 'g_belly': {
-      // fome: as duas mãos na barriga, corpo curvado
-      p.armLX = -0.55;
-      p.armRX = -0.55;
-      p.armLOut = -0.28;
-      p.armROut = -0.28;
-      p.elbowL = -1.45 + 0.08 * Math.sin(t * 3);
-      p.elbowR = -1.45 - 0.08 * Math.sin(t * 3);
-      p.torsoX += 0.16;
-      p.headX += 0.12;
-      break;
-    }
-    case 'g_yawn': {
-      // sono: a mão vai à boca e a cabeça cai para trás
-      const k = 0.5 + 0.5 * Math.sin(t * 1.2);
-      p.armRX = -1.7;
-      p.armROut = -0.25;
-      p.elbowR = -2.3;
-      p.headX -= 0.28 * k;
-      p.torsoX -= 0.05 * k;
-      p.armLOut = 0.12;
-      break;
-    }
-    case 'g_fidget': {
-      // apertado: pernas juntas, pulinhos curtos no lugar
-      const b = Math.abs(Math.sin(t * 7));
-      p.legOut = -0.03;
-      p.kneeL = 0.12 + 0.12 * b;
-      p.kneeR = 0.12 + 0.12 * (1 - b);
-      p.hipsY = HIPS_Y - 0.02 + 0.02 * b;
-      p.armLX = -0.3;
-      p.armRX = -0.3;
-      p.armLOut = -0.2;
-      p.armROut = -0.2;
-      p.elbowL = -0.9;
-      p.elbowR = -0.9;
-      p.torsoX += 0.08;
-      break;
-    }
-    case 'refuse': {
-      // braços cruzados na frente do peito e a cabeça dizendo que não
-      p.armLX = -1.1;
-      p.armRX = -1.1;
-      p.armLOut = -0.5;
-      p.armROut = -0.5;
-      p.elbowL = -1.9;
-      p.elbowR = -1.9;
-      p.headY = 0.42 * Math.sin(t * 9);
-      p.headX -= 0.05;
-      p.torsoX -= 0.06;
-      break;
-    }
-    case 'cheer': {
-      // os dois braços para cima, num pulinho
-      const hop = Math.max(0, Math.sin(t * 8));
-      p.armLX = -2.8;
-      p.armRX = -2.8;
-      p.armLOut = 0.35 + 0.15 * hop;
-      p.armROut = 0.35 + 0.15 * hop;
-      p.elbowL = -0.2;
-      p.elbowR = -0.2;
-      p.hipsY = HIPS_Y + 0.05 * hop;
-      p.headX = -0.25;
-      break;
-    }
-    case 'swim': {
-      // nado de peito: braços abrem e voltam na frente, pernas batem
-      const s = Math.sin(t * 3.2);
-      const c = Math.cos(t * 3.2);
-      p.torsoX = 0.35;
-      p.headX = -0.45;
-      p.armLX = -1.5 + 0.25 * c;
-      p.armRX = -1.5 + 0.25 * c;
-      p.armLOut = 0.3 + 0.55 * Math.max(0, s);
-      p.armROut = 0.3 + 0.55 * Math.max(0, s);
-      p.elbowL = -0.3 - 0.5 * Math.max(0, -s);
-      p.elbowR = -0.3 - 0.5 * Math.max(0, -s);
-      p.legLX = 0.5 + 0.3 * s;
-      p.legRX = 0.5 - 0.3 * s;
-      p.kneeL = 0.6;
-      p.kneeR = 0.6;
-      p.legOut = 0.12;
-      break;
-    }
-    case 'dive': {
-      // na ponta da prancha: braços para cima, joelhos dobram e esticam
-      const k = (t * 1.3) % 1;
-      const crouch = k < 0.5 ? Math.sin(k * Math.PI * 2) : 0;
-      p.armLX = -2.9;
-      p.armRX = -2.9;
-      p.armLOut = 0.12;
-      p.armROut = 0.12;
-      p.elbowL = -0.05;
-      p.elbowR = -0.05;
-      p.kneeL = 0.7 * Math.max(0, crouch);
-      p.kneeR = 0.7 * Math.max(0, crouch);
-      p.legLX = -0.35 * Math.max(0, crouch);
-      p.legRX = -0.35 * Math.max(0, crouch);
-      p.hipsY = HIPS_Y - 0.12 * Math.max(0, crouch);
-      p.torsoX = 0.25 * Math.max(0, crouch);
-      p.headX = -0.2;
-      break;
-    }
-    case 'panic': {
-      // braços sacudindo no alto, pulinhos sem sair do lugar, cabeça olhando para os lados
-      const s = Math.sin(t * 14);
-      const hop = Math.max(0, Math.sin(t * 7));
-      p.armLX = -2.6 + 0.35 * s;
-      p.armRX = -2.6 - 0.35 * s;
-      p.armLOut = 0.5 + 0.25 * s;
-      p.armROut = 0.5 - 0.25 * s;
-      p.elbowL = -0.5 - 0.3 * Math.max(0, s);
-      p.elbowR = -0.5 - 0.3 * Math.max(0, -s);
-      p.hipsY = HIPS_Y + 0.04 * hop;
-      p.headY = 0.5 * Math.sin(t * 5);
-      p.headX = -0.3;
-      break;
-    }
-    case 'spray': {
-      // extintor apontado para a frente, com o corpo inclinado e um balanço curto
-      const s = Math.sin(t * 6);
-      p.armRX = -1.25 + 0.08 * s;
-      p.armLX = -1.05 + 0.08 * s;
-      p.armROut = -0.15;
-      p.armLOut = -0.3;
-      p.elbowR = -0.25;
-      p.elbowL = -0.9;
-      p.torsoX += 0.1;
-      p.torsoY = 0.12 * s;
-      p.legLX = -0.25;
-      p.legRX = 0.2;
-      break;
-    }
-    case 'lantern': {
-      // lanterna erguida na direita, livro aberto na esquerda, de pé, sem pressa
-      p.armRX = -1.7;
-      p.armROut = 0.15;
-      p.elbowR = -0.3;
-      p.armLX = -0.7;
-      p.elbowL = -1.2;
-      p.armLOut = -0.2;
-      p.headX = -0.05 + 0.05 * Math.sin(t * 0.6);
-      p.torsoZ = 0.02 * Math.sin(t * 0.5);
-      break;
-    }
-    case 'perch': {
-      // a meio caminho entre de pé e sentado, mãos nos joelhos
-      p.hipsY = 0.52;
-      p.legLX = -0.85;
-      p.legRX = -0.85;
-      p.kneeL = 0.95;
-      p.kneeR = 0.95;
-      p.legOut = 0.05;
-      p.torsoX += 0.32;
-      p.armLX = -0.55;
-      p.armRX = -0.55;
-      p.elbowL = -0.5;
-      p.elbowR = -0.5;
-      p.headX -= 0.1;
-      break;
-    }
-    case 'eat': {
-      // prato na mão esquerda, garfo da direita até a boca
-      const k = Math.max(0, Math.sin(t * 2.2));
-      p.armLX = -0.6;
-      p.armLOut = -0.1;
-      p.elbowL = -1.25;
-      p.armRX = -0.75 - 0.5 * k;
-      p.armROut = -0.12;
-      p.elbowR = -1.4 - 0.75 * k;
-      p.headX += 0.12 - 0.12 * k;
-      break;
-    }
-    case 'cry': {
-      // mãos no rosto, ombros sacudindo
-      p.armLX = -0.95;
-      p.armRX = -0.95;
-      p.armLOut = -0.22;
-      p.armROut = -0.22;
-      p.elbowL = -2.25;
-      p.elbowR = -2.25;
-      p.headX += 0.28;
-      p.torsoZ = 0.04 * Math.sin(t * 15);
-      p.torsoX += 0.1;
-      break;
-    }
-    case 'gasp': {
-      // susto: mãos nas bochechas, corpo para trás
-      p.armLX = -0.7;
-      p.armRX = -0.7;
-      p.armLOut = 0.28;
-      p.armROut = 0.28;
-      p.elbowL = -2.05;
-      p.elbowR = -2.05;
-      p.torsoX -= 0.14;
-      p.headX = -0.22;
-      break;
-    }
-    case 'remote': {
-      // braço esticado apontando o controle para a TV
-      p.armRX = -1.35;
-      p.armROut = 0.05;
-      p.elbowR = -0.12;
-      p.armLX = -0.3;
-      p.elbowL = -0.7;
-      p.headX += 0.02;
-      break;
-    }
-    default: {
-      // parado: respira e troca o peso de perna de vez em quando
-      p.torsoZ = 0.025 * Math.sin(t * 0.7);
-      p.headY = 0.18 * Math.sin(t * 0.45) * (1 - slump);
-      p.armLX = 0.03 * breathe;
-      p.armRX = -0.03 * breathe;
-    }
-  }
-  // plano 2, bloco 4: sentado, as pernas dobram e o quadril desce; o tronco
-  // segue a animação (assistir, conversar, ler, comer, rir, torcer)
-  if (seated && anim !== 'sit' && anim !== 'perch' && anim !== 'sleep' && anim !== 'collapsed') {
-    p.hipsY = 0.1;
-    p.legLX = -1.5;
-    p.legRX = -1.5;
-    p.kneeL = 1.45;
-    p.kneeR = 1.45;
-    p.legOut = 0.06;
-    p.torsoX -= 0.12;
-  }
-  return p;
+/** Boca falando: abre e fecha num ritmo de sílabas inventadas. */
+export function mouthFrame(clock: number): 0 | 1 | 2 {
+  const v = Math.sin(clock * 13) + Math.sin(clock * 7.3 + 1) * 0.8;
+  return v > 0.9 ? 2 : v > -0.4 ? 1 : 0;
 }
 
 export class FolkModel {
   readonly group = new THREE.Group();
   private body = new THREE.Group();
   private hips = new THREE.Group();
-  private torso = new THREE.Group();
+  /** barriga (de baixo) e peito (de cima): o tronco dobra nos dois */
+  private spine = new THREE.Group();
+  private chest = new THREE.Group();
+  private neck = new THREE.Group();
   private head = new THREE.Group();
+  /** formato da cabeça: crânio, cabelo, nariz, orelhas e barba escalam juntos */
+  private shape = new THREE.Group();
   private armL = new THREE.Group();
   private armR = new THREE.Group();
   private foreL = new THREE.Group();
@@ -670,6 +130,17 @@ export class FolkModel {
   private legR = new THREE.Group();
   private shinL = new THREE.Group();
   private shinR = new THREE.Group();
+  private footL = new THREE.Group();
+  private footR = new THREE.Group();
+  /** mão: pulso, dedos (fecham juntos), indicador (aponta) e polegar */
+  private handL = new THREE.Group();
+  private handR = new THREE.Group();
+  private fingersL = new THREE.Group();
+  private fingersR = new THREE.Group();
+  private indexL = new THREE.Group();
+  private indexR = new THREE.Group();
+  private thumbL = new THREE.Group();
+  private thumbR = new THREE.Group();
   private blob: THREE.Mesh;
   private book = new THREE.Group();
   private handset = new THREE.Group();
@@ -686,13 +157,18 @@ export class FolkModel {
   private ring = new THREE.Group();
   private faceMat: THREE.MeshPhongMaterial;
   private faceKey = '';
-  private pose = rest();
+  private faceLook: FaceLook;
+  private pose: Pose = rest();
+  private mixer = new PoseMixer();
   private placed = false;
   private blinkAt = 2;
   private clock = 0;
+  /** giro da cabeça para quem fala (suavizado) */
+  private lookYaw = 0;
+  private wide = 1;
 
   constructor(
-    private readonly look: FolkLook,
+    look: FolkLook,
     readonly wear: Wear = 'day',
     uniform?: UniformDef,
     /** bloco 11: bebê (enrolado na manta) ou criança (menor, cabeça maior) */
@@ -700,7 +176,6 @@ export class FolkModel {
   ) {
     if (age === 'elder' && look.hair !== ELDER_HAIR) {
       look = { ...look, hair: ELDER_HAIR };
-      this.look = look;
     }
     const skinColor = SKIN[look.skin % SKIN.length];
     const skin = texMat(`skin:${look.skin % SKIN.length}`, { gloss: 0.12 });
@@ -738,6 +213,8 @@ export class FolkModel {
     const lace = colorMat(0xf4efdf);
     const SIDES = 12;
     const k = BODY_WIDTH[look.body ?? 1] ?? 1;
+    this.wide = k;
+    this.faceLook = faceLookOf(look, age);
     const widen = <T extends THREE.Object3D>(o: T): T => {
       o.scale.x *= k;
       o.scale.z *= 0.5 + k * 0.5;
@@ -775,30 +252,53 @@ export class FolkModel {
         box(0.04, 0.034, 0.012, colorMat(PAL.brass, { gloss: 0.8 }), 0, 0.048, 0.1 * (0.5 + k * 0.5)),
       );
     }
-    this.torso.position.y = 0.07;
-    this.torso.add(
-      widen(loft(
-        [
-          { y: 0, rx: 0.152, rz: 0.098 },
-          { y: 0.1, rx: 0.153, rz: 0.1 },
-          { y: 0.24, rx: 0.17, rz: 0.108 },
-          { y: 0.36, rx: 0.183, rz: 0.11 },
-          { y: 0.43, rx: 0.186, rz: 0.1 },
-          { y: 0.475, rx: 0.15, rz: 0.086 },
-          { y: 0.5, rx: 0.09, rz: 0.066 },
-          { y: 0.518, rx: 0.056, rz: 0.054 },
-        ],
-        SIDES,
-        shirtMat,
-      )),
-      cyl(0.044, 0.05, 0.09, 10, skin, 0, 0.5, 0),
+    // tronco em duas cascas que dividem a mesma textura da camisa
+    const TOP = 0.518;
+    this.spine.position.y = 0.07;
+    this.spine.add(
+      widen(
+        loft(
+          [
+            { y: 0, rx: 0.152, rz: 0.098 },
+            { y: 0.1, rx: 0.153, rz: 0.1 },
+            { y: 0.18, rx: 0.16, rz: 0.104 },
+            { y: WAIST, rx: 0.17, rz: 0.108 },
+          ],
+          SIDES,
+          shirtMat,
+          [0, WAIST / TOP],
+        ),
+      ),
     );
+    this.chest.position.y = WAIST;
+    this.chest.add(
+      widen(
+        loft(
+          [
+            { y: -0.02, rx: 0.168, rz: 0.107 },
+            { y: 0, rx: 0.17, rz: 0.108 },
+            { y: 0.36 - WAIST, rx: 0.183, rz: 0.11 },
+            { y: 0.43 - WAIST, rx: 0.186, rz: 0.1 },
+            { y: 0.475 - WAIST, rx: 0.15, rz: 0.086 },
+            { y: 0.5 - WAIST, rx: 0.09, rz: 0.066 },
+            { y: TOP - WAIST, rx: 0.056, rz: 0.054 },
+          ],
+          SIDES,
+          shirtMat,
+          [(WAIST - 0.02) / TOP, 1],
+        ),
+      ),
+    );
+    this.neck.position.y = 0.5 - WAIST;
+    this.neck.add(cyl(0.044, 0.05, 0.09, 10, skin, 0, 0, 0));
+    this.chest.add(this.neck);
+    this.spine.add(this.chest);
     // gola da camisa: duas abas abertas sobre o peito
     for (const sx of [-1, 1]) {
       if (kind) break; // só a camisa do dia tem gola de abas
-      const flap = box(0.075, 0.016, 0.055, collar, sx * 0.043, 0.498, 0.052);
+      const flap = box(0.075, 0.016, 0.055, collar, sx * 0.043, 0.498 - WAIST, 0.052);
       flap.rotation.set(0.5, sx * 0.35, sx * -0.45);
-      this.torso.add(flap);
+      this.chest.add(flap);
     }
     // livro aberto, que só aparece durante a leitura
     const cover = colorMat(0x8a2f2a);
@@ -812,7 +312,7 @@ export class FolkModel {
     this.book.position.set(0, 0.2, 0.33);
     this.book.rotation.x = 0.75;
     this.book.visible = false;
-    this.torso.add(this.book);
+    this.spine.add(this.book);
     // bloco 5: prato com comida, seguro na frente do corpo
     const china = colorMat(0xf4efdf, { gloss: 0.7 });
     this.plate.add(
@@ -822,37 +322,39 @@ export class FolkModel {
     );
     this.plate.position.set(0, 0.12, 0.3 * (0.5 + k * 0.5));
     this.plate.visible = false;
-    this.torso.add(this.plate);
+    this.spine.add(this.plate);
 
     // cabeça: o rosto vai na textura; nariz, orelhas e cabelo são modelados
     this.faceMat = new THREE.MeshPhongMaterial({ map: null, specular: 0x1a1a1a, shininess: 14 });
-    const skull = ball(0.1, 0.136, 0.11, this.faceMat, 0, 0.132, 0, 16);
+    const skull = ball(0.1, 0.136, 0.11, this.faceMat, 0, 0.132, 0, 20);
     const skinSolid = colorMat(shade(skinColor, 0.9), { gloss: 0.12 });
     const cap = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 7, 0, Math.PI * 2, 0, Math.PI * 0.48), hairMat);
     cap.scale.set(0.105, 0.143, 0.117);
     cap.position.set(0, 0.132, -0.004);
     cap.rotation.x = -0.5;
-    this.head.add(
+    this.head.add(this.shape);
+    this.shape.add(
       skull,
       cap,
-      ball(0.016, 0.025, 0.022, skinSolid, 0, 0.104, 0.106, 8),
-      ball(0.012, 0.03, 0.019, skinSolid, -0.098, 0.124, 0, 8),
-      ball(0.012, 0.03, 0.019, skinSolid, 0.098, 0.124, 0, 8),
       // nuca
       ball(0.094, 0.082, 0.054, hairMat, 0, 0.108, -0.07, 10),
     );
+    this.addFeatures(look, skinSolid, age);
+    const [hx, hy, hz] = HEAD_SHAPES[(look.headShape ?? 0) % HEAD_SHAPES.length];
+    this.shape.scale.set(hx, hy, hz);
+    this.shape.position.y = 0.132 * (1 - hy);
     const style = look.style ?? look.hair % 2;
     if (style === 0) {
       // topete penteado para o lado
       const tuft = ball(0.08, 0.036, 0.052, hairMat, 0.012, 0.25, 0.06, 10);
       tuft.rotation.set(-0.35, 0.25, 0.12);
-      this.head.add(tuft);
+      this.shape.add(tuft);
     } else if (style === 1 || style === 2) {
       // franja e volume dos lados
       this.head.add(ball(0.106, 0.052, 0.106, hairMat, 0, 0.236, 0, 10), ball(0.11, 0.095, 0.074, hairMat, 0, 0.138, -0.052, 10));
       if (style === 2) {
         // comprido: cai atrás até os ombros e emoldura o rosto
-        this.head.add(
+        this.shape.add(
           ball(0.118, 0.17, 0.07, hairMat, 0, 0.03, -0.07, 10),
           ball(0.03, 0.12, 0.05, hairMat, -0.1, 0.07, -0.01, 8),
           ball(0.03, 0.12, 0.05, hairMat, 0.1, 0.07, -0.01, 8),
@@ -869,10 +371,10 @@ export class FolkModel {
         const lens = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.005, 5, 14), rim);
         lens.position.set(sx * 0.037, 0.14, 0.098);
         lens.rotation.y = sx * 0.25;
-        this.head.add(lens);
-        this.head.add(rod([sx * 0.06, 0.142, 0.09], [sx * 0.098, 0.142, 0.0], 0.004, rim, 4));
+        this.shape.add(lens);
+        this.shape.add(rod([sx * 0.06, 0.142, 0.09], [sx * 0.098, 0.142, 0.0], 0.004, rim, 4));
       }
-      this.head.add(rod([-0.014, 0.142, 0.104], [0.014, 0.142, 0.104], 0.004, rim, 4));
+      this.shape.add(rod([-0.014, 0.142, 0.104], [0.014, 0.142, 0.104], 0.004, rim, 4));
     }
     // fone do telefone, encostado na orelha durante a ligação
     const phoneRed = colorMat(PAL.phone, { gloss: 0.7 });
@@ -884,8 +386,8 @@ export class FolkModel {
     this.handset.visible = false;
     this.head.add(this.handset);
     if (uni?.hat) this.head.add(hatFor(uni));
-    this.head.position.y = 0.56;
-    this.torso.add(this.head);
+    this.head.position.y = 0.06;
+    this.neck.add(this.head);
 
     // braços: manga curta, antebraço e mão à mostra
     const upperArm: Ring[] = [
@@ -909,18 +411,34 @@ export class FolkModel {
       [this.armL, this.foreL, -1],
       [this.armR, this.foreR, 1],
     ] as const) {
-      arm.position.set(sx * 0.196 * k, 0.42, 0);
+      arm.position.set(sx * 0.196 * k, SHOULDER_Y, 0);
       arm.add(widen(loft(upperArm, 10, longSleeve ? sleeve : skin)));
       if (kind !== 'swim') arm.add(widen(loft(sleeveRings, 10, sleeve)));
       fore.position.y = -UPPER_ARM;
       fore.add(
         widen(ball(0.04, 0.04, 0.042, longSleeve ? sleeve : skin, 0, 0, 0, 8)),
         widen(loft(forearm, 10, longSleeve ? sleeve : skin)),
-        // mão: palma, dedos e polegar
-        ball(0.03, 0.04, 0.02, skin, 0, -FOREARM - 0.03, 0.004, 8),
-        ball(0.026, 0.03, 0.017, skin, 0, -FOREARM - 0.075, 0.012, 8),
-        ball(0.011, 0.026, 0.012, skin, sx * -0.026, -FOREARM - 0.035, 0.018, 6),
       );
+      // mão: palma no pulso, dedos que fecham juntos, indicador que aponta, polegar
+      const hand = sx === 1 ? this.handR : this.handL;
+      const fingers = sx === 1 ? this.fingersR : this.fingersL;
+      const index = sx === 1 ? this.indexR : this.indexL;
+      const thumb = sx === 1 ? this.thumbR : this.thumbL;
+      hand.position.y = -FOREARM;
+      hand.add(ball(0.03, 0.036, 0.019, skin, 0, -0.03, 0.004, 8));
+      fingers.position.set(0, -0.058, 0.004);
+      fingers.add(ball(0.019, 0.026, 0.015, skin, sx * 0.008, -0.022, 0.004, 7));
+      index.position.set(sx * -0.016, -0.056, 0.006);
+      index.add(ball(0.009, 0.028, 0.012, skin, 0, -0.024, 0, 6));
+      thumb.position.set(sx * -0.022, -0.018, 0.014);
+      thumb.add(ball(0.01, 0.024, 0.011, skin, 0, -0.016, 0.004, 6));
+      thumb.rotation.z = sx * -0.3;
+      hand.add(fingers, index, thumb);
+      // o que vai na mão fica preso à mão (medidas a partir do cotovelo, como antes)
+      const props = new THREE.Group();
+      props.position.y = FOREARM;
+      hand.add(props);
+      fore.add(hand);
       if (sx === 1) {
         // bloco 5: pano de limpeza e xícara, na mão direita
         this.rag.add(rbox(0.1, 0.03, 0.12, 0.01, colorMat(0xe8b830), 0, -FOREARM - 0.08, 0.04));
@@ -963,7 +481,7 @@ export class FolkModel {
           cyl(0.05, 0.05, 0.014, 8, colorMat(0x2a2a30, { gloss: 0.6 }), 0, -FOREARM - 0.26, 0.05),
         );
         this.lantern.visible = false;
-        fore.add(this.rag, this.cup, this.bag, this.bottle, this.extinguisher, this.lantern);
+        props.add(this.rag, this.cup, this.bag, this.bottle, this.extinguisher, this.lantern);
       } else {
         // bloco 10: aliança dourada no anelar da mão esquerda
         const band = new THREE.Mesh(new THREE.TorusGeometry(0.013, 0.005, 5, 10), colorMat(PAL.brass, { gloss: 1 }));
@@ -971,7 +489,7 @@ export class FolkModel {
         band.rotation.x = Math.PI / 2;
         this.ring.add(band);
         this.ring.visible = false;
-        fore.add(this.ring);
+        props.add(this.ring);
       }
       if (sx === -1 && !longSleeve && kind !== 'swim') {
         // relógio de pulso
@@ -989,7 +507,7 @@ export class FolkModel {
         fore.children[fore.children.length - 1].rotation.z = Math.PI / 2;
       }
       arm.add(fore);
-      this.torso.add(arm);
+      this.chest.add(arm);
     }
 
     // pernas e sapatos
@@ -1029,23 +547,30 @@ export class FolkModel {
       }
       shin.position.y = -THIGH;
       shin.add(widen(ball(0.058, 0.058, 0.062, shinMat, 0, 0, 0, 8)), widen(loft(calf, 10, shinMat)));
+      const foot = sx === 1 ? this.footR : this.footL;
+      foot.position.y = -SHIN;
+      // peças do pé medidas a partir do joelho, como antes
+      const feet = new THREE.Group();
+      feet.position.y = SHIN;
+      foot.add(feet);
+      shin.add(foot);
       if (barefoot) {
-        shin.add(rbox(0.09, 0.05, 0.22, 0.03, skin, 0, -SHIN - 0.06, 0.05));
+        feet.add(rbox(0.09, 0.05, 0.22, 0.03, skin, 0, -SHIN - 0.06, 0.05));
       } else if (kind === 'pj' || kind === 'robe') {
         // chinelo
-        shin.add(rbox(0.1, 0.04, 0.25, 0.02, shoe, 0, -SHIN - 0.065, 0.05), rbox(0.09, 0.05, 0.2, 0.03, skin, 0, -SHIN - 0.05, 0.04));
+        feet.add(rbox(0.1, 0.04, 0.25, 0.02, shoe, 0, -SHIN - 0.065, 0.05), rbox(0.09, 0.05, 0.2, 0.03, skin, 0, -SHIN - 0.05, 0.04));
       } else {
-        shin.add(
+        feet.add(
           // sapato: sola clara, cabedal escuro e cadarço
           rbox(0.104, 0.03, 0.27, 0.012, sole, 0, -SHIN - 0.07, 0.05),
           rbox(0.098, 0.07, 0.25, 0.034, shoe, 0, -SHIN - 0.05, 0.05),
         );
-        if (kind !== 'suit') shin.add(box(0.045, 0.01, 0.07, lace, 0, -SHIN + 0.016, 0.085));
+        if (kind !== 'suit') feet.add(box(0.045, 0.01, 0.07, lace, 0, -SHIN + 0.016, 0.085));
       }
       leg.add(shin);
       this.hips.add(leg);
     }
-    this.hips.add(this.torso);
+    this.hips.add(this.spine);
     this.body.add(this.hips);
 
     // sombra "de bolinha" sob os pés, como nos jogos da época
@@ -1078,11 +603,48 @@ export class FolkModel {
     this.group.traverse((o) => {
       if (o instanceof THREE.Mesh && o !== this.blob) o.castShadow = true;
     });
-    this.setFace('neutral', false);
+    this.setFace({ expr: 'neutral', closed: false, talk: 0, gaze: 0 });
   }
 
-  private setFace(expr: Expression, closed: boolean): void {
-    const key = faceTextureName(this.look.skin, this.look.hair, expr, closed, this.look.face);
+  /** Plano 2, bloco 5: nariz, orelhas e barba modelados, conforme as peças do rosto. */
+  private addFeatures(look: Look, skinSolid: THREE.Material, age?: Age): void {
+    // nariz: pequeno, reto, largo, adunco
+    switch ((look.nose ?? 1) % 4) {
+      case 0:
+        this.shape.add(ball(0.013, 0.02, 0.018, skinSolid, 0, 0.106, 0.104, 8));
+        break;
+      case 2:
+        this.shape.add(ball(0.021, 0.022, 0.022, skinSolid, 0, 0.102, 0.105, 8), ball(0.012, 0.03, 0.012, skinSolid, 0, 0.122, 0.104, 6));
+        break;
+      case 3: {
+        const bridge = ball(0.012, 0.032, 0.016, skinSolid, 0, 0.122, 0.108, 6);
+        bridge.rotation.x = -0.35;
+        this.shape.add(ball(0.016, 0.024, 0.022, skinSolid, 0, 0.1, 0.108, 8), bridge);
+        break;
+      }
+      default:
+        this.shape.add(ball(0.016, 0.025, 0.022, skinSolid, 0, 0.104, 0.106, 8));
+    }
+    // orelhas: pequenas, médias, de abano
+    const ears = (look.ears ?? 1) % 3;
+    for (const sx of [-1, 1]) {
+      const ear = ears === 0 ? ball(0.01, 0.025, 0.016, skinSolid, sx * 0.097, 0.126, 0, 8) : ears === 2 ? ball(0.012, 0.035, 0.024, skinSolid, sx * 0.1, 0.124, -0.004, 8) : ball(0.012, 0.03, 0.019, skinSolid, sx * 0.098, 0.124, 0, 8);
+      if (ears === 2) ear.rotation.y = sx * -0.55;
+      this.shape.add(ear);
+    }
+    // barba com volume: cavanhaque no queixo, barba cheia no queixo e no maxilar
+    const beard = this.faceLook.beard;
+    const fuzz = colorMat(shade(HAIR[look.hair % HAIR.length], 0.92), { gloss: 0.05 });
+    if (beard === 3) this.shape.add(ball(0.02, 0.02, 0.016, fuzz, 0, 0.006, 0.084, 8));
+    if (beard === 4) {
+      this.shape.add(ball(0.055, 0.028, 0.045, fuzz, 0, 0.004, 0.05, 10));
+    }
+    // cabeça quadrada: maxilar mais marcado
+    if ((look.headShape ?? 0) % 4 === 3 && age !== 'baby') this.shape.add(rbox(0.15, 0.05, 0.1, 0.03, this.faceMat, 0, 0.045, 0.035));
+  }
+
+  private setFace(st: { expr: Expression; closed: boolean; talk: 0 | 1 | 2; gaze: -1 | 0 | 1 }): void {
+    const key = faceTextureName(this.faceLook, st);
     if (key === this.faceKey) return;
     this.faceKey = key;
     this.faceMat.map = getTexture(key);
@@ -1096,11 +658,18 @@ export class FolkModel {
     return out;
   }
 
+  /** Animação que toca de fato: a pedida ou uma das suas variações. */
+  private playing(f: FolkFrame): FolkAnim {
+    if (f.anim === 'watch' && !f.seated) return 'watch';
+    return variantOf(f.anim, f.seed ?? 0, f.time);
+  }
+
   update(f: FolkFrame): void {
     this.clock += f.dt;
-    const k = 1 - Math.exp(-f.dt * 12);
-    const target = poseFor(f.anim, f.time, f.mood, f.energy, f.seated);
+    const anim = this.playing(f);
+    const target = this.mixer.target(anim, f.time, f.dt, { mood: f.mood, energy: f.energy, seated: f.seated });
     const p = this.pose;
+    const k = 1 - Math.exp(-f.dt * 20);
     for (const key of Object.keys(p) as (keyof Pose)[]) p[key] += (target[key] - p[key]) * k;
 
     // posição e direção, com uma transição curta entre lugares
@@ -1118,21 +687,43 @@ export class FolkModel {
       this.group.rotation.y += d * (1 - Math.exp(-f.dt * 10));
     }
 
+    // olhar para quem fala: a cabeça gira até um limite, os olhos completam
+    const lying = f.anim === 'sleep' || f.anim === 'collapsed';
+    let want = 0;
+    if (f.lookAt && !lying) {
+      const dx = f.lookAt.x - this.group.position.x;
+      const dz = f.lookAt.z - this.group.position.z;
+      if (dx * dx + dz * dz > 0.04) {
+        want = Math.atan2(dx, dz) - this.group.rotation.y;
+        want = Math.atan2(Math.sin(want), Math.cos(want));
+      }
+    }
+    const turn = Math.max(-0.95, Math.min(0.95, want));
+    this.lookYaw += (turn - this.lookYaw) * (1 - Math.exp(-f.dt * 6));
+
     this.body.rotation.x = (-Math.PI / 2) * p.lie;
-    this.hips.position.y = p.hipsY;
-    this.torso.rotation.set(p.torsoX, p.torsoY, p.torsoZ);
-    this.head.rotation.set(p.headX, p.headY, p.headZ);
+    this.hips.position.set(p.hipsSway * this.wide, p.hipsY, 0);
+    this.hips.rotation.set(0, p.hipsYaw, p.hipsRoll);
+    this.spine.rotation.set(p.spineX, p.spineY, p.spineZ);
+    this.chest.rotation.set(p.chestX, p.chestY, p.chestZ);
+    this.neck.rotation.set(p.neckX, p.neckY + this.lookYaw * 0.35, 0);
+    this.head.rotation.set(p.headX, p.headY + this.lookYaw * 0.65, p.headZ);
+    this.armL.position.y = SHOULDER_Y + p.shoulderL;
+    this.armR.position.y = SHOULDER_Y + p.shoulderR;
     this.armL.rotation.set(p.armLX, 0, -p.armLOut);
     this.armR.rotation.set(p.armRX, 0, p.armROut);
     this.foreL.rotation.x = p.elbowL;
     this.foreR.rotation.x = p.elbowR;
-    this.legL.rotation.set(p.legLX, 0, -p.legOut);
-    this.legR.rotation.set(p.legRX, 0, p.legOut);
+    this.legL.rotation.set(p.legLX, 0, -p.legLOut);
+    this.legR.rotation.set(p.legRX, 0, p.legROut);
     this.shinL.rotation.x = p.kneeL;
     this.shinR.rotation.x = p.kneeR;
+    this.footL.rotation.x = p.ankleL;
+    this.footR.rotation.x = p.ankleR;
 
     // bloco 5: o que está na mão vem da interação (ou da animação)
-    const hold = f.hold ?? (f.anim === 'read' ? 'book' : f.anim === 'phone' ? 'phone' : f.anim === 'scrub' ? 'rag' : f.anim === 'eat' ? 'plate' : undefined);
+    const family = f.anim.startsWith('g_') ? f.anim : f.anim.split('_')[0];
+    const hold = f.hold ?? (family === 'read' ? 'book' : family === 'phone' ? 'phone' : family === 'scrub' ? 'rag' : family === 'eat' ? 'plate' : undefined);
     this.book.visible = hold === 'book';
     this.handset.visible = hold === 'phone';
     this.plate.visible = hold === 'plate';
@@ -1143,17 +734,42 @@ export class FolkModel {
     this.extinguisher.visible = hold === 'extinguisher';
     this.lantern.visible = hold === 'lantern' || f.anim === 'lantern';
     this.ring.visible = !!f.ring;
-    const lying = f.anim === 'sleep' || f.anim === 'collapsed';
+
+    // mãos: segurar algo fecha a mão em volta; o indicador aponta quando pedido
+    const inRight = hold === 'cup' || hold === 'suitcase' || hold === 'bottle' || hold === 'extinguisher' || hold === 'lantern' || hold === 'rag' || hold === 'phone';
+    const both = hold === 'book' || hold === 'plate';
+    const gripR = inRight || both ? Math.max(p.gripR, 0.72) : p.gripR;
+    const gripL = both ? Math.max(p.gripL, 0.72) : p.gripL;
+    this.handL.rotation.x = p.wristL;
+    this.handR.rotation.x = p.wristR;
+    this.fingersL.rotation.x = -gripL * 1.55;
+    this.fingersR.rotation.x = -gripR * 1.55;
+    this.indexL.rotation.x = -gripL * 1.55 * (1 - p.pointL);
+    this.indexR.rotation.x = -gripR * 1.55 * (1 - p.pointR);
+    this.thumbL.rotation.x = -gripL * 0.7;
+    this.thumbR.rotation.x = -gripR * 0.7;
+
     this.blob.visible = f.anim !== 'sleep' && f.anim !== 'sit' && !f.seated && f.anim !== 'perch';
     this.blob.scale.setScalar(f.anim === 'collapsed' ? 1.9 : 1);
     this.blob.position.z = f.anim === 'collapsed' ? -0.85 : 0;
 
-    // expressão: humor + piscadas
+    // rosto: expressão (pedida ou do humor), piscar, boca falando e olhar
     if (this.clock > this.blinkAt + 0.13) this.blinkAt = this.clock + 2 + Math.random() * 3;
     const blinking = this.clock > this.blinkAt;
-    const tired = (f.energy ?? 100) < 22;
-    const expr: Expression = f.expr ?? (tired ? 'tired' : f.mood >= 62 ? 'happy' : f.mood >= 40 ? 'neutral' : 'sad');
-    this.setFace(lying ? 'neutral' : expr, lying || blinking);
+    let expr: Expression = f.expr ?? moodExpression(f.mood, f.energy);
+    let speaking = !!f.speaking;
+    if (expr === 'talk') {
+      expr = f.mood >= 62 ? 'happy' : 'neutral';
+      speaking = true;
+    }
+    const residual = want - turn;
+    const gaze: -1 | 0 | 1 = Math.abs(residual) > 0.15 || Math.abs(want - this.lookYaw) > 0.35 ? (want > 0 ? 1 : -1) : 0;
+    this.setFace({
+      expr: lying ? 'neutral' : expr,
+      closed: lying || (blinking && expr !== 'laugh' && expr !== 'cry'),
+      talk: speaking && !lying ? mouthFrame(this.clock) : 0,
+      gaze: lying ? 0 : gaze,
+    });
   }
 }
 

@@ -635,7 +635,9 @@ src/
       build.ts        ajudantes de malha e material
       house.ts        pisos, paredes (com corte), portas, janelas e telhado
       furniture.ts    um modelo por objeto, com as âncoras de sentar e deitar
-      folk.ts         folk de proporção adulta, rosto e animações
+      folk.ts         folk de proporção adulta: juntas, mãos, rosto em peças
+      anims/          plano 2: animações como dados (andar, conversa, gestos,
+                      atividades) e o tocador com mistura de poses
       scenery.ts      jardim, cerca, rua e vizinhança
       palette.ts      cores
   ui/         HUD em HTML/CSS por cima do canvas
@@ -1133,6 +1135,29 @@ traços e cidade aberta com o bairro dentro dela).
   P fixa); o telhado some sozinho na obra e de perto e volta ao afastar.
   Fachada com testeira, calha e condutor, cumeeira e oitão na textura da
   parede (save v23).
+- **Bloco 4 (feito)**: motor de atividades. Lugares em todo assento, sentar
+  e levantar como etapas, postura sentada entre uma ação e outra, TV com
+  canais assistida do melhor assento, conversa e prato no colo sentado (save v24).
+- **Bloco 5 (feito)**: corpo e rosto novos. Esqueleto com quadril que
+  balança, tronco em duas partes, pescoço, ombros, pulsos, mãos que abrem,
+  fecham, seguram e apontam, e tornozelos; biblioteca de animações como dados
+  com mistura entre uma e outra; cinco jeitos de andar (normal, com pressa,
+  cansado, triste, alegre); variações de laço sentado, vendo TV, lendo,
+  falando e ouvindo. Rosto em camadas (cabeça, olhos, cor dos olhos, cílios,
+  sobrancelhas, nariz, boca, orelhas, barba, marcas e rugas com a idade) na
+  textura com o dobro da resolução, onze expressões, piscar, olhar para quem
+  fala e boca mexendo com a fala; peças do rosto no criador e herdadas dos
+  pais (save v25).
+
+## Limitações conhecidas do bloco 5 (plano 2)
+
+- Os controles do rosto no criador são provisórios (uma linha de botões por
+  peça); o criador novo com sliders chega no bloco 10.
+- A boca abre e fecha num ritmo inventado; a fala inventada com sílabas e
+  som é do bloco 7.
+- O olhar segue quem conversa com o folk; a TV e os objetos ainda não puxam o
+  olhar (o folk já fica de frente para eles).
+- Barba não cresce em quem nasce no jogo (bebês nascem sem e continuam sem).
 
 ## Limitações conhecidas do bloco 1 (plano 2)
 

@@ -1,7 +1,9 @@
 import { FORMAL, HAIR, PAJAMA, PANTS, SHIRT, SKIN, SWIM } from '../game/art/palette';
+import { EYE_COLORS } from '../game/art/textures';
 import type { GameController } from '../game/controller';
 import { t } from '../i18n';
 import {
+  FACE_ROWS,
   LOOK_LIMITS,
   cleanName,
   MAX_FAMILY,
@@ -48,8 +50,11 @@ const SWATCHES: Partial<Record<keyof Look, number[]>> = {
   formal: FORMAL,
   sleepwear: PAJAMA,
   swimwear: SWIM,
+  eyeColor: EYE_COLORS,
 };
 const LOOK_ROWS: (keyof Look)[] = ['skin', 'hair', 'style', 'face', 'body'];
+/** plano 2, bloco 5: peças do rosto, com a cor dos olhos em amostras */
+const FACE_LOOK_ROWS: (keyof Look)[] = [...FACE_ROWS];
 const CLOTHES_ROWS: (keyof Look)[] = ['shirt', 'pants', 'formal', 'sleepwear', 'swimwear'];
 /** que roupa o retrato mostra quando se mexe em cada linha */
 const ROW_WEAR: Partial<Record<keyof Look, Outfit>> = { formal: 'formal', sleepwear: 'sleep', swimwear: 'swim', shirt: 'day', pants: 'day' };
@@ -269,6 +274,8 @@ export class FamilyCreator {
     const mid = el('div', 'creator-col');
     mid.append(el('div', 'creator-section', t('create.looks')));
     for (const k of LOOK_ROWS) mid.append(this.lookRow(k));
+    mid.append(el('div', 'creator-section', t('create.face')));
+    for (const k of FACE_LOOK_ROWS) mid.append(this.lookRow(k));
     mid.append(el('div', 'creator-section', t('create.clothes')));
     for (const k of CLOTHES_ROWS) mid.append(this.lookRow(k));
 
@@ -289,6 +296,8 @@ export class FamilyCreator {
     const opts = el('div', 'creator-opts');
     const colors = SWATCHES[k];
     for (let i = 0; i < LOOK_LIMITS[k]; i++) {
+      // óculos: o 1 era sardas até o save v24 (hoje é marca); fica de fora da lista
+      if (k === 'face' && i === 1) continue;
       const b = el('button', colors ? 'creator-swatch' : 'tab', colors ? undefined : t(`${k}.${i}`));
       if (colors) {
         b.style.background = hex(colors[i]);

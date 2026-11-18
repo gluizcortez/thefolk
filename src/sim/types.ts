@@ -1516,7 +1516,7 @@ export interface Look {
   pants: number;
   /** bloco 5: corte de cabelo (0 a 3) */
   style: number;
-  /** bloco 5: traços do rosto (0 a 2) */
+  /** bloco 5: óculos (0 sem, 2 de aro escuro; 1 era sardas até o save v24, hoje em `marks`) */
   face: number;
   /** bloco 5: corpo 0 = magro, 1 = médio, 2 = forte */
   body: number;
@@ -1524,6 +1524,17 @@ export interface Look {
   formal: number;
   sleepwear: number;
   swimwear: number;
+  /** plano 2, bloco 5: rosto em camadas (veja FACE_ROWS em temper.ts) */
+  headShape: number;
+  eyes: number;
+  eyeColor: number;
+  lashes: number;
+  brows: number;
+  nose: number;
+  mouth: number;
+  ears: number;
+  beard: number;
+  marks: number;
 }
 
 export interface Job {

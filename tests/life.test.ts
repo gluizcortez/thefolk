@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { faceFromSeed } from '../src/sim/temper';
 import { CATALOG } from '../src/data/catalog';
 import { starterHouse } from '../src/data/house';
 import { familySeed } from '../src/data/family';
@@ -361,7 +362,7 @@ describe('bloco 17: família nova e bairro', () => {
   it('o criador faz jovem e idoso; casa só de jovens não pode', () => {
     const member = (name: string, age?: 'teen' | 'elder'): MemberDraft => ({
       name,
-      look: { skin: 0, hair: 0, shirt: 0, pants: 0, style: 0, face: 0, body: 1, formal: 0, sleepwear: 0, swimwear: 0 },
+      look: { skin: 0, hair: 0, shirt: 0, pants: 0, style: 0, face: 0, body: 1, formal: 0, sleepwear: 0, swimwear: 0, ...faceFromSeed(1) },
       traits: [],
       temper: { ...NEUTRAL_TEMPER },
       month: 0,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { faceFromSeed } from '../src/sim/temper';
 import { CATALOG } from '../src/data/catalog';
 import { familySeed } from '../src/data/family';
 import { starterHouse } from '../src/data/house';
@@ -33,7 +34,7 @@ import type { FamilyDraft, Folk, Look, LogEntry, MemberDraft, Temper } from '../
 import { run } from './helpers';
 import { play, playStep } from './helpers/player';
 
-const LOOK: Look = { skin: 1, hair: 2, shirt: 3, pants: 1, style: 2, face: 1, body: 2, formal: 1, sleepwear: 0, swimwear: 3 };
+const LOOK: Look = { skin: 1, hair: 2, shirt: 3, pants: 1, style: 2, face: 1, body: 2, formal: 1, sleepwear: 0, swimwear: 3, ...faceFromSeed(1) };
 
 function member(name: string, temper: Temper, traits: string[] = [], month = 0): MemberDraft {
   return { name, look: { ...LOOK }, traits, temper: { ...temper }, month };

@@ -36,6 +36,7 @@ import type {
   ObjectDef,
   RelDelta,
   Side,
+  SocialCategory,
   SocialDef,
   Speed,
   WorldObject,
@@ -44,6 +45,7 @@ import type { Expression } from './art/textures';
 import type { Hud } from '../ui/hud';
 import { FolkModel } from './art/folk';
 import type { FolkAnim } from './art/folk';
+import { isAnim } from './art/anims';
 import { buildFurniture, furnitureSpec } from './art/furniture';
 import type { Anchor, FurnitureModel, FurnitureSpec } from './art/furniture';
 import { COVER_ART, FLOOR_ART, HALF_H, House, LEVEL_H, LOW_H, POOL_SURFACE, TH, WALL_H, sceneZ } from './art/house';
@@ -200,6 +202,25 @@ interface Hover {
   folk?: Folk;
 }
 
+/** Plano 2, bloco 5: cara de cada gesto de conversa (romance dá cara de apaixonado). */
+function socialExpr(anim: FolkAnim, category: SocialCategory): Expression | undefined {
+  if (anim === 'argue') return 'angry';
+  if (anim === 'laugh') return 'laugh';
+  if (category === 'romantic' && (anim === 'kiss' || anim === 'hug' || anim === 'talk')) return 'love';
+  if (anim === 'talk') return undefined;
+  return 'happy';
+}
+
+/** Plano 2, bloco 5: jeito de andar — com pressa, cansado, triste ou alegre. */
+function walkStyle(folk: Folk, action: Action | undefined, mood: number): FolkAnim {
+  const n = folk.needs;
+  if (action?.kind === 'panic' || action?.kind === 'douse' || n.bladder < 15 || n.hunger < 10) return 'walk_hurry';
+  if (n.energy < 25) return 'walk_tired';
+  if (mood < 35) return 'walk_sad';
+  if (mood >= 80) return 'walk_happy';
+  return 'walk';
+}
+
 function lookKey(look: Look, wear: Wear, uniform?: UniformDef, age?: Age): string {
   return `${JSON.stringify(look)}|${wear}|${uniform ? JSON.stringify(uniform) : ''}|${age ?? ''}`;
 }
@@ -225,6 +246,8 @@ interface SocialLook {
   other: Folk;
   /** plaquinha a mostrar, se for quem puxou */
   icon?: string;
+  /** plano 2, bloco 5: está com a palavra (a boca mexe) */
+  speaking?: boolean;
 }
 
 interface Ping {
@@ -1663,6 +1686,8 @@ export class GameView {
     let anim: FolkAnim = 'idle';
     let expr: Expression | undefined;
     let onObject = false;
+    // plano 2, bloco 5: boca falando e para onde olhar
+    let speaking = false;
     const social = it ? undefined : this.socialLook(folk);
 
     if (folk.age === 'baby') {
@@ -1684,14 +1709,14 @@ export class GameView {
         anim = 'swim';
         place = swim;
         onObject = true;
-        expr = 'sad';
+        expr = 'scared';
       }
     } else if (action?.kind === 'douse' && action.phase === 'using') {
       anim = 'spray';
-      expr = 'angry';
+      expr = 'focused';
     } else if (action?.kind === 'panic' && action.phase === 'using') {
       anim = 'panic';
-      expr = 'sad';
+      expr = 'scared';
     } else if (folk.visit?.service?.kind === 'reaper' && folk.px === folk.x && folk.py === folk.y) {
       anim = 'lantern';
     } else if (folk.visit?.service?.kind === 'burglar' && folk.visit.service.target && folk.visit.service.started >= 0 && folk.queue.length === 0) {
@@ -1738,7 +1763,7 @@ export class GameView {
     } else if (social) {
       anim = social.anim;
       expr = social.expr;
-      if (anim === 'talk' && Math.sin(this.animTime * 7 + folk.id) > 0.2) expr = 'talk';
+      speaking = !!social.speaking;
       // abraço e beijo: os dois chegam mais perto do meio
       if (anim === 'hug' || anim === 'kiss') {
         const dx = social.other.x - folk.x;
@@ -1769,7 +1794,7 @@ export class GameView {
         const r = folk.react;
         if (r && r.until > tick && (anim === 'watch' || anim === 'sit' || anim === 'eat')) {
           anim = r.kind;
-          expr = r.kind === 'cry' ? 'sad' : r.kind === 'gasp' ? 'talk' : 'happy';
+          expr = r.kind === 'cry' ? 'cry' : r.kind === 'gasp' ? 'scared' : 'laugh';
         }
       }
     } else if (it?.pose === 'lie' && action?.stage) {
@@ -1797,7 +1822,8 @@ export class GameView {
     }
     if (!expr && thought) {
       if (thought.kind === 'miss') expr = 'sad';
-      else if (thought.kind === 'mess' || thought.kind === 'refuse') expr = 'angry';
+      else if (thought.kind === 'mess') expr = 'sick';
+      else if (thought.kind === 'refuse') expr = 'angry';
       else if (thought.kind === 'wish' || (thought.kind === 'chat' && thought.icon === 'yes')) expr = 'happy';
     }
 
@@ -1822,7 +1848,30 @@ export class GameView {
         : folk.visit?.service?.kind === 'reaper'
           ? 'lantern'
           : (it?.hold ?? (folk.carry ? 'plate' : undefined));
-    view.model.update({ anim, ...place, mood, time, dt, expr, hold, energy: folk.needs.energy, ring: wearsRing(sim.world, folk.id), seated });
+    // plano 2, bloco 5: o jeito de andar vem de como o folk está
+    if (anim === 'walk') anim = walkStyle(folk, action, mood);
+    if (!isAnim(anim)) anim = 'idle';
+    // concentrado no que treina (ler, xadrez, computador); falando ao telefone e ensaiando no espelho
+    const family = anim.split('_')[0];
+    if (!expr && it?.skill && family !== 'talk' && family !== 'dance') expr = 'focused';
+    if (family === 'phone' || (it && family === 'talk')) speaking = true;
+    const otherView = social && social.other !== folk ? this.folks.get(social.other.id) : undefined;
+    const lookAt = otherView ? { x: otherView.model.group.position.x, z: otherView.model.group.position.z } : undefined;
+    view.model.update({
+      anim,
+      ...place,
+      mood,
+      time,
+      dt,
+      expr,
+      hold,
+      energy: folk.needs.energy,
+      ring: wearsRing(sim.world, folk.id),
+      seated,
+      speaking,
+      lookAt,
+      seed: folk.id,
+    });
 
     const iconKey = social?.icon ?? (thought ? `th:${thought.kind}:${thought.icon}` : undefined);
     view.icon.visible = !!iconKey;
@@ -1878,11 +1927,11 @@ export class GameView {
       const c = sim.world.circles.find((x) => x.id === a.circleId);
       const speaker = c && sim.findFolk(c.speaker);
       if (!c || !speaker) return { anim: 'idle', other: folk };
-      if (speaker === folk) return { anim: 'talk', other: folk };
+      if (speaker === folk) return { anim: 'talk', other: folk, speaking: true };
       const r = reactionTo(sim.catalog, folk, c.topic);
       return {
         anim: r === 'love' ? 'laugh' : 'listen',
-        expr: r === 'hate' ? 'tired' : r === 'love' || r === 'like' ? 'happy' : undefined,
+        expr: r === 'hate' ? 'sick' : r === 'love' ? 'laugh' : r === 'like' ? 'happy' : undefined,
         other: speaker,
       };
     }
@@ -1895,9 +1944,10 @@ export class GameView {
       const rejected = a.accepted === false && a.elapsed > 1;
       return {
         anim: def.anim,
-        expr: rejected ? 'sad' : def.anim === 'argue' ? 'angry' : def.anim === 'talk' ? undefined : 'happy',
+        expr: rejected ? 'sad' : socialExpr(def.anim, def.category),
         other,
         icon: `soc:${def.category}`,
+        speaking: !rejected && (def.anim === 'talk' || def.anim === 'argue'),
       };
     }
     if (a.kind === 'listen') {
@@ -1907,7 +1957,7 @@ export class GameView {
       if (!def) return undefined;
       if (theirs.accepted === false) return { anim: 'listen', expr: def.category === 'mean' ? 'angry' : 'neutral', other };
       const anim = def.targetAnim ?? 'listen';
-      return { anim, expr: anim === 'argue' ? 'angry' : anim === 'listen' ? undefined : 'happy', other };
+      return { anim, expr: anim === 'listen' ? undefined : socialExpr(anim, def.category), other, speaking: anim === 'argue' };
     }
     return undefined;
   }
@@ -2480,6 +2530,72 @@ export class GameView {
   }
 
   /** Desenha a cena fora da tela e devolve a imagem em 16 bits, como o jogo. */
+  /**
+   * Plano 2, bloco 5: busto de perto (cabeça e ombros) com uma expressão.
+   * Serve ao criador, às capturas e a quem quiser ver o rosto de perto.
+   */
+  bust(look: Look, expr: Expression, opts: { age?: Age; speaking?: boolean; turn?: number; w?: number; h?: number } = {}): string {
+    const w = opts.w ?? 96;
+    const h = opts.h ?? 96;
+    const scene = new THREE.Scene();
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xc4b295, 1.7));
+    const sun = new THREE.DirectionalLight(PAL.sun, 2.0);
+    sun.position.set(-2, 5, 6);
+    scene.add(sun);
+    const model = new FolkModel(look, 'day', undefined, opts.age);
+    const frame = { anim: 'idle' as FolkAnim, x: 0, y: 0, z: 0, heading: opts.turn ?? 0.25, mood: 60, time: 0, dt: 1, expr, speaking: opts.speaking };
+    model.update(frame);
+    model.update({ ...frame, dt: 0.05 });
+    scene.add(model.group);
+    model.group.updateMatrixWorld(true);
+    const top = model.headTop(new THREE.Vector3());
+    const sc = model.group.scale.y * (opts.age === 'child' ? 1.22 : opts.age === 'baby' ? 1.6 : 1);
+    const half = 0.19 * sc;
+    const cy = top.y - 0.24 * sc;
+    const cam = new THREE.OrthographicCamera(-half * (w / h), half * (w / h), half, -half, 0.1, 50);
+    cam.position.set(0, cy + 0.6, 10);
+    cam.lookAt(0, cy, 0);
+    cam.updateMatrixWorld();
+    const url = this.renderToUrl(scene, cam, w, h);
+    model.group.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.geometry.dispose();
+    });
+    return url;
+  }
+
+  /** Plano 2, bloco 5: quadros de uma animação, de corpo inteiro (capturas e testes de olho). */
+  poseStrip(look: Look, anim: FolkAnim, times: number[], opts: { seated?: boolean; heading?: number; mood?: number; w?: number; h?: number; expr?: Expression; speaking?: boolean } = {}): string[] {
+    const w = opts.w ?? 120;
+    const h = opts.h ?? 200;
+    const scene = new THREE.Scene();
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xc4b295, 1.7));
+    const sun = new THREE.DirectionalLight(PAL.sun, 2.0);
+    sun.position.set(-2, 5, 6);
+    scene.add(sun);
+    const model = new FolkModel(look, 'day');
+    scene.add(model.group);
+    const half = 1.05;
+    const cam = new THREE.OrthographicCamera(-half * (w / h), half * (w / h), half, -half, 0.1, 50);
+    cam.position.set(0, 1.25, 10);
+    cam.lookAt(0, 0.85, 0);
+    cam.updateMatrixWorld();
+    const out: string[] = [];
+    let t = times[0] - 1;
+    const frame = (time: number, dt: number) =>
+      model.update({ anim, x: 0, y: opts.seated ? 0.42 : 0, z: 0, heading: opts.heading ?? 0.9, mood: opts.mood ?? 65, time, dt, seated: opts.seated, expr: opts.expr, speaking: opts.speaking, seed: 1 });
+    for (const goal of times) {
+      while (t < goal) {
+        t = Math.min(goal, t + 1 / 60);
+        frame(t, 1 / 60);
+      }
+      out.push(this.renderToUrl(scene, cam, w, h));
+    }
+    model.group.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.geometry.dispose();
+    });
+    return out;
+  }
+
   private renderToUrl(scene: THREE.Scene, cam: THREE.Camera, w: number, h: number): string {
     return this.renderToCanvas(scene, cam, w, h).toDataURL();
   }

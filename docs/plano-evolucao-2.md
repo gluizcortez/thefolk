@@ -299,6 +299,24 @@ parede, entra com as atividades a fundo) e variações de laço por objeto
 Pronto: capturas de perto de vários rostos e expressões; tira animada de
 andar e conversar; teste de mistura de poses (função pura).
 
+**Feito em 18/11/2026** (save v25, uma casa a menos que o plano, como nos
+blocos anteriores). Juntas novas: balanço, rolagem e giro do quadril,
+barriga e peito, pescoço, ombros que sobem, pulsos, mão com dedos, indicador
+e polegar (aberta, solta, segurando, fechada, apontando) e tornozelos.
+Animações em `src/game/art/anims/` como dados (valor fixo, oscilação ou
+quadros-chave por junta, com herança e variações de laço), tocadas por
+`PoseMixer`, que sai da última pose mostrada e chega na nova numa curva
+suave. Andar normal, com pressa, cansado, triste e alegre. Rosto em
+camadas no `Look` (dez peças, migração 24→25; as sardas antigas viraram
+marca e o campo `face` ficou para os óculos), textura do rosto em 256 x
+128, onze expressões (alegre, triste, bravo, enjoado, cansado, apaixonado,
+assustado, concentrado, rindo, chorando e neutro), piscar, olhar para quem
+fala e boca falando. Variações do bloco 4: sentado de pernas cruzadas,
+recostado e com as mãos nos joelhos; vendo TV recostado, com o queixo na
+mão e de braços e pernas cruzados; lendo e virando a página; falando com as
+duas mãos, apontando e encolhendo os ombros. Ficou para depois: a fala
+inventada de verdade (bloco 7) e o olhar puxado por objetos.
+
 ## Bloco 6 — Atividades a fundo I: cozinha, mesa, banheiro e cama (save v27)
 
 Cada atividade de casa ganha etapas, objetos na mão e animação no corpo

@@ -1,0 +1,120 @@
+import { C } from './clip';
+import type { Clip } from './clip';
+
+// Andar com peso: o quadril balança para o lado do pé de apoio e gira com a
+// passada, o peito gira ao contrário, os braços vão no contrapasso, o pé
+// levanta a ponta ao avançar. Quatro jeitos de andar saem do mesmo passo.
+
+export const LOCOMOTION = {
+  walk: {
+    tracks: {
+      legLX: { a: -0.55, f: 9 },
+      legRX: { a: 0.55, f: 9 },
+      kneeL: { b: 0.12, a: 0.8, f: 9, ph: C, sh: 'pos' },
+      kneeR: { b: 0.12, a: 0.8, f: 9, ph: C, sh: 'neg' },
+      ankleL: { a: -0.28, f: 9, ph: C },
+      ankleR: { a: 0.28, f: 9, ph: C },
+      armLX: { a: 0.45, f: 9 },
+      armRX: { a: -0.45, f: 9 },
+      elbows: -0.35,
+      grips: 0.3,
+      hipsY: { b: 0.875, a: 0.03, f: 9, ph: C, sh: 'abs' },
+      hipsSway: { a: 0.018, f: 9, ph: C },
+      hipsRoll: { a: 0.035, f: 9, ph: C },
+      hipsYaw: { a: 0.08, f: 9 },
+      torsoX: 0.06,
+      chestY: { a: -0.11, f: 9 },
+      headY: { a: 0.05, f: 9 },
+    },
+  },
+  /** com pressa: passo largo e rápido, braços dobrados, corpo para a frente */
+  walk_hurry: {
+    base: 'walk',
+    tracks: {
+      legLX: { a: -0.72, f: 12.5 },
+      legRX: { a: 0.72, f: 12.5 },
+      kneeL: { b: 0.15, a: 1.05, f: 12.5, ph: C, sh: 'pos' },
+      kneeR: { b: 0.15, a: 1.05, f: 12.5, ph: C, sh: 'neg' },
+      ankleL: { a: -0.35, f: 12.5, ph: C },
+      ankleR: { a: 0.35, f: 12.5, ph: C },
+      armLX: { a: 0.75, f: 12.5 },
+      armRX: { a: -0.75, f: 12.5 },
+      elbows: -1.35,
+      grips: 0.8,
+      hipsY: { b: 0.86, a: 0.045, f: 12.5, ph: C, sh: 'abs' },
+      hipsSway: { a: 0.012, f: 12.5, ph: C },
+      hipsRoll: { a: 0.03, f: 12.5, ph: C },
+      hipsYaw: { a: 0.1, f: 12.5 },
+      torsoX: 0.2,
+      chestY: { a: -0.16, f: 12.5 },
+      headX: -0.2,
+      headY: 0,
+    },
+  },
+  /** cansado: passo curto e lento, pés arrastando, braços soltos, cabeça baixa */
+  walk_tired: {
+    base: 'walk',
+    tracks: {
+      legLX: { a: -0.36, f: 5.8 },
+      legRX: { a: 0.36, f: 5.8 },
+      kneeL: { b: 0.1, a: 0.42, f: 5.8, ph: C, sh: 'pos' },
+      kneeR: { b: 0.1, a: 0.42, f: 5.8, ph: C, sh: 'neg' },
+      ankleL: { a: -0.08, f: 5.8, ph: C },
+      ankleR: { a: 0.08, f: 5.8, ph: C },
+      armLX: { a: 0.16, f: 5.8 },
+      armRX: { a: -0.16, f: 5.8 },
+      elbows: -0.1,
+      grips: 0.15,
+      hipsY: { b: 0.87, a: 0.02, f: 5.8, ph: C, sh: 'abs' },
+      hipsSway: { a: 0.03, f: 5.8, ph: C },
+      hipsRoll: { a: 0.05, f: 5.8, ph: C },
+      hipsYaw: { a: 0.05, f: 5.8 },
+      torsoX: 0.22,
+      chestY: { a: -0.05, f: 5.8 },
+      headX: 0.18,
+      headZ: { a: 0.06, f: 2.9 },
+      shoulders: -0.02,
+    },
+  },
+  /** triste: passo miúdo, braços quase parados, olhando o chão */
+  walk_sad: {
+    base: 'walk',
+    tracks: {
+      legLX: { a: -0.4, f: 7 },
+      legRX: { a: 0.4, f: 7 },
+      kneeL: { b: 0.1, a: 0.55, f: 7, ph: C, sh: 'pos' },
+      kneeR: { b: 0.1, a: 0.55, f: 7, ph: C, sh: 'neg' },
+      ankleL: { a: -0.15, f: 7, ph: C },
+      ankleR: { a: 0.15, f: 7, ph: C },
+      armLX: { a: 0.12, f: 7 },
+      armRX: { a: -0.12, f: 7 },
+      elbows: -0.15,
+      grips: 0.2,
+      hipsY: { b: 0.875, a: 0.018, f: 7, ph: C, sh: 'abs' },
+      hipsYaw: { a: 0.05, f: 7 },
+      torsoX: 0.16,
+      chestY: { a: -0.04, f: 7 },
+      headX: 0.28,
+      shoulders: -0.018,
+    },
+  },
+  /** alegre: passo com mola, peito aberto, cabeça balançando */
+  walk_happy: {
+    base: 'walk',
+    tracks: {
+      legLX: { a: -0.58, f: 9.6 },
+      legRX: { a: 0.58, f: 9.6 },
+      kneeL: { b: 0.14, a: 0.9, f: 9.6, ph: C, sh: 'pos' },
+      kneeR: { b: 0.14, a: 0.9, f: 9.6, ph: C, sh: 'neg' },
+      armLX: { a: 0.55, f: 9.6 },
+      armRX: { a: -0.55, f: 9.6 },
+      elbows: -0.5,
+      hipsY: { b: 0.87, a: 0.055, f: 9.6, ph: C, sh: 'abs' },
+      hipsYaw: { a: 0.09, f: 9.6 },
+      chestY: { a: -0.12, f: 9.6 },
+      torsoX: -0.03,
+      headX: -0.2,
+      headZ: { a: 0.07, f: 4.8 },
+    },
+  },
+} satisfies Record<string, Clip>;

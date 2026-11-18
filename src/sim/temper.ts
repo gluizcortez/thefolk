@@ -249,7 +249,55 @@ export const LOOK_LIMITS: Record<keyof Look, number> = {
   formal: 4,
   sleepwear: 4,
   swimwear: 4,
+  headShape: 4,
+  eyes: 4,
+  eyeColor: 5,
+  lashes: 2,
+  brows: 4,
+  nose: 4,
+  mouth: 4,
+  ears: 3,
+  beard: 5,
+  marks: 4,
 };
+
+/**
+ * Plano 2, bloco 5: peças do rosto. Cabeça (oval, redonda, comprida,
+ * quadrada), olhos (amendoados, redondos, puxados, caídos), cor dos olhos,
+ * cílios, sobrancelhas (finas, retas, grossas, arqueadas), nariz (pequeno,
+ * reto, largo, adunco), boca (média, fina, cheia, larga), orelhas (pequenas,
+ * médias, de abano), barba (sem, por fazer, bigode, cavanhaque, cheia) e
+ * marcas (nenhuma, sardas, pinta, bochecha rosada).
+ */
+export const FACE_ROWS = ['headShape', 'eyes', 'eyeColor', 'lashes', 'brows', 'nose', 'mouth', 'ears', 'beard', 'marks'] as const satisfies readonly (keyof Look)[];
+
+/** Rosto que sai de um número (o mesmo número dá sempre o mesmo rosto). */
+export function faceFromSeed(seed: number): Pick<Look, (typeof FACE_ROWS)[number]> {
+  let h = Math.imul((seed | 0) ^ 0x5bd1e995, 0x27d4eb2d) >>> 0;
+  const next = (n: number) => {
+    h = (Math.imul(h ^ (h >>> 15), 0x2c1b3c6d) + 0x9e3779b9) >>> 0;
+    return (h >>> 8) % n;
+  };
+  return {
+    headShape: next(4),
+    eyes: next(4),
+    eyeColor: next(5),
+    lashes: next(2),
+    brows: next(4),
+    nose: next(4),
+    mouth: next(4),
+    ears: next(3),
+    // barba é minoria: dois em cada cinco têm alguma
+    beard: next(5) < 3 ? 0 : 1 + next(4),
+    marks: next(3) === 0 ? 1 + next(3) : 0,
+  };
+}
+
+function pickDefined<K extends keyof Look>(l: Partial<Look>, keys: readonly K[]): Partial<Pick<Look, K>> {
+  const out: Partial<Pick<Look, K>> = {};
+  for (const k of keys) if (l[k] !== undefined) out[k] = l[k];
+  return out;
+}
 
 /** Aparência completa a partir da antiga (só pele, cabelo, camisa e calça). */
 export function fullLook(look: Partial<Look> | undefined): Look {
@@ -268,5 +316,8 @@ export function fullLook(look: Partial<Look> | undefined): Look {
     formal: l.formal ?? 0,
     sleepwear: l.sleepwear ?? shirt % 4,
     swimwear: l.swimwear ?? (shirt + 1) % 4,
+    // plano 2, bloco 5: rosto em camadas; quem não tem ganha um tirado da própria aparência
+    ...faceFromSeed((l.skin ?? 0) * 7 + hair * 13 + shirt * 31 + (l.pants ?? 0) * 17 + (l.style ?? 0) * 5 + 3),
+    ...pickDefined(l, FACE_ROWS),
   };
 }

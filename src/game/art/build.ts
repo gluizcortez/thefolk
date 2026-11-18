@@ -133,7 +133,8 @@ export interface Ring {
  * Casca suave feita de anéis elípticos empilhados: é como se modelam troncos,
  * braços e pernas. A textura dá a volta no corpo, com u = 0.5 na frente (+z).
  */
-export function loft(rings: Ring[], sides: number, mat: THREE.Material): THREE.Mesh {
+/** `v` diz que faixa da textura (de baixo para cima) esta casca usa: dá para cortar um tronco em dois sem mexer na roupa. */
+export function loft(rings: Ring[], sides: number, mat: THREE.Material, v: [number, number] = [0, 1]): THREE.Mesh {
   const pos: number[] = [];
   const uv: number[] = [];
   const idx: number[] = [];
@@ -145,7 +146,7 @@ export function loft(rings: Ring[], sides: number, mat: THREE.Material): THREE.M
       const u = j / sides;
       const a = Math.PI * 2 * (u - 0.5);
       pos.push((ring.x ?? 0) + ring.rx * Math.sin(a), ring.y, (ring.z ?? 0) + ring.rz * Math.cos(a));
-      uv.push(u, (ring.y - y0) / (y1 - y0 || 1));
+      uv.push(u, v[0] + ((ring.y - y0) / (y1 - y0 || 1)) * (v[1] - v[0]));
     }
   });
   for (let i = 0; i < rings.length - 1; i++) {
@@ -162,7 +163,7 @@ export function loft(rings: Ring[], sides: number, mat: THREE.Material): THREE.M
     const ring = rings[ringIndex];
     const center = pos.length / 3;
     pos.push(ring.x ?? 0, ring.y, ring.z ?? 0);
-    uv.push(0.5, top ? 1 : 0);
+    uv.push(0.5, top ? v[1] : v[0]);
     for (let j = 0; j < sides; j++) {
       const a = ringIndex * cols + j;
       if (top) idx.push(a, a + 1, center);
