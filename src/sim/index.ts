@@ -39,3 +39,4 @@ export * from './peril';
 export * from './town';
 export * from './downtown';
 export * from './life';
+export * from './pace';

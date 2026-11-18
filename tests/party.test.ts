@@ -24,6 +24,7 @@ import {
 } from '../src/sim';
 import type { Sim } from '../src/sim';
 import { crowd, householdSim, run } from './helpers';
+import { play, playStep } from './helpers/player';
 
 const TOPIC_IDS = Object.keys(CATALOG.topics);
 
@@ -61,7 +62,7 @@ describe('assuntos (bloco 9)', () => {
   });
 
   it('quem tem lábia puxa o assunto que agrada a roda', () => {
-    const sim = crowd([{ x: 1, y: 1 }, { x: 3, y: 1 }, { x: 5, y: 1 }], { autonomy: false });
+    const sim = crowd([{ x: 1, y: 1 }, { x: 3, y: 1 }, { x: 5, y: 1 }], {});
     const [speaker, a, b] = sim.world.folks;
     const flat = Object.fromEntries(TOPIC_IDS.map((id) => [id, 0]));
     speaker.interests = { ...flat, money: 2 };
@@ -76,7 +77,7 @@ describe('assuntos (bloco 9)', () => {
 
   it('papo sobre assunto que o outro adora rende mais amizade do que sobre o que ele detesta', () => {
     const gain = (topic: string) => {
-      const sim = crowd([{ name: 'Ana', x: 2, y: 2 }, { name: 'Bia', x: 3, y: 2 }], { autonomy: false, relations: [{ a: 'Ana', b: 'Bia', friendship: 30 }] });
+      const sim = crowd([{ name: 'Ana', x: 2, y: 2 }, { name: 'Bia', x: 3, y: 2 }], { relations: [{ a: 'Ana', b: 'Bia', friendship: 30 }] });
       const [ana, bia] = sim.world.folks;
       const flat = Object.fromEntries(TOPIC_IDS.map((id) => [id, 0]));
       bia.interests = { ...flat, stars: 5, money: -5 };
@@ -94,7 +95,7 @@ describe('assuntos (bloco 9)', () => {
   });
 
   it('o balão de quem ouve mostra o assunto e se gostou', () => {
-    const sim = crowd([{ name: 'Ana', x: 2, y: 2 }, { name: 'Bia', x: 3, y: 2 }], { autonomy: false, relations: [{ a: 'Ana', b: 'Bia', friendship: 40 }] });
+    const sim = crowd([{ name: 'Ana', x: 2, y: 2 }, { name: 'Bia', x: 3, y: 2 }], { relations: [{ a: 'Ana', b: 'Bia', friendship: 40 }] });
     const [ana, bia] = sim.world.folks;
     bia.interests = Object.fromEntries(TOPIC_IDS.map((id) => [id, id === 'music' ? 5 : 0]));
     sim.dispatch({ type: 'queueSocial', folkId: ana.id, otherId: bia.id, socialId: 'chat', topic: 'music' });
@@ -118,7 +119,6 @@ describe('roda de conversa (bloco 9)', () => {
         { name: 'Davi', x: 8, y: 6 },
       ],
       {
-        autonomy: false,
         relations: [
           { a: 'Ana', b: 'Bia', friendship: 50 },
           { a: 'Ana', b: 'Caio', friendship: 50 },
@@ -166,7 +166,7 @@ describe('roda de conversa (bloco 9)', () => {
         { name: 'Bia', x: 6, y: 2 },
         { name: 'Caio', x: 2, y: 5 },
       ],
-      { autonomy: false, relations: [{ a: 'Ana', b: 'Bia', friendship: 60 }, { a: 'Ana', b: 'Caio', friendship: 60 }] },
+      { relations: [{ a: 'Ana', b: 'Bia', friendship: 60 }, { a: 'Ana', b: 'Caio', friendship: 60 }] },
     );
     const [ana, bia, caio] = sim.world.folks;
     sim.dispatch({ type: 'startCircle', folkId: ana.id, otherIds: [bia.id] });
@@ -178,7 +178,7 @@ describe('roda de conversa (bloco 9)', () => {
     expect(CIRCLE_MAX).toBe(4);
   });
 
-  it('com gente à toa em casa, uma roda se forma sozinha', () => {
+  it('plano 2: moradores à toa não formam roda sozinhos; a ordem forma', () => {
     let formed = 0;
     for (let seed = 1; seed <= 4; seed++) {
       const sim = crowd(
@@ -200,10 +200,12 @@ describe('roda de conversa (bloco 9)', () => {
           ],
         },
       );
-      for (let m = 0; m < 240 && sim.world.circles.length === 0; m++) sim.step();
-      if (sim.world.circles.length) formed++;
+      run(sim, 240);
+      expect(sim.world.circles).toHaveLength(0);
+      const [ana, ...rest] = sim.world.folks;
+      if (sim.dispatch({ type: 'startCircle', folkId: ana.id, otherIds: rest.map((f) => f.id) })) formed++;
     }
-    expect(formed).toBeGreaterThanOrEqual(2);
+    expect(formed).toBe(4);
   });
 });
 
@@ -216,7 +218,6 @@ describe('telefone social (bloco 9)', () => {
     befriend(sim, tome.id, n.id, 40);
     const rel = relationOf(sim.world, n.id, tome.id)!;
     rel.last = sim.world.tick - 3 * MINUTES_PER_DAY;
-    for (const f of sim.residents()) f.autonomy = false;
     tome.needs.social = 10;
     expect(sim.dispatch({ type: 'phoneFriend', folkId: tome.id, neighborId: n.id })).toBe(true);
     for (let m = 0; m < 120 && !sim.world.log.some((e) => e.key === 'log.called' || e.key === 'log.callBored'); m++) sim.step();
@@ -224,7 +225,7 @@ describe('telefone social (bloco 9)', () => {
     expect(sim.world.tick - relationOf(sim.world, n.id, tome.id)!.last).toBeLessThan(60);
   });
 
-  it('o telefone toca, alguém atende sozinho; sem ninguém em casa, a ligação cai', () => {
+  it('o telefone toca e o jogador manda atender; sem ordem, a ligação cai', () => {
     let answered = 0;
     let missed = 0;
     for (let seed = 1; seed <= 6; seed++) {
@@ -233,13 +234,17 @@ describe('telefone social (bloco 9)', () => {
       for (const r of sim.residents()) for (const n of sim.world.neighbors) if (!isServiceNeighbor(n)) befriend(sim, r.id, n.id, 30);
       const n = sim.world.neighbors.find((x) => !isServiceNeighbor(x))!;
       sim.world.call = { from: n.id, rang: sim.world.tick, reason: 'chat', answeredBy: 0 };
-      if (seed > 3) for (const r of sim.residents()) r.autonomy = false;
-      run(sim, 40);
+      play(sim, 40);
       if (sim.world.log.some((e) => e.key === 'log.callChat' || e.key === 'log.callGossip' || e.key === 'log.callVisit')) answered++;
-      if (sim.world.log.some((e) => e.key === 'log.missedCall')) missed++;
+      // plano 2: sem ordem, ninguém atende sozinho e a ligação cai
+      const alone = householdSim(seed);
+      at(alone, 10);
+      alone.world.call = { from: n.id, rang: alone.world.tick, reason: 'chat', answeredBy: 0 };
+      run(alone, 40);
+      if (alone.world.log.some((e) => e.key === 'log.missedCall')) missed++;
     }
-    expect(answered).toBeGreaterThanOrEqual(2);
-    expect(missed).toBeGreaterThanOrEqual(2);
+    expect(answered).toBeGreaterThanOrEqual(5);
+    expect(missed).toBe(6);
   });
 
   it('em alguns dias, os amigos ligam sozinhos', () => {
@@ -360,7 +365,6 @@ describe('panelinhas (bloco 9)', () => {
         { name: 'Fábio', x: 7, y: 5 },
       ],
       {
-        autonomy: false,
         relations: [
           { a: 'Ana', b: 'Bia', friendship: 60 },
           { a: 'Bia', b: 'Caio', friendship: 60 },
@@ -384,7 +388,7 @@ describe('panelinhas (bloco 9)', () => {
 
   it('festa com rivais vira briga e notícia', () => {
     let brawls = 0;
-    for (let seed = 1; seed <= 5; seed++) {
+    for (let seed = 1; seed <= 8; seed++) {
       const sim = householdSim(seed);
       at(sim, 14);
       const host = sim.residents()[0];
@@ -392,7 +396,7 @@ describe('panelinhas (bloco 9)', () => {
       for (const g of [a, b, c]) befriend(sim, host.id, g.id, 70);
       befriend(sim, a.id, b.id, -70);
       sim.dispatch({ type: 'throwParty', folkId: host.id, guestIds: [a.id, b.id, c.id] });
-      for (let m = 0; m < 6 * 60 && (sim.world.party || m < 60); m++) sim.step();
+      for (let m = 0; m < 6 * 60 && (sim.world.party || m < 60); m++) playStep(sim);
       if (sim.world.news.some((n) => n.kind === 'partyBrawl')) brawls++;
     }
     expect(brawls).toBeGreaterThanOrEqual(2);
@@ -402,7 +406,6 @@ describe('panelinhas (bloco 9)', () => {
 describe('conversas por nível de relação (bloco 9)', () => {
   it('melhores amigos têm conversas próprias; inimigos também', () => {
     const sim = crowd([{ name: 'Ana', x: 1, y: 1 }, { name: 'Bia', x: 2, y: 1 }], {
-      autonomy: false,
       relations: [{ a: 'Ana', b: 'Bia', friendship: 80 }],
     });
     const [ana, bia] = sim.world.folks;
@@ -426,7 +429,7 @@ describe('conversas por nível de relação (bloco 9)', () => {
 
 describe('desvio local (bloco 9)', () => {
   it('quem anda não atravessa quem está parado no caminho', () => {
-    const sim = crowd([{ name: 'Ana', x: 1, y: 3 }, { name: 'Bia', x: 5, y: 3 }], { autonomy: false });
+    const sim = crowd([{ name: 'Ana', x: 1, y: 3 }, { name: 'Bia', x: 5, y: 3 }], {});
     const [ana, bia] = sim.world.folks;
     sim.dispatch({ type: 'queueGoto', folkId: ana.id, x: 9, y: 3 });
     let crossed = false;

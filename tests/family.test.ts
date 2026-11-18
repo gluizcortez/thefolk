@@ -31,6 +31,7 @@ import {
 } from '../src/sim';
 import type { FamilyDraft, Folk, Look, LogEntry, MemberDraft, Temper } from '../src/sim';
 import { run } from './helpers';
+import { play, playStep } from './helpers/player';
 
 const LOOK: Look = { skin: 1, hair: 2, shirt: 3, pants: 1, style: 2, face: 1, body: 2, formal: 1, sleepwear: 0, swimwear: 3 };
 
@@ -176,7 +177,7 @@ describe('criar família (bloco 5)', () => {
       const sim = new Sim(CATALOG, createWorld(familySeed(draftOf(member('Ana', neat), member('Beto', slob)), seed)));
       const [a, b] = sim.residents();
       for (let m = 0; m < 4 * MINUTES_PER_DAY; m++) {
-        sim.step();
+        playStep(sim);
         for (const f of [a, b]) {
           const act = f.queue[0];
           if (!act || act.phase !== 'using') continue;
@@ -226,7 +227,7 @@ describe('hábito muda o temperamento devagar (bloco 5)', () => {
 
   it('limpar e conversar contam como hábito', () => {
     const sim = new Sim(CATALOG, createWorld(starterHouse(8)));
-    run(sim, 6 * 60);
+    play(sim, 6 * 60);
     const total = sim.residents().reduce((s, f) => s + TEMPER_AXES.reduce((x, a) => x + Math.abs(f.habits[a] ?? 0), 0), 0);
     expect(total).toBeGreaterThan(0);
   });
@@ -236,7 +237,6 @@ describe('roupas por ocasião (bloco 5)', () => {
   it('guarda-roupa troca a roupa; cama põe pijama e chuveiro, roupão', () => {
     const sim = new Sim(CATALOG, createWorld(starterHouse(9)));
     const tome = sim.residents()[0];
-    tome.autonomy = false;
     const wardrobe = sim.world.objects.find((o) => o.defId === 'wardrobe')!;
     expect(sim.dispatch({ type: 'queueUse', folkId: tome.id, objectId: wardrobe.id, interactionId: 'dress_formal' })).toBe(true);
     for (let i = 0; i < 120 && tome.outfit !== 'formal'; i++) sim.step();

@@ -35,9 +35,10 @@ import {
 } from '../src/sim';
 import type { Folk, World } from '../src/sim';
 import { householdSim, workSim } from './helpers';
+import { playStep } from './helpers/player';
 
 function until(sim: Sim, tick: number): void {
-  while (sim.world.tick < tick) sim.step();
+  while (sim.world.tick < tick) playStep(sim);
 }
 
 function hired(careerId = 'office', seed = 5): { sim: Sim; folk: Folk } {
@@ -252,7 +253,6 @@ describe('carona', () => {
     const shift = nextShift(CATALOG, folk, sim.world.tick)!;
     until(sim, shift.start - CALL_AHEAD);
     folk.queue = [];
-    folk.autonomy = false;
     until(sim, shift.start + RIDE_GRACE - 5);
     expect(rideFor(CATALOG, folk, sim.world.tick)).not.toBeNull();
     expect(sim.world.log.some((l) => l.key === 'log.rideHonk')).toBe(true);

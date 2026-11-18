@@ -11,7 +11,8 @@ import {
   xpForLevel,
 } from '../src/sim';
 import type { Folk } from '../src/sim';
-import { run, starterSim } from './helpers';
+import { starterSim } from './helpers';
+import { play, playStep } from './helpers/player';
 
 const office = CATALOG.careers.office;
 
@@ -24,7 +25,7 @@ function hired(seed = 5): { sim: Sim; folk: Folk } {
 
 /** Avança até o minuto pedido. */
 function until(sim: Sim, tick: number): void {
-  while (sim.world.tick < tick) sim.step();
+  while (sim.world.tick < tick) playStep(sim);
 }
 
 describe('emprego', () => {
@@ -94,7 +95,8 @@ describe('emprego', () => {
 
   it('promoção exige desempenho e as habilidades do próximo cargo', () => {
     const { sim, folk } = hired();
-    folk.job!.performance = PROMOTE_AT + 5;
+    // folga para um evento do expediente que custe desempenho
+    folk.job!.performance = 100;
     folk.needs = { ...folk.needs, fun: 100, social: 100, comfort: 100, hunger: 100, energy: 100 };
     let shift = nextShift(CATALOG, folk, sim.world.tick)!;
     until(sim, shift.end);
@@ -123,7 +125,7 @@ describe('emprego', () => {
   it('um mês de trabalho com IA ligada: o folk vai trabalhar e o caixa sobe', () => {
     const { sim, folk } = hired(11);
     const start = sim.world.household.funds;
-    run(sim, 28 * MINUTES_PER_DAY);
+    play(sim, 28 * MINUTES_PER_DAY);
     expect(folk.job).not.toBeNull();
     expect(folk.job!.shifts).toBeGreaterThanOrEqual(15);
     expect(sim.world.household.funds).toBeGreaterThan(start);

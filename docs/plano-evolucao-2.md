@@ -110,6 +110,8 @@ Por que essa ordem:
 
 ## Bloco 1 — Comando do jogador e ritmo do tempo (save v22)
 
+**Feito em 18/11/2026** (save v22). Ficou para depois: arrastar na fila (bloco 2) e caminhada de 0,8 s por tile.
+
 O jogador passa a mandar em tudo, e o tempo passa num ritmo em que dá para
 acompanhar cada gesto.
 

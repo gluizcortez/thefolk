@@ -21,6 +21,7 @@ import {
 } from '../src/sim';
 import type { World } from '../src/sim';
 import { crowd, householdSim, openField, run } from './helpers';
+import { playStep } from './helpers/player';
 
 const LINES = ['bed', 'sofa', 'armchair', 'chair', 'table', 'shower', 'toilet', 'fridge', 'stove', 'tv', 'stereo', 'lamp', 'bookshelf'];
 
@@ -61,7 +62,6 @@ describe('catálogo em faixas (bloco 4)', () => {
     const cheap = openField(6, 6, [{ defId: 'showercheap', x: 2, y: 2 }], { x: 2, y: 3, needs: { hygiene: 10, comfort: 50 } });
     const dear = openField(6, 6, [{ defId: 'showerluxe', x: 2, y: 2 }], { x: 2, y: 3, needs: { hygiene: 10, comfort: 50 } });
     for (const sim of [cheap, dear]) {
-      sim.world.folks[0].autonomy = false;
       sim.dispatch({ type: 'queueUse', folkId: sim.world.folks[0].id, objectId: sim.world.objects[0].id, interactionId: 'shower' });
       run(sim, 12);
     }
@@ -90,7 +90,6 @@ describe('catálogo em faixas (bloco 4)', () => {
 describe('depreciação e desfazer no modo compra (bloco 4)', () => {
   it('no dia da compra vale o que custou; depois da virada perde 15% e o uso tira mais', () => {
     const sim = openField(8, 8, [], { x: 0, y: 0 }, 1, 5000);
-    sim.world.folks[0].autonomy = false;
     sim.dispatch({ type: 'buy', defId: 'armchair', x: 4, y: 4, rot: 0 });
     const obj = sim.world.objects[0];
     const def = CATALOG.objects.armchair;
@@ -141,7 +140,6 @@ describe('comer à mesa (bloco 4)', () => {
       { defId: 'tablefold', x: 6, y: 3 },
       { defId: 'chair', x: 6, y: 4, rot: 2 },
     ], { x: 1, y: 3, needs: { hunger, comfort: 30 } });
-    sim.world.folks[0].autonomy = false;
     return sim;
   }
 
@@ -211,7 +209,7 @@ describe('atividades a dois (bloco 4)', () => {
         { name: 'Ana', x: 5, y: 1, needs: { fun: 20, social: 30 } },
         { name: 'Bia', x: 5, y: 7, needs: { fun: 20, social: 30 } },
       ],
-      { w: 10, h: 9, objects: [{ defId: 'chessboard', x: 5, y: 4 }], autonomy: false },
+      { w: 10, h: 9, objects: [{ defId: 'chessboard', x: 5, y: 4 }] },
     );
     const board = sim.world.objects[0];
     const [a, b] = sim.world.folks;
@@ -268,7 +266,6 @@ describe('objeto querido (bloco 4)', () => {
   it('quem mais usa se apega; vender o objeto dói', () => {
     const sim = openField(8, 8, [{ defId: 'armchair', x: 3, y: 3 }], { x: 3, y: 4, needs: { comfort: 10 } });
     const folk = sim.world.folks[0];
-    folk.autonomy = false;
     const chair = sim.world.objects[0];
     chair.uses = { [folk.id]: BELOVED_MINUTES - 2 };
     sim.dispatch({ type: 'queueUse', folkId: folk.id, objectId: chair.id, interactionId: 'rest' });
@@ -286,7 +283,6 @@ describe('objeto querido (bloco 4)', () => {
   it('não vira querido de quem usou menos que outro', () => {
     const sim = openField(8, 8, [{ defId: 'armchair', x: 3, y: 3 }], { x: 3, y: 4, needs: { comfort: 10 } });
     const folk = sim.world.folks[0];
-    folk.autonomy = false;
     const chair = sim.world.objects[0];
     chair.uses = { [folk.id]: BELOVED_MINUTES - 2, '999': BELOVED_MINUTES + 500 };
     sim.dispatch({ type: 'queueUse', folkId: folk.id, objectId: chair.id, interactionId: 'rest' });
@@ -312,7 +308,7 @@ describe('save v9 (bloco 4)', () => {
   });
 });
 
-describe('semana sem jogador (bloco 4)', () => {
+describe('semana com o jogador de teste (bloco 4)', () => {
   it('sete dias com jogos, mesa e cadeiras: ninguém desmaia e os dois jogam juntos', () => {
     const sim = householdSim(11);
     sim.world.household.funds = 20000;
@@ -326,7 +322,7 @@ describe('semana sem jogador (bloco 4)', () => {
     let together = 0;
     let atTable = 0;
     for (let m = 0; m < 7 * MINUTES_PER_DAY; m++) {
-      sim.step();
+      playStep(sim);
       if (m % 10 !== 0) continue;
       const card = sim.world.folks.filter((f) => f.queue[0]?.phase === 'using' && f.queue[0].interactionId === 'cards');
       if (card.length >= 2) together++;

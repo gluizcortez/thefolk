@@ -17,7 +17,8 @@ import {
 } from '../src/sim';
 import type { Sim } from '../src/sim';
 import { NEIGHBORS } from '../src/data/neighbors';
-import { householdSim, run, starterSim } from './helpers';
+import { householdSim, starterSim } from './helpers';
+import { play, playStep } from './helpers/player';
 
 const UP = (y: number) => rowOn({ h: 14 } as never, 1, y);
 
@@ -124,7 +125,7 @@ describe('andares (bloco 12)', () => {
     let climbed = false;
     let slept = false;
     for (let i = 0; i < 400 && !slept; i++) {
-      run(sim, 1);
+      play(sim, 1);
       if (levelOfRow(sim.world.grid, folk.y) === 0 && folk.x >= 10 && folk.x <= 12 && folk.y === 10) climbed = true;
       const a = folk.queue[0];
       slept = a?.phase === 'using' && sim.world.objects.find((o) => o.id === a.objectId)?.defId === 'bed';
@@ -251,7 +252,7 @@ describe('semana no sobrado (bloco 12)', () => {
     let upstairs = 0;
     for (let day = 0; day < 7; day++) {
       for (let m = 0; m < 1440; m++) {
-        sim.step();
+        playStep(sim);
         if (sim.world.folks.some((f) => !f.away && levelOfRow(sim.world.grid, f.y) === 1)) upstairs++;
       }
     }

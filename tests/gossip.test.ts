@@ -35,7 +35,7 @@ describe('ciúme e traição', () => {
         { name: 'Beto', x: 2, y: 1 },
         { name: 'Caio', x: 4, y: 1, traits: ['ciumento'] },
       ],
-      { autonomy: false },
+      {},
     );
     const [ana, beto, caio] = sim.world.folks;
     rel(sim, ana.id, caio.id, { romance: 50, friendship: 40 });
@@ -64,7 +64,7 @@ describe('ciúme e traição', () => {
         { name: 'Caio', x: 10, y: 6 },
         { name: 'Dani', x: 11, y: 6, traits: ['fofoqueiro'] },
       ],
-      { autonomy: false },
+      {},
     );
     const [ana, beto, caio, dani] = sim.world.folks;
     rel(sim, ana.id, caio.id, { romance: 70 });
@@ -85,7 +85,7 @@ describe('ciúme e traição', () => {
   });
 
   it('quem namora firme resiste a flerte de outra pessoa', () => {
-    const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 5, y: 1 }], { autonomy: false });
+    const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 5, y: 1 }], {});
     const [a, b, c] = sim.world.folks;
     rel(sim, b.id, a.id, { friendship: 40, romance: 30 });
     const flirt = CATALOG.socials.flirt;
@@ -99,7 +99,7 @@ describe('ciúme e traição', () => {
 
 describe('término', () => {
   it('terminar o namoro pela conversa', () => {
-    const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }], { autonomy: false });
+    const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }], {});
     const [a, b] = sim.world.folks;
     rel(sim, a.id, b.id, { romance: 60, friendship: 40 });
     rel(sim, b.id, a.id, { romance: 60, friendship: 40 });
@@ -116,7 +116,7 @@ describe('término', () => {
   });
 
   it('namoro que esfriou termina sozinho', () => {
-    const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }], { autonomy: false });
+    const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }], {});
     const [a, b] = sim.world.folks;
     rel(sim, a.id, b.id, { romance: 5 });
     rel(sim, b.id, a.id, { romance: 50 });
@@ -140,7 +140,7 @@ describe('fofoca e reputação', () => {
         { name: 'Dani', x: 7, y: 1 },
         { name: 'Edu', x: 9, y: 1 },
       ],
-      { autonomy: false },
+      {},
     );
     const [ana, beto, caio, dani, edu] = sim.world.folks;
     rel(sim, beto.id, caio.id, { friendship: 50 });
@@ -159,7 +159,7 @@ describe('fofoca e reputação', () => {
   });
 
   it('fofocar no papo passa a notícia adiante', () => {
-    const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 9, y: 6 }], { autonomy: false });
+    const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 9, y: 6 }], {});
     const [a, b, c] = sim.world.folks;
     rel(sim, a.id, b.id, { friendship: 60 });
     rel(sim, b.id, a.id, { friendship: 60 });
@@ -174,7 +174,7 @@ describe('fofoca e reputação', () => {
   });
 
   it('ninguém espalha podre de si mesmo, nem de quem ama muito', () => {
-    const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 9, y: 6 }], { autonomy: false });
+    const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 9, y: 6 }], {});
     const [a, b, c] = sim.world.folks;
     createNews(sim.world, CATALOG, noLog, 'fought', a.id, 0);
     rel(sim, a.id, c.id, { friendship: 80 });
@@ -187,7 +187,7 @@ describe('fofoca e reputação', () => {
   });
 
   it('boa fama abre portas; má fama fecha', () => {
-    const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }], { autonomy: false });
+    const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }], {});
     const [a, b] = sim.world.folks;
     rel(sim, b.id, a.id, { friendship: 0 });
     const chat = CATALOG.socials.shopTalk;
@@ -201,7 +201,7 @@ describe('fofoca e reputação', () => {
 
 describe('lembranças guiam o comportamento', () => {
   it('com mágoa, o folk evita papo amigável e só sobra pedir desculpas ou brigar', () => {
-    const sim = crowd([{ x: 1, y: 1 }, { x: 3, y: 1 }], { autonomy: false });
+    const sim = crowd([{ x: 1, y: 1 }, { x: 3, y: 1 }], {});
     const [a, b] = sim.world.folks;
     rel(sim, a.id, b.id, { friendship: 10 });
     rel(sim, b.id, a.id, { friendship: 10 });
@@ -222,7 +222,7 @@ describe('lembranças guiam o comportamento', () => {
   });
 
   it('pedir desculpas só aparece para quem guarda mágoa, e a lembrança boa compensa', () => {
-    const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }], { autonomy: false });
+    const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }], {});
     const [a, b] = sim.world.folks;
     rel(sim, a.id, b.id, { friendship: 10 });
     rel(sim, b.id, a.id, { friendship: 30 });

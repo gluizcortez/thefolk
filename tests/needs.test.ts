@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CATALOG } from '../src/data/catalog';
 import { NEED_IDS, ambienceTarget, fullNeeds, moodOf } from '../src/sim';
 import { openField, run, starterSim } from './helpers';
+import { TestPlayer } from './helpers/player';
 
 describe('necessidades', () => {
   it('decaem com o tempo e nunca saem de 0..100', () => {
@@ -36,7 +37,6 @@ describe('necessidades', () => {
       needs: { ...fullNeeds(90), hunger: 20 },
     });
     const folk = sim.world.folks[0];
-    folk.autonomy = false;
     const fridge = sim.world.objects[0];
     sim.dispatch({ type: 'queueUse', folkId: folk.id, objectId: fridge.id, interactionId: 'meal' });
     run(sim, 10);
@@ -65,7 +65,6 @@ describe('necessidades', () => {
       ],
       { x: 4, y: 4, needs: fullNeeds(50) },
     );
-    nice.world.folks[0].autonomy = false;
     expect(ambienceTarget(nice.world, CATALOG, nice.world.folks[0])).toBeGreaterThan(
       ambienceTarget(bare.world, CATALOG, bare.world.folks[0]),
     );
@@ -90,14 +89,15 @@ describe('necessidades', () => {
     expect(tired.world.folks[0].needs.energy).toBeGreaterThan(20);
   });
 
-  it('um folk autônomo sobrevive vários dias na casa inicial', () => {
+  it('com o jogador de teste, um folk sobrevive vários dias na casa inicial', () => {
     const sim = starterSim(7);
+    const player = new TestPlayer(sim);
     const folk = sim.world.folks[0];
     let collapses = 0;
     let moodSum = 0;
     const total = 5 * 1440;
     for (let i = 0; i < total; i++) {
-      sim.step();
+      player.step();
       moodSum += moodOf(CATALOG, folk.needs);
     }
     collapses = sim.world.log.filter((l) => l.key === 'log.collapse').length;

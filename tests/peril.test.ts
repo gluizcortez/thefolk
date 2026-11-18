@@ -20,6 +20,7 @@ import {
 } from '../src/sim';
 import type { Sim, WorldObject } from '../src/sim';
 import { crowd, householdSim, run } from './helpers';
+import { playStep } from './helpers/player';
 
 // Bloco 14: fogo, gatuno, morte, barganha, lápide, fantasma e luto.
 
@@ -41,7 +42,7 @@ describe('fogo (bloco 14)', () => {
   });
 
   it('esquenta, pula para o sofá do lado, queima até virar cinza e se apaga sozinho', () => {
-    const sim = crowd([{ x: 10, y: 6 }], { objects: [{ defId: 'sofa', x: 2, y: 2 }], autonomy: false, seed: 3 });
+    const sim = crowd([{ x: 10, y: 6 }], { objects: [{ defId: 'sofa', x: 2, y: 2 }], seed: 3 });
     const sofa = objOf(sim, 'sofa')!;
     // fogo no chão colado ao sofá
     addFire(sim.world, CATALOG, 4, 2);
@@ -58,7 +59,7 @@ describe('fogo (bloco 14)', () => {
   });
 
   it('parede segura o fogo', () => {
-    const sim = crowd([{ x: 10, y: 6 }], { objects: [{ defId: 'sofa', x: 2, y: 2 }], autonomy: false });
+    const sim = crowd([{ x: 10, y: 6 }], { objects: [{ defId: 'sofa', x: 2, y: 2 }] });
     sim.world.grid.edges['4,2,W'] = 'wall';
     const fire = addFire(sim.world, CATALOG, 4, 2)!;
     fire.heat = 100;
@@ -69,22 +70,22 @@ describe('fogo (bloco 14)', () => {
   it('com extintor, o morador apaga sozinho; sem, chama os bombeiros pelo telefone e eles apagam', () => {
     const withExt = crowd([{ x: 8, y: 5 }], { objects: [{ defId: 'extinguisher', x: 10, y: 5 }] });
     addFire(withExt.world, CATALOG, 3, 2);
-    for (let i = 0; i < 200 && withExt.world.fires.length > 0; i++) withExt.step();
+    for (let i = 0; i < 200 && withExt.world.fires.length > 0; i++) playStep(withExt);
     expect(withExt.world.fires).toHaveLength(0);
     expect(logged(withExt, 'log.fireOut')).toBe(true);
 
     const sim = crowd([{ x: 8, y: 5 }], { objects: [{ defId: 'phone', x: 10, y: 5 }], neighbors: crew('firefighter') });
     addFire(sim.world, CATALOG, 3, 2);
-    for (let i = 0; i < 30 && sim.world.help.fire === 0; i++) sim.step();
+    for (let i = 0; i < 30 && sim.world.help.fire === 0; i++) playStep(sim);
     expect(sim.world.help.fire).toBeGreaterThan(0);
     expect(logged(sim, 'log.calledFire')).toBe(true);
-    for (let i = 0; i < FIRE_RESPONSE + 200 && (sim.world.fires.length > 0 || sim.world.help.fire !== 0); i++) sim.step();
+    for (let i = 0; i < FIRE_RESPONSE + 200 && (sim.world.fires.length > 0 || sim.world.help.fire !== 0); i++) playStep(sim);
     expect(logged(sim, 'log.firefightersArrive')).toBe(true);
     expect(sim.world.fires).toHaveLength(0);
   });
 
   it('o detector de fumaça chama os bombeiros sozinho', () => {
-    const sim = crowd([{ x: 10, y: 6 }], { objects: [{ defId: 'smokealarm', x: 4, y: 3 }], autonomy: false, neighbors: crew('firefighter') });
+    const sim = crowd([{ x: 10, y: 6 }], { objects: [{ defId: 'smokealarm', x: 4, y: 3 }], neighbors: crew('firefighter') });
     addFire(sim.world, CATALOG, 3, 2);
     expect(smokeSeen(sim.world, CATALOG)).toBe(true);
     sim.step();
@@ -97,7 +98,7 @@ describe('fogo (bloco 14)', () => {
     addFire(sim.world, CATALOG, 3, 2);
     let panicked = false;
     for (let i = 0; i < 40 && !panicked; i++) {
-      sim.step();
+      playStep(sim);
       panicked = sim.world.folks[0].queue[0]?.kind === 'panic';
     }
     expect(panicked).toBe(true);
@@ -111,7 +112,7 @@ describe('fogo (bloco 14)', () => {
   it('lareira acesa com o sofá colado acaba pegando fogo', () => {
     let fires = 0;
     for (let seed = 1; seed <= 6; seed++) {
-      const sim = crowd([{ x: 10, y: 6 }], { objects: [{ defId: 'fireplace', x: 2, y: 2 }, { defId: 'sofa', x: 4, y: 2 }], autonomy: false, seed });
+      const sim = crowd([{ x: 10, y: 6 }], { objects: [{ defId: 'fireplace', x: 2, y: 2 }, { defId: 'sofa', x: 4, y: 2 }], seed });
       const hearth = objOf(sim, 'fireplace')!;
       ok(sim, { type: 'queueUse', folkId: sim.world.folks[0].id, objectId: hearth.id, interactionId: 'kindle' });
       for (let i = 0; i < 260 && sim.world.fires.length === 0; i++) sim.step();
@@ -127,7 +128,7 @@ describe('gatuno (bloco 14)', () => {
   function house(alarm: boolean): Sim {
     const objects = [{ defId: 'tv', x: 6, y: 2 }];
     if (alarm) objects.push({ defId: 'phone', x: 2, y: 6 });
-    const sim = crowd([{ x: 10, y: 6 }], { objects, autonomy: false, neighbors: crew('burglar', 'police'), startTick: 1 * 60 });
+    const sim = crowd([{ x: 10, y: 6 }], { objects, neighbors: crew('burglar', 'police'), startTick: 1 * 60 });
     // metade de cima vira dentro de casa
     for (let y = 0; y < 4; y++) for (let x = 0; x < 12; x++) sim.world.grid.floor[y * sim.world.grid.w + x] = 'wood';
     if (alarm) {
@@ -178,7 +179,7 @@ describe('morte, barganha e fantasma (bloco 14)', () => {
         { name: 'Ada Teste', x: 3, y: 4, needs: { hunger: 0 } },
         { name: 'Bia Teste', x: 6, y: 4 },
       ],
-      { autonomy: false, neighbors: crew('reaper'), relations: [{ a: 'Ada Teste', b: 'Bia Teste', friendship: 60 }], seed },
+      { neighbors: crew('reaper'), relations: [{ a: 'Ada Teste', b: 'Bia Teste', friendship: 60 }], seed },
     );
     return sim;
   }
@@ -288,13 +289,13 @@ describe('morte, barganha e fantasma (bloco 14)', () => {
     fire.fuel = 1000;
     for (let i = 0; i < SCORCH_DEATH + 2 && !bia.down; i++) {
       bia.queue = [];
-      sim.step();
+      playStep(sim);
     }
     expect(bia.down).toBe('fire');
   });
 
   it('preso na piscina sem escadinha, cansa até se afogar', () => {
-    const sim = crowd([{ x: 1, y: 6, needs: { energy: 3 } }, { x: 9, y: 6 }], { autonomy: false, neighbors: crew('reaper'), w: 10, h: 8 });
+    const sim = crowd([{ x: 1, y: 6, needs: { energy: 3 } }, { x: 9, y: 6 }], { neighbors: crew('reaper'), w: 10, h: 8 });
     ok(sim, { type: 'paintFloor', x0: 3, y0: 2, x1: 5, y1: 3, floorId: 'pool' });
     const folk = sim.world.folks[0];
     folk.adrift = { x: 4, y: 2 };

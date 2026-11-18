@@ -28,6 +28,7 @@ import {
 import type { FamilyDraft, World } from '../src/sim';
 import { reachable } from '../src/sim/economy';
 import { run } from './helpers';
+import { play } from './helpers/player';
 
 const CTX = { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES, catalog: CATALOG, town: TOWN };
 
@@ -207,7 +208,7 @@ describe('bloco 15: bairro', () => {
     const start = fam.funds;
     // dia 1 começa às 7h: roda até as 3h de sete dias depois
     const days = 7;
-    run(sim, days * 1440 - 4 * 60 + TOWN_HOUR * 60 - w.tick % 1440 + 1);
+    play(sim, days * 1440 - 4 * 60 + TOWN_HOUR * 60 - w.tick % 1440 + 1);
     expect(fam.funds).not.toBe(start);
     // ganhou em cinco dos sete dias (no mínimo uma vez) e gastou
     const worked = level.days.length;
@@ -276,12 +277,12 @@ describe('bloco 15: bairro', () => {
   it('sete dias no bairro, trocando de família no meio, sem colapso', () => {
     const sim = townSim(11);
     const w = sim.world;
-    run(sim, 3 * 1440);
+    play(sim, 3 * 1440);
     const other = lotOfFamily(w, 'Telhado').fam;
     expect(sim.dispatch({ type: 'playFamily', familyId: other.id })).toBe(true);
-    run(sim, 2 * 1440);
+    play(sim, 2 * 1440);
     expect(sim.dispatch({ type: 'playFamily', familyId: 1 })).toBe(true);
-    run(sim, 2 * 1440);
+    play(sim, 2 * 1440);
     const home = w.folks.filter((f) => !f.visit);
     expect(home.length).toBeGreaterThan(0);
     for (const f of home) expect(f.needs.hunger).toBeGreaterThan(0);

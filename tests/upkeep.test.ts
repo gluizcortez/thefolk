@@ -18,14 +18,16 @@ import {
 } from '../src/sim';
 import type { Folk, LogEntry, Sim as SimT } from '../src/sim';
 import { crowd, householdSim, openField, run } from './helpers';
+import { play, TestPlayer } from './helpers/player';
 
 const objOf = (sim: SimT, defId: string) => sim.world.objects.find((o) => o.defId === defId)!;
 
 /** Roda e guarda tudo o que passou pelo log (o log do mundo só guarda os últimos 30). */
-function runLogged(sim: SimT, ticks: number, seen: LogEntry[] = []): LogEntry[] {
+function runLogged(sim: SimT, ticks: number, seen: LogEntry[] = [], player?: TestPlayer): LogEntry[] {
   let last = sim.world.log.length ? sim.world.log[sim.world.log.length - 1].tick : -1;
   for (let i = 0; i < ticks; i++) {
-    sim.step();
+    if (player) player.step();
+    else sim.step();
     for (const e of sim.world.log) if (e.tick > last) seen.push(e);
     if (sim.world.log.length) last = sim.world.log[sim.world.log.length - 1].tick;
   }
@@ -47,7 +49,6 @@ function runUntilIdle(sim: SimT, folk: Folk, limit = 400): string[] {
 function solo(objects: Parameters<typeof openField>[2], opts: Parameters<typeof openField>[3] = { x: 1, y: 1 }, seed = 1) {
   const sim = openField(8, 8, objects, { needs: { hunger: 90, energy: 90, bladder: 90, hygiene: 90, comfort: 90, fun: 90, social: 90 }, ...opts }, seed);
   const folk = sim.world.folks[0];
-  folk.autonomy = false;
   return { sim, folk };
 }
 
@@ -143,7 +144,6 @@ describe('bloco 1: quebrar e consertar', () => {
     for (let seed = 1; seed <= 20; seed++) {
       const sim = openField(6, 6, [{ defId: 'tv', x: 3, y: 1 }], { x: 2, y: 1 }, seed);
       const folk = sim.world.folks[0];
-      folk.autonomy = false;
       objOf(sim, 'tv').state.broken = true;
       sim.dispatch({ type: 'queueUse', folkId: folk.id, objectId: objOf(sim, 'tv').id, interactionId: 'repair' });
       const seen = runLogged(sim, 200);
@@ -254,7 +254,7 @@ describe('bloco 1: bagunça solta', () => {
   });
 
   it('bagunça derruba o ambiente, mais ainda para quem é caprichoso', () => {
-    const neat = crowd([{ x: 3, y: 3, traits: ['caprichoso'] }, { x: 5, y: 3, traits: ['desleixado'] }], { autonomy: false });
+    const neat = crowd([{ x: 3, y: 3, traits: ['caprichoso'] }, { x: 5, y: 3, traits: ['desleixado'] }], {});
     const [a, b] = neat.world.folks;
     b.x = a.x;
     b.y = a.y;
@@ -270,7 +270,6 @@ describe('bloco 1: bagunça solta', () => {
 
   it('caprichoso reclama de quem deixou a louça (lembrança nova)', () => {
     const sim = crowd([{ name: 'Clara', x: 2, y: 2, traits: ['caprichoso'] }, { name: 'Duda', x: 6, y: 6 }], {
-      autonomy: false,
       objects: [{ defId: 'sink', x: 8, y: 2 }],
     });
     const [clara, duda] = sim.world.folks;
@@ -294,7 +293,7 @@ describe('bloco 1: a IA cuida da casa', () => {
     const tv = objOf(sim, 'tv');
     toilet.state.dirt = 95;
     tv.state.broken = true;
-    run(sim, 240);
+    play(sim, 240);
     expect(toilet.state.dirt).toBeLessThan(30);
     expect(tv.state.broken).toBe(false);
   });
@@ -302,7 +301,7 @@ describe('bloco 1: a IA cuida da casa', () => {
   it('recolhe a bagunça do chão', () => {
     const sim = openField(8, 8, [], { x: 1, y: 1, needs: { hunger: 95, energy: 95, bladder: 95, hygiene: 95, comfort: 95, fun: 95, social: 95 } });
     addMess(sim.world, 'puddle', 5, 5, 0);
-    run(sim, 60);
+    play(sim, 60);
     expect(sim.world.mess).toHaveLength(0);
   });
 
@@ -324,7 +323,7 @@ describe('bloco 1: a IA cuida da casa', () => {
 describe('bloco 1: save v6', () => {
   it('um save da fatia 5 (versão 5) abre com tudo limpo e inteiro', () => {
     const sim = householdSim(3);
-    run(sim, 600);
+    play(sim, 600);
     const v5 = JSON.parse(JSON.stringify({ version: 5, savedAt: 2, world: sim.world }));
     delete v5.world.mess;
     for (const o of v5.world.objects) delete o.state;
@@ -333,12 +332,12 @@ describe('bloco 1: save v6', () => {
     expect(file.world.mess).toEqual([]);
     expect(file.world.objects.every((o) => o.state && o.state.dirt === 0 && !o.state.broken)).toBe(true);
     const restored = new Sim(CATALOG, file.world);
-    run(restored, 1440);
+    play(restored, 1440);
     expect(restored.world.objects.some((o) => o.state.dirt > 0 || o.state.wear > 0)).toBe(true);
   });
 });
 
-describe('bloco 1: uma semana sem jogador', () => {
+describe('bloco 1: uma semana com o jogador de teste', () => {
   it('a casa suja, alguém limpa, algo quebra e é consertado, e ninguém entra em colapso', () => {
     // semente trocada no bloco 9 (rodas e telefone mudaram a sequência do sorteio; na 2 nada quebrou)
     const sim = householdSim(4);
@@ -346,8 +345,9 @@ describe('bloco 1: uma semana sem jogador', () => {
     let cleaned = 0;
     let tidied = 0;
     const seen: LogEntry[] = [];
+    const player = new TestPlayer(sim);
     for (let i = 0; i < 7 * 1440; i++) {
-      runLogged(sim, 1, seen);
+      runLogged(sim, 1, seen, player);
       for (const o of sim.world.objects) maxDirt = Math.max(maxDirt, o.state.dirt);
       for (const f of sim.world.folks) {
         const a = f.queue[0];

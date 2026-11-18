@@ -71,7 +71,6 @@ export function crowd(
     neighbors?: WorldSeed['neighbors'];
     seed?: number;
     startTick?: number;
-    autonomy?: boolean;
   } = {},
 ): Sim {
   const w = opts.w ?? 12;
@@ -98,7 +97,6 @@ export function crowd(
       neighbors: opts.neighbors,
     }),
   );
-  if (opts.autonomy === false) for (const f of sim.world.folks) f.autonomy = false;
   return sim;
 }
 

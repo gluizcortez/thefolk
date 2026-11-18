@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CATALOG } from '../src/data/catalog';
 import { SAVE_VERSION, SaveError, Sim, clockOf, deserialize, formatClock, serialize } from '../src/sim';
 import { run, starterSim } from './helpers';
+import { play } from './helpers/player';
 
 describe('determinismo e save', () => {
   it('mesma seed, mesmo futuro; seeds diferentes divergem', () => {
@@ -120,7 +121,7 @@ describe('migração da fatia 5', () => {
     const lia = world.folks[1];
     expect(world.relations[`${folk.id}>${lia.id}`]).toEqual(sim.world.relations[`${folk.id}>${lia.id}`]);
     const restored = new Sim(CATALOG, world);
-    run(restored, 3 * 1440);
+    play(restored, 3 * 1440);
     expect(restored.world.folks[0].job?.shifts).toBeGreaterThan(0);
   });
 });

@@ -71,7 +71,8 @@ button {
 
 .clock {
   top: 14px;
-  left: 50%;
+  /* plano 2, bloco 1: com a quinta velocidade, o relógio puxa para a esquerda dos botões do canto */
+  left: calc(50% - 90px);
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -115,9 +116,9 @@ button {
 }
 
 .speed {
-  min-width: 34px;
+  min-width: 30px;
   height: 30px;
-  padding: 0 8px;
+  padding: 0 6px;
   border: 2px solid var(--ink);
   border-radius: 999px;
   background: var(--paper);
@@ -132,6 +133,17 @@ button {
 .speed.on {
   background: var(--terracotta);
   color: var(--cream);
+}
+
+/* plano 2, bloco 1: pular só com a casa toda ocupada */
+.speed.off {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.order-hint {
+  font-size: 11px;
+  opacity: 0.72;
 }
 
 /* ---------- salvar / carregar ---------- */

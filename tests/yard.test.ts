@@ -21,6 +21,7 @@ import {
 } from '../src/sim';
 import type { Sim, WorldObject } from '../src/sim';
 import { arriveAndAdmit, householdSim, openField, run, starterSim } from './helpers';
+import { play, playStep } from './helpers/player';
 
 const ok = (sim: Sim, cmd: Parameters<Sim['dispatch']>[0]) => {
   const r = sim.dispatch(cmd);
@@ -80,7 +81,6 @@ describe('piscina (bloco 13)', () => {
     const sim = poolField([], { x: 4, y: 6 });
     ok(sim, { type: 'buy', defId: 'poolladder', x: 4, y: 3, rot: 0 });
     const folk = sim.world.folks[0];
-    folk.autonomy = false;
     folk.needs.fun = 20;
     const ladder = objOf(sim, 'poolladder');
     ok(sim, { type: 'queueUse', folkId: folk.id, objectId: ladder.id, interactionId: 'swim' });
@@ -102,7 +102,6 @@ describe('piscina (bloco 13)', () => {
     expect(checkPlacement(sim.world, CATALOG, 'diveboard', 4, 4, 0).ok).toBe(true);
     ok(sim, { type: 'buy', defId: 'diveboard', x: 4, y: 4, rot: 0 });
     const folk = sim.world.folks[0];
-    folk.autonomy = false;
     folk.needs.fun = 30;
     folk.needs.comfort = 80;
     const logs = sim.world.log.length;
@@ -184,7 +183,6 @@ describe('jardim vivo (bloco 13)', () => {
     ok(sim, { type: 'buy', defId: 'rosebush', x: 5, y: 2, rot: 0 });
     const rose = objOf(sim, 'rosebush');
     const folk = sim.world.folks[0];
-    folk.autonomy = false;
     expect(sim.dispatch({ type: 'queueUse', folkId: folk.id, objectId: rose.id, interactionId: 'smell' })).toBe(false);
     rose.plant!.water = 20;
     ok(sim, { type: 'queueUse', folkId: folk.id, objectId: rose.id, interactionId: 'water' });
@@ -202,7 +200,6 @@ describe('jardim vivo (bloco 13)', () => {
   it('a horta dá fruto e a colheita vai para a despensa', () => {
     const sim = starterSim();
     const folk = sim.world.folks[0];
-    folk.autonomy = false;
     ok(sim, { type: 'buy', defId: 'veggiebed', x: 0, y: 12, rot: 0 });
     const bed = objOf(sim, 'veggiebed');
     bed.plant!.growth = 100;
@@ -235,7 +232,6 @@ describe('jardim vivo (bloco 13)', () => {
   it('o jardineiro vem de manhã, rega o que tem sede e cobra a diária', () => {
     const sim = householdSim(3);
     const pot = objOf(sim, 'plant');
-    for (const f of sim.world.folks) f.autonomy = false;
     sim.world.rules.death = false; // bloco 14: um dia sem comer não pode esvaziar a casa
     sim.world.household.gardener = true;
     // até as 7h59 do dia seguinte
@@ -255,11 +251,11 @@ describe('jardim vivo (bloco 13)', () => {
   it('quem mora cuida sozinho da planta com sede', () => {
     const sim = starterSim(5, { hunger: 90, energy: 90, bladder: 90, hygiene: 90, comfort: 90, fun: 90, social: 90 });
     const pot = objOf(sim, 'plant');
-    run(sim, 31);
+    play(sim, 31);
     for (const o of sim.world.objects) if (o.plant) o.plant.water = 5;
     let watered = false;
     for (let i = 0; i < 600 && !watered; i++) {
-      sim.step();
+      playStep(sim);
       watered = sim.world.folks[0].queue[0]?.interactionId === 'water';
     }
     expect(watered).toBe(true);
@@ -299,7 +295,7 @@ describe('save v17 (bloco 13)', () => {
     ok(sim, { type: 'buildFences', x0: 14, y0: 6, x1: 17, y1: 6, kind: 'fence' });
     ok(sim, { type: 'placeOpening', edge: '15,6,N', kind: 'gate' });
     sim.world.household.gardener = true;
-    run(sim, 7 * MINUTES_PER_DAY);
+    play(sim, 7 * MINUTES_PER_DAY);
     for (const f of sim.world.folks.filter((f) => !f.visit)) expect(f.collapsed).toBe(0);
     for (const o of sim.world.objects) if (o.plant) expect(o.plant.health).toBeGreaterThan(0);
     expect(sim.world.log.some((l) => l.key === 'log.gardenerDone')).toBe(true);

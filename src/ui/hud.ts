@@ -119,6 +119,8 @@ import {
   gradeBand,
   gradeText,
   kidAllows,
+  SKIP_SPEED,
+  canSkip,
 } from '../sim';
 import type {
   OpeningKind,
@@ -318,7 +320,6 @@ export class Hud {
   /** bloco 3: o cômodo onde o folk está, com nota e luz */
   private roomEl = el('div', 'room-line');
   private moodFill = el('div', 'mood-fill');
-  private autonomyInput = el('input');
   private queueEl = el('div', 'queue-list');
   private queueSig = '';
   private toastsEl = el('div', 'toasts');
@@ -427,6 +428,7 @@ export class Hud {
       [1, '▸', 'hud.speed1'],
       [2, '▸▸', 'hud.speed2'],
       [3, '▸▸▸', 'hud.speed3'],
+      [4, '▸▸❙', 'hud.speed4'],
     ];
     for (const [speed, glyph, tip] of defs) {
       const b = el('button', 'speed', glyph);
@@ -491,10 +493,10 @@ export class Hud {
   private setSpeed(speed: Speed): void {
     const cur = this.ctrl.world.speed;
     if (speed === 0 && cur === 0) {
-      this.ctrl.command({ type: 'setSpeed', speed: this.lastPausedSpeed });
+      this.ctrl.resumeSpeed(this.lastPausedSpeed);
     } else {
       if (speed === 0) this.lastPausedSpeed = cur;
-      this.ctrl.command({ type: 'setSpeed', speed });
+      this.ctrl.commandOrExplain({ type: 'setSpeed', speed });
     }
     this.update();
   }
@@ -609,17 +611,8 @@ export class Hud {
     const moodLine = el('div', 'mood-line');
     moodLine.append(moodLabel, this.moodWord);
     mood.append(moodLine, moodTrack);
-    const auto = el('label', 'autonomy');
-    this.autonomyInput.type = 'checkbox';
-    this.autonomyInput.addEventListener('change', () => {
-      this.ctrl.command({
-        type: 'setAutonomy',
-        folkId: this.ctrl.folk.id,
-        on: this.autonomyInput.checked,
-      });
-      this.queueSig = '';
-    });
-    auto.append(this.autonomyInput, el('span', 'switch'), el('span', '', t('hud.autonomy')));
+    // plano 2, bloco 1: sem jogo sozinho; a dica lembra como pôr na fila
+    const auto = el('div', 'order-hint', t('hud.orderHint'));
     const tabs = el('div', 'folk-tabs');
     for (const id of ['skills', 'job', 'relations', 'family'] as const) {
       const b = el('button', 'btn btn-small', t(`hud.${id}`));
@@ -848,11 +841,17 @@ export class Hud {
     const night = clock.hour < 6 || clock.hour >= 19;
     this.clockSky.classList.toggle('night', night);
     this.speedButtons.forEach((b, i) => b.classList.toggle('on', i === world.speed));
+    // plano 2, bloco 1: pular só acende com a casa toda dormindo, fora ou ocupada
+    const skip = this.speedButtons[SKIP_SPEED];
+    if (skip) {
+      const can = world.speed === SKIP_SPEED || canSkip(world, this.ctrl.sim.catalog);
+      skip.classList.toggle('off', !can);
+      skip.setAttribute('aria-disabled', String(!can));
+    }
 
     this.nameEl.textContent = folk.name;
     const traitText = [...(folk.age ? [t(`age.${folk.age}`)] : []), ...folk.traits.map((id) => t(`trait.${id}`))].join(' · ');
     if (this.traitsEl.textContent !== traitText) this.traitsEl.textContent = traitText;
-    this.autonomyInput.checked = folk.autonomy;
 
     const mood = moodOf(this.ctrl.sim.catalog, folk.needs);
     const level = mood >= 80 ? 5 : mood >= 62 ? 4 : mood >= 45 ? 3 : mood >= 28 ? 2 : 1;
@@ -934,7 +933,7 @@ export class Hud {
   private renderQueue(): void {
     const folk = this.ctrl.folk;
     const sig =
-      `${this.ctrl.mode}|${folk.away?.until ?? ''}|${folk.collapsed > 0}|${folk.autonomy}|` +
+      `${this.ctrl.mode}|${folk.away?.until ?? ''}|${folk.collapsed > 0}|` +
       folk.queue.map((a) => `${a.id}:${a.phase}`).join(',');
     if (sig === this.queueSig) return;
     this.queueSig = sig;
@@ -954,8 +953,7 @@ export class Hud {
       return;
     }
     if (folk.queue.length === 0) {
-      const key = folk.autonomy ? 'queue.empty' : 'queue.emptyManual';
-      this.queueEl.append(el('div', 'queue-empty', t(key, { name: folk.name.split(' ')[0] })));
+      this.queueEl.append(el('div', 'queue-empty', t('queue.emptyManual', { name: folk.name.split(' ')[0] })));
       return;
     }
     folk.queue.forEach((action, index) => {

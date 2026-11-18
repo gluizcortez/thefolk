@@ -15,7 +15,7 @@ import type { TownPlan } from './town';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 21;
+export const SAVE_VERSION = 22;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -313,6 +313,30 @@ const migrations: Record<number, Migration> = {
         families: world.town.families.map((fam) =>
           fam.stash ? { ...fam, stash: { ...fam.stash, folks: fam.stash.folks.map(fix), household: { ...fam.stash.household, album: fam.stash.household.album ?? [] } } } : fam,
         ),
+      };
+    }
+    return { ...save, world: world as unknown as Obj };
+  },
+  // plano 2, bloco 1: o jogador manda em tudo. O campo de autonomia sai de
+  // todos os folks (em jogo, em casa durante o passeio e das famílias
+  // guardadas) e quem estava fazendo algo por conta própria para.
+  21: (save) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    const fix = (f: World['folks'][number]) => {
+      const out = { ...f } as World['folks'][number] & { autonomy?: boolean };
+      delete out.autonomy;
+      if (!out.visit && out.queue?.some((a) => a.source === 'auto')) {
+        out.queue = out.queue.filter((a) => a.source !== 'auto');
+        out.path = [];
+      }
+      return out;
+    };
+    world.folks = (world.folks ?? []).map(fix);
+    if (world.outing?.home) world.outing = { ...world.outing, home: { ...world.outing.home, folks: world.outing.home.folks.map(fix) } };
+    if (world.town) {
+      world.town = {
+        ...world.town,
+        families: world.town.families.map((fam) => (fam.stash ? { ...fam, stash: { ...fam.stash, folks: fam.stash.folks.map(fix) } } : fam)),
       };
     }
     return { ...save, world: world as unknown as Obj };

@@ -25,6 +25,7 @@ import {
 } from '../src/sim';
 import type { Folk, InteractionDef, Sim as SimType } from '../src/sim';
 import { crowd, householdSim, openField, run, starterSim } from './helpers';
+import { playStep } from './helpers/player';
 
 const LOW = { hunger: 30, energy: 30, hygiene: 25, bladder: 40, comfort: 20, fun: 10, social: 15 };
 
@@ -34,7 +35,6 @@ function interaction(defId: string, id: string): InteractionDef {
 
 function deskSim(needs?: Record<string, number>): SimType {
   const sim = openField(8, 8, [{ defId: 'desk', x: 3, y: 3 }, { defId: 'fridge', x: 6, y: 1 }], { x: 3, y: 5, needs });
-  sim.world.folks[0].autonomy = false;
   return sim;
 }
 
@@ -181,7 +181,6 @@ describe('sono com horário (bloco 6)', () => {
       sim.world.tick = wake - 120;
       folk.needs.energy = 10;
       const bed = sim.world.objects.find((o) => o.defId === 'bed')!;
-      folk.autonomy = false;
       expect(sim.dispatch({ type: 'queueUse', folkId: folk.id, objectId: bed.id, interactionId: 'sleep' })).toBe(true);
       run(sim, 130);
       const rang = sim.world.log.some((l) => l.key === 'log.alarm');
@@ -200,7 +199,7 @@ describe('sono com horário (bloco 6)', () => {
       const awayBefore = new Map<number, boolean>();
       for (let m = 0; m < 7 * MINUTES_PER_DAY; m++) {
         for (const f of sim.world.folks) awayBefore.set(f.id, !!f.away);
-        sim.step();
+        playStep(sim);
         for (const f of sim.world.folks) if (f.away && !awayBefore.get(f.id)) atDeparture.push(f.needs.energy);
       }
       const keys = sim.world.log.map((l) => l.key);
@@ -286,7 +285,7 @@ describe('desejos do dia (bloco 6)', () => {
   });
 
   it('desejo de conversa se cumpre com papo aceito com aquela pessoa; o de compra, comprando', () => {
-    const sim = crowd([{ name: 'Ana', x: 2, y: 2 }, { name: 'Bia', x: 4, y: 2 }], { autonomy: false, relations: [{ a: 'Ana', b: 'Bia', friendship: 40 }] });
+    const sim = crowd([{ name: 'Ana', x: 2, y: 2 }, { name: 'Bia', x: 4, y: 2 }], { relations: [{ a: 'Ana', b: 'Bia', friendship: 40 }] });
     const [ana, bia] = sim.world.folks;
     ana.wishes = [
       { id: 950, defId: 'chatWith', other: bia.id, progress: 0, done: false },
@@ -310,7 +309,6 @@ describe('balões (bloco 6)', () => {
   it('necessidade baixa vira balão de vontade; quem ouve uma conversa mostra se gosta', () => {
     const sim = openField(8, 8, [], { x: 3, y: 3, needs: { hunger: 10 } });
     const folk = sim.world.folks[0];
-    folk.autonomy = false;
     let saw = false;
     for (let m = 0; m < 4 * THINK_EVERY && !saw; m++) {
       sim.step();
@@ -319,7 +317,7 @@ describe('balões (bloco 6)', () => {
     expect(saw).toBe(true);
     expect(folk.thought?.icon).toBe('hunger');
 
-    const talk = crowd([{ name: 'Ana', x: 2, y: 2 }, { name: 'Bia', x: 4, y: 2 }], { autonomy: false, relations: [{ a: 'Ana', b: 'Bia', friendship: 40 }] });
+    const talk = crowd([{ name: 'Ana', x: 2, y: 2 }, { name: 'Bia', x: 4, y: 2 }], { relations: [{ a: 'Ana', b: 'Bia', friendship: 40 }] });
     const [ana, bia] = talk.world.folks;
     talk.dispatch({ type: 'queueSocial', folkId: ana.id, otherId: bia.id, socialId: 'joke' });
     let chat = null;

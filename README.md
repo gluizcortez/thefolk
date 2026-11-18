@@ -2,8 +2,9 @@
 
 Jogo de simulação de vida para navegador. Você cuida de pessoas (os **folks**) em
 uma casa vista de cima, em três quartos: elas têm necessidades que caem com o
-tempo, agem sozinhas quando ninguém manda e obedecem a uma fila de ações que
-você monta.
+tempo e fazem o que você manda: cada clique é uma ordem, e o `Shift` monta
+uma fila. Parados, esperam com gestos (e sofrem as consequências se ninguém
+cuidar deles).
 
 Identidade, nomes, interface e arte são originais. O visual segue a tradição dos
 jogos de simulação de vida para PC do fim dos anos 90: vista isométrica 2:1,
@@ -41,17 +42,30 @@ npm run preview  # serve o dist/ localmente
 
 ## Como jogar
 
-- **Clique em um objeto** para abrir o menu de interações; a escolha entra na fila.
-- **Clique no chão** para mandar o folk até ali.
+- **Clique em um objeto** para abrir o menu de interações; a escolha vira a
+  ação atual do folk (ele larga o que fazia com uma saída limpa: levanta,
+  deixa o prato onde está, encerra a conversa). Com **`Shift`** apertado, a
+  escolha vai para o fim da fila (até 8 ações).
+- **Clique no chão** para mandar o folk até ali (o `Shift` vale igual).
 - A **fila** fica embaixo, no centro. O ✕ cancela qualquer item, inclusive o atual.
-  Itens tracejados são decisões do próprio folk.
-- **Relógio** no topo: pausa e três velocidades. Atalhos: `Espaço`, `1`, `2`, `3`.
+  Itens tracejados são reflexos (ouvir quem puxou conversa, acender a luz,
+  correr do fogo).
+- **Ninguém da família age sozinho** (plano 2, bloco 1). Sem ordem, o folk fica
+  no lugar com gestos de espera: olha em volta, se espreguiça, cruza os braços,
+  coça a cabeça, põe a mão na barriga com fome, boceja com sono, se remexe
+  apertado. Os balões avisam o que ele quer. Visitas, prestadores, figurantes,
+  bebês e as outras famílias do bairro continuam com vida própria; a carona do
+  trabalho e o ônibus da escola ainda chamam sozinhos.
+- **Relógio** no topo: pausa, normal (1 minuto de jogo por segundo), rápido (3),
+  muito rápido (10) e **pular** (60), que só acende com todos da casa dormindo,
+  fora ou no meio de algo longo e volta ao normal sozinho quando alguém fica
+  livre. Atalhos: `Espaço` ou `0` (pausa), `1`, `2`, `3`, `4`.
 - **Arraste** para mover a câmera, **role** para aproximar. `Esc` fecha o menu.
 - **Gire a câmera** em passos de 90° com `Q` e `E` ou com os botões ⟲ ⟳ no canto
   superior esquerdo.
 - O botão **Paredes** alterna entre em corte (some só o que fica na frente da
   câmera), baixas e inteiras.
-- A chave "Age por conta própria" liga e desliga a IA do folk.
+- Passar o mouse num objeto só desenha um contorno no chão (nada cresce).
 - **Dinheiro**: o saldo fica no relógio, ao lado do dia da semana. Passe o mouse
   para ver as contas na caixa de correio e quando chega a próxima; um selinho
   ✉ no saldo avisa que tem conta esperando. Lanche e ligações custam alguns
@@ -571,6 +585,7 @@ src/
     pathfinding.ts  A* no grid
     grid.ts         paredes nas bordas, navegação, tiles de uso
     clock.ts        relógio e velocidades
+    pace.ts         plano 2: quando dá para pular e os gestos de quem espera ordem
     rng.ts          RNG com seed (mulberry32)
     world.ts        criação do mundo a partir de um mapa em texto
     save.ts         formato de save versionado e migrações
@@ -609,7 +624,19 @@ tests/        testes do núcleo
 Decisões principais do núcleo:
 
 - **Tick fixo**: 1 tick = 1 minuto de jogo. A velocidade só muda quantos ticks
-  rodam por segundo real (2, 6 ou 20). A simulação nunca vê tempo real.
+  rodam por segundo real (1, 3, 10 ou 60 no pular; a tela avança por
+  acumulador e interpola o passo entre ticks). A simulação nunca vê tempo real.
+- **Sem autonomia na família** (plano 2): `pickAutonomous` só roda para visitas;
+  morador parado chama `reflex` (fogo perto, susto com gatuno). Ordem nova
+  passa por `enqueuePlayer`, que larga a fila com `abandon` (saída limpa) a
+  menos que o comando venha com `append: true`. `sim/pace.ts` diz quando dá
+  para pular (`canSkip`, `skipBlocker`) e qual gesto de espera mostrar
+  (`idleGesture`).
+- **Jogador de teste** (`tests/helpers/player.ts`): as semanas inteiras dos
+  testes rodam com um roteiro que manda como um jogador atento (atende porta
+  e telefone, apaga fogo, cuida do bebê, manda dormir às 23h e comer com fome
+  pela metade, e no resto escolhe pela conta de utilidade de `ai.ts`). Tudo
+  por `dispatch`, só para quem está parado.
 - **Determinismo**: o estado do RNG mora no `World`. Mesma seed e mesmos comandos
   dão o mesmo futuro, e salvar e carregar não muda nada (há teste para isso).
 - **Estado puro**: `World` é JSON puro; o save é o próprio estado mais uma versão.
@@ -1050,6 +1077,23 @@ O segundo plano está em [docs/plano-evolucao-2.md](docs/plano-evolucao-2.md):
 mais novos do gênero (jogador comanda tudo, tempo mais lento, HUD nova,
 atividades em etapas com animação, folks e objetos modulares, criador com
 traços e cidade aberta com o bairro dentro dela).
+
+- **Bloco 1 (feito)**: fim do jogo sozinho na família (gestos de espera e
+  reflexos), ordem nova substitui a atual com saída limpa e `Shift` põe na
+  fila, tempo em 1, 3 e 10 minutos por segundo mais o pular, sem aumento de
+  objetos sob o mouse e jogador de teste nas semanas dos testes (save v22).
+
+## Limitações conhecidas do bloco 1 (plano 2)
+
+- A caminhada continua a um tile por minuto de jogo (um segundo por tile no
+  normal, com o passo interpolado); o plano falava em 0,8 s.
+- Arrastar para reordenar a fila fica para o bloco 2, com a fila nova.
+- A carona do trabalho e o ônibus da escola ainda põem o folk a caminho
+  sozinhos (como nos jogos do gênero); o jogador pode cancelar.
+- Ninguém atende porta ou telefone sem ordem: quem toca vai embora e a
+  ligação cai.
+- A barra do relógio ainda é a antiga, só com o quinto botão; a HUD nova vem
+  no bloco 2.
 
 ## Limitações conhecidas do bloco 17
 

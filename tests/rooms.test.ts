@@ -21,6 +21,7 @@ import {
 } from '../src/sim';
 import type { World, WorldSeed } from '../src/sim';
 import { householdSim, run, starterSim } from './helpers';
+import { playStep } from './helpers/player';
 
 const NOON = 12 * 60;
 const NIGHT = 22 * 60;
@@ -198,7 +199,6 @@ describe('luz, dia e noite (bloco 3)', () => {
   it('o interruptor só oferece o que muda e o jogador pode acender e apagar', () => {
     const sim = starterSim(1);
     const folk = sim.world.folks[0];
-    folk.autonomy = false;
     const lamp = sim.world.objects.find((o) => o.defId === 'lamp')!;
     expect(sim.dispatch({ type: 'queueUse', folkId: folk.id, objectId: lamp.id, interactionId: 'lightOff' })).toBe(false);
     expect(sim.lastProblem).toBe('nothingToDo');
@@ -214,7 +214,6 @@ describe('luz, dia e noite (bloco 3)', () => {
     const sim = starterSim(1, { fun: 20 });
     sim.world.tick = NIGHT;
     const folk = sim.world.folks[0];
-    folk.autonomy = false;
     const shelf = sim.world.objects.find((o) => o.defId === 'bookshelf')!;
     expect(sim.dispatch({ type: 'queueUse', folkId: folk.id, objectId: shelf.id, interactionId: 'read' })).toBe(true);
     run(sim, 40);
@@ -228,7 +227,6 @@ describe('luz, dia e noite (bloco 3)', () => {
   it('de dia, com janela, ninguém acende nada', () => {
     const sim = starterSim(1, { fun: 20 });
     const folk = sim.world.folks[0];
-    folk.autonomy = false;
     const shelf = sim.world.objects.find((o) => o.defId === 'bookshelf')!;
     sim.dispatch({ type: 'queueUse', folkId: folk.id, objectId: shelf.id, interactionId: 'read' });
     run(sim, 40);
@@ -239,7 +237,6 @@ describe('luz, dia e noite (bloco 3)', () => {
     const sim = starterSim(1, { energy: 10 });
     sim.world.tick = NIGHT;
     const folk = sim.world.folks[0];
-    folk.autonomy = false;
     const lamp = sim.world.objects.find((o) => o.defId === 'lamp')!;
     lamp.lit = true;
     const bed = sim.world.objects.find((o) => o.defId === 'bed')!;
@@ -260,7 +257,6 @@ describe('luz, dia e noite (bloco 3)', () => {
         const sim = new Sim(CATALOG, createWorld(s));
         sim.world.tick = NIGHT;
         const folk = sim.world.folks[0];
-        folk.autonomy = false;
         const lamp = sim.world.objects.find((o) => o.defId === 'lamp')!;
         lamp.lit = true;
         sim.dispatch({ type: 'queueGoto', folkId: folk.id, x: 8, y: 9 });
@@ -275,7 +271,6 @@ describe('luz, dia e noite (bloco 3)', () => {
   it('lâmpada acesa sobe a conta de luz', () => {
     const bill = (lit: boolean) => {
       const sim = starterSim(1);
-      sim.world.folks[0].autonomy = false;
       for (const o of sim.world.objects) if (o.defId === 'ceilinglamp' || o.defId === 'lamp') o.lit = lit;
       run(sim, sim.world.household.nextBills - sim.world.tick);
       return sim.world.household.bills.at(-1)!;
@@ -359,7 +354,7 @@ describe('save v8 (bloco 3)', () => {
   });
 });
 
-describe('semana sem jogador (bloco 3)', () => {
+describe('semana com o jogador de teste (bloco 3)', () => {
   it('sete dias com dia e noite: ninguém desmaia, luzes acendem e apagam, a conta de luz cobra', () => {
     const sim = householdSim(7);
     let litAtNight = 0;
@@ -367,7 +362,7 @@ describe('semana sem jogador (bloco 3)', () => {
     let darkUse = 0;
     for (let d = 0; d < 7; d++) {
       for (let m = 0; m < 1440; m++) {
-        sim.step();
+        playStep(sim);
         const minute = sim.world.tick % 1440;
         const lit = sim.world.objects.filter((o) => o.lit).length;
         if (minute === 20 * 60 || minute === 21 * 60 || minute === 22 * 60) litAtNight += lit;

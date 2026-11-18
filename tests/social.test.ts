@@ -15,12 +15,13 @@ import {
   serialize,
 } from '../src/sim';
 import { arriveAndAdmit, crowd, householdSim, run } from './helpers';
+import { play, playStep } from './helpers/player';
 
 const ids = (sim: ReturnType<typeof crowd>) => sim.world.folks.map((f) => f.id);
 
 describe('relações', () => {
   it('são dirigidas: A pode gostar de B sem volta', () => {
-    const sim = crowd([{ x: 1, y: 1 }, { x: 3, y: 1 }], { autonomy: false });
+    const sim = crowd([{ x: 1, y: 1 }, { x: 3, y: 1 }], {});
     const [a, b] = sim.world.folks;
     applyDelta(sim.world, CATALOG, a, b, { friendship: 10 });
     expect(relationOf(sim.world, a.id, b.id)!.friendship).toBeGreaterThan(5);
@@ -28,7 +29,7 @@ describe('relações', () => {
   });
 
   it('ficam entre -100 e 100 e sobem cada vez mais devagar', () => {
-    const sim = crowd([{ x: 1, y: 1 }, { x: 3, y: 1 }], { autonomy: false });
+    const sim = crowd([{ x: 1, y: 1 }, { x: 3, y: 1 }], {});
     const [a, b] = sim.world.folks;
     const first = applyDelta(sim.world, CATALOG, a, b, { friendship: 10 }).friendship!;
     relationOf(sim.world, a.id, b.id)!.friendship = 80;
@@ -49,7 +50,7 @@ describe('relações', () => {
         { x: 3, y: 1, traits: ['tagarela'] },
         { x: 5, y: 1, traits: ['caseiro'] },
       ],
-      { autonomy: false },
+      {},
     );
     const [a, chatty, homey] = sim.world.folks;
     const bad = applyDelta(sim.world, CATALOG, a, chatty, { friendship: 5 }).friendship!;
@@ -58,7 +59,7 @@ describe('relações', () => {
   });
 
   it('esfriam sem contato, mas o respeito fica', () => {
-    const sim = crowd([{ x: 1, y: 1 }, { x: 3, y: 1 }], { autonomy: false });
+    const sim = crowd([{ x: 1, y: 1 }, { x: 3, y: 1 }], {});
     const [a, b] = sim.world.folks;
     applyDelta(sim.world, CATALOG, a, b, { friendship: 40, romance: 30, respect: 20 });
     const rel = relationOf(sim.world, a.id, b.id)!;
@@ -80,7 +81,7 @@ describe('relações', () => {
 
 describe('interações sociais', () => {
   it('quem não se conhece só pode cumprimentar', () => {
-    const sim = crowd([{ x: 1, y: 1 }, { x: 3, y: 1 }], { autonomy: false });
+    const sim = crowd([{ x: 1, y: 1 }, { x: 3, y: 1 }], {});
     const [a, b] = sim.world.folks;
     expect(availableSocials(sim.world, CATALOG, a, b).map((s) => s.id)).toEqual(['greet']);
   });
@@ -88,7 +89,6 @@ describe('interações sociais', () => {
   it('o menu abre conforme a relação: abraço com amizade, beijo com romance', () => {
     const sim = crowd([{ x: 1, y: 1 }, { x: 3, y: 1 }], {
       relations: [{ a: 'Pessoa 1', b: 'Pessoa 2', friendship: 45, romance: 45 }],
-      autonomy: false,
     });
     const [a, b] = sim.world.folks;
     const list = availableSocials(sim.world, CATALOG, a, b).map((s) => s.id);
@@ -102,7 +102,6 @@ describe('interações sociais', () => {
   it('pela fila: anda até o outro, conversam e a amizade e o social sobem', () => {
     const sim = crowd([{ x: 1, y: 1, needs: { social: 30 } }, { x: 6, y: 1, needs: { social: 30 } }], {
       relations: [{ a: 'Pessoa 1', b: 'Pessoa 2', friendship: 20 }],
-      autonomy: false,
     });
     const [a, b] = sim.world.folks;
     expect(sim.dispatch({ type: 'queueSocial', folkId: a.id, otherId: b.id, socialId: 'chat' })).toBe(true);
@@ -123,7 +122,7 @@ describe('interações sociais', () => {
   });
 
   it('cumprimentar faz os dois se conhecerem e guarda a lembrança', () => {
-    const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }], { autonomy: false });
+    const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }], {});
     const [a, b] = sim.world.folks;
     sim.dispatch({ type: 'queueSocial', folkId: a.id, otherId: b.id, socialId: 'greet' });
     run(sim, 10);
@@ -138,7 +137,7 @@ describe('interações sociais', () => {
         { x: 3, y: 1, traits: ['romantico'] },
         { x: 5, y: 1, traits: ['reservado'] },
       ],
-      { autonomy: false },
+      {},
     );
     const [a, fan, shy] = sim.world.folks;
     const flirt = CATALOG.socials.flirt;
@@ -154,7 +153,6 @@ describe('interações sociais', () => {
     for (let seed = 1; seed <= 12; seed++) {
       const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1, traits: ['romantico'] }], {
         relations: [{ a: 'Pessoa 1', b: 'Pessoa 2', friendship: 70, romance: 80 }],
-        autonomy: false,
         seed,
       });
       const [a, b] = sim.world.folks;
@@ -177,7 +175,6 @@ describe('interações sociais', () => {
   it('brigas deixam lembrança que pesa contra na próxima conversa', () => {
     const sim = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }], {
       relations: [{ a: 'Pessoa 1', b: 'Pessoa 2', friendship: 0 }],
-      autonomy: false,
     });
     const [a, b] = sim.world.folks;
     const before = acceptChance(sim.world, CATALOG, a, b, CATALOG.socials.chat);
@@ -188,7 +185,6 @@ describe('interações sociais', () => {
   it('cancelar a conversa libera quem estava esperando', () => {
     const sim = crowd([{ x: 1, y: 1 }, { x: 8, y: 1 }], {
       relations: [{ a: 'Pessoa 1', b: 'Pessoa 2', friendship: 20 }],
-      autonomy: false,
     });
     const [a, b] = sim.world.folks;
     sim.dispatch({ type: 'queueSocial', folkId: a.id, otherId: b.id, socialId: 'chat' });
@@ -206,7 +202,7 @@ describe('interações sociais', () => {
     const [a] = sim.world.folks;
     const best = scoreOptions(sim.world, CATALOG, a, sim.getNav())[0];
     expect(best.socialId).toBeDefined();
-    run(sim, 120);
+    play(sim, 120);
     expect(a.needs.social).toBeGreaterThan(30);
   });
 
@@ -227,10 +223,8 @@ describe('interações sociais', () => {
       objects: [{ defId: 'bed', x: 4, y: 2 }],
     });
     const [a, b] = sim.world.folks;
-    a.autonomy = false;
-    run(sim, 30);
+    play(sim, 30);
     expect(b.queue[0]?.interactionId).toBe('sleep');
-    a.autonomy = true;
     const options = scoreOptions(sim.world, CATALOG, a, sim.getNav());
     expect(options.some((o) => o.otherId === b.id)).toBe(false);
   });
@@ -244,7 +238,7 @@ describe('objetos de vários lugares', () => {
         { x: 6, y: 4, needs: { comfort: 10 } },
         { x: 9, y: 4, needs: { comfort: 10 } },
       ],
-      { objects: [{ defId: 'sofa', x: 4, y: 2 }], autonomy: false },
+      { objects: [{ defId: 'sofa', x: 4, y: 2 }] },
     );
     const sofa = sim.world.objects[0];
     for (const f of sim.world.folks) sim.dispatch({ type: 'queueUse', folkId: f.id, objectId: sofa.id, interactionId: 'rest' });
@@ -261,7 +255,7 @@ describe('visitas', () => {
     let arrived = 0;
     let left = 0;
     for (let i = 0; i < 4 * 1440; i++) {
-      sim.step();
+      playStep(sim);
       const last = sim.world.log[sim.world.log.length - 1];
       if (last?.tick === sim.world.tick && last.key === 'log.dropIn') arrived++;
       if (last?.tick === sim.world.tick && last.key === 'log.left') left++;
@@ -280,8 +274,6 @@ describe('visitas', () => {
     const sim = householdSim(5);
     sim.world.tick = 10 * 60; // de manhã cedo ninguém atende convite
     const host = sim.world.folks[0];
-    sim.world.folks[1].autonomy = false;
-    host.autonomy = false;
     sim.world.lastDropIn = sim.world.tick + 99999; // sem visitas surpresa
     const n = sim.world.neighbors[0];
     // quem gosta de quem liga topa quase sempre
@@ -296,7 +288,7 @@ describe('visitas', () => {
     arriveAndAdmit(sim, n.id, 90);
     expect(sim.findFolk(n.id)?.visit).toBeTruthy();
     // não dá para mandar na visita
-    expect(sim.dispatch({ type: 'setAutonomy', folkId: n.id, on: false })).toBe(false);
+    expect(sim.dispatch({ type: 'queueGoto', folkId: n.id, x: 1, y: 1 })).toBe(false);
     expect(sim.lastProblem).toBe('visitor');
   });
 
@@ -304,7 +296,6 @@ describe('visitas', () => {
     const sim = householdSim(5);
     sim.world.tick = 23 * 60;
     const host = sim.world.folks[0];
-    host.autonomy = false;
     sim.dispatch({ type: 'invite', folkId: host.id, neighborId: sim.world.neighbors[0].id });
     run(sim, 60);
     expect(sim.world.log.some((l) => l.key === 'log.inviteLate')).toBe(true);
@@ -314,14 +305,11 @@ describe('visitas', () => {
   it('pedir para ir embora manda a visita para a calçada e ela some', () => {
     const sim = householdSim(5);
     const host = sim.world.folks[0];
-    host.autonomy = false;
-    sim.world.folks[1].autonomy = false;
     sim.world.lastDropIn = sim.world.tick + 99999;
     const n = sim.world.neighbors[1];
     sim.world.pendingVisits.push({ neighborId: n.id, at: sim.world.tick + 1, hostId: host.id });
     arriveAndAdmit(sim, n.id, 2);
     const guest = sim.findFolk(n.id)!;
-    guest.autonomy = false;
     expect(sim.dispatch({ type: 'queueSocial', folkId: host.id, otherId: guest.id, socialId: 'sendHome' })).toBe(true);
     run(sim, 120);
     expect(sim.findFolk(n.id)).toBeUndefined();
@@ -333,14 +321,11 @@ describe('visitas', () => {
     for (let seed = 1; seed <= 15 && !moved; seed++) {
       const sim = householdSim(seed);
       const host = sim.world.folks[0];
-      host.autonomy = false;
-      sim.world.folks[1].autonomy = false;
       sim.world.lastDropIn = sim.world.tick + 99999;
       const n = sim.world.neighbors[0];
       sim.world.pendingVisits.push({ neighborId: n.id, at: sim.world.tick + 1, hostId: host.id });
       arriveAndAdmit(sim, n.id, 2);
       const guest = sim.findFolk(n.id)!;
-      guest.autonomy = false;
       applyDelta(sim.world, CATALOG, host, guest, { friendship: 70 });
       applyDelta(sim.world, CATALOG, guest, host, { friendship: 70 });
       relationOf(sim.world, host.id, guest.id)!.friendship = 80;

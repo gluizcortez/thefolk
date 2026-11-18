@@ -25,7 +25,24 @@ import {
 import { Sim, createWorld, isBuildCommand } from '../sim';
 import type { Command, FamilyDraft, LifePace, FenceKind, Folk, OpeningKind, Rotation, Side, Speed, World } from '../sim';
 import { MAX_LEVELS, levelOfRow } from '../sim';
-import { cleanName, familyProblem, foundTown } from '../sim';
+import { cleanName, familyProblem, foundTown, skipBlocker } from '../sim';
+
+/** Comandos que dão ordem a um folk (Shift na tela põe na fila em vez de substituir). */
+const ORDER_TYPES = new Set<Command['type']>([
+  'queueUse',
+  'queueGoto',
+  'queueTidy',
+  'callService',
+  'answerDoor',
+  'queueSocial',
+  'invite',
+  'joinCircle',
+  'startCircle',
+  'phoneFriend',
+  'throwParty',
+  'answerPhone',
+  'planWedding',
+]);
 
 export type Mode = 'live' | 'buy' | 'build';
 
@@ -244,6 +261,10 @@ export class GameController {
   }
 
   command(cmd: Command): boolean {
+    // plano 2, bloco 1: com Shift apertado a ordem vai para o fim da fila
+    if (this.shiftHeld && ORDER_TYPES.has(cmd.type) && !('append' in cmd && cmd.append !== undefined)) {
+      cmd = { ...cmd, append: true } as Command;
+    }
     const ok = this.sim.dispatch(cmd);
     for (const cb of this.commandListeners) cb(cmd, ok);
     if (ok && (cmd.type === 'buy' || cmd.type === 'sell' || cmd.type === 'move' || cmd.type === 'undoBuy')) this.objectsVersion++;
@@ -251,7 +272,15 @@ export class GameController {
     return ok;
   }
 
+  /** Volta a uma velocidade guardada; pular que não vale mais vira normal. */
+  resumeSpeed(speed: Speed): void {
+    if (!this.command({ type: 'setSpeed', speed }) && speed !== 1) this.command({ type: 'setSpeed', speed: 1 });
+  }
+
   /** Manda o comando e, se for recusado, explica o motivo num aviso. */
+  /** Plano 2, bloco 1: Shift apertado agora (a tela avisa pelo teclado e pelo mouse). */
+  shiftHeld = false;
+
   commandOrExplain(cmd: Command): boolean {
     const ok = this.command(cmd);
     if (!ok) this.toast(this.problemText());
@@ -264,6 +293,10 @@ export class GameController {
     if (p === 'away') return t('toast.away', { name });
     if (p === 'collapsed') return t('toast.collapsed', { name });
     if (p === 'queueFull') return t('toast.queueFull');
+    if (p === 'cantSkip') {
+      const who = skipBlocker(this.world, this.sim.catalog);
+      return who ? t('toast.cantSkipWho', { name: who.name.split(' ')[0] }) : t('toast.cantSkip');
+    }
     if (p === 'visitor') return t('problem.visitor');
     // bloco 6: a recusa diz por quê (fome, sono, mau humor...)
     if (p === 'refused') return t(`refuse.${this.sim.lastRefusal ?? 'mood'}`, { name });
@@ -285,7 +318,7 @@ export class GameController {
       if (wasLive) this.speedBeforeBuy = this.world.speed === 0 ? 1 : this.world.speed;
       this.command({ type: 'setSpeed', speed: 0 });
     } else {
-      this.command({ type: 'setSpeed', speed: this.speedBeforeBuy });
+      this.resumeSpeed(this.speedBeforeBuy);
     }
   }
 
@@ -362,7 +395,7 @@ export class GameController {
   chooseWorkEvent(folkId: number, choice: number): boolean {
     const ok = this.commandOrExplain({ type: 'workChoice', folkId, choice });
     if (ok && this.pausedForEvent && this.mode === 'live' && !this.world.folks.some((f) => f.away?.event)) {
-      this.command({ type: 'setSpeed', speed: this.pausedForEvent });
+      this.resumeSpeed(this.pausedForEvent);
       this.pausedForEvent = 0;
     }
     return ok;
@@ -372,7 +405,7 @@ export class GameController {
   chooseBargain(pick: 'even' | 'odd' | null): boolean {
     const ok = this.commandOrExplain({ type: 'bargain', pick });
     if (ok && this.pausedForBargain && this.mode === 'live' && this.world.passings[0]?.stage !== 'waiting') {
-      this.command({ type: 'setSpeed', speed: this.pausedForBargain });
+      this.resumeSpeed(this.pausedForBargain);
       this.pausedForBargain = 0;
     }
     return ok;
@@ -482,7 +515,7 @@ export class GameController {
   closeTown(): void {
     if (this.screen !== 'town') return;
     this.screen = 'lot';
-    if (!this.houseEmpty) this.command({ type: 'setSpeed', speed: this.speedBeforeTown });
+    if (!this.houseEmpty) this.resumeSpeed(this.speedBeforeTown);
   }
 
   /** Joga com outra família, muda de casa ou traz família nova: o lote em jogo é outro. */

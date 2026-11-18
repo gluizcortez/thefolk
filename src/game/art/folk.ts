@@ -42,7 +42,15 @@ export type FolkAnim =
   // bloco 14: pânico (braços sacudindo por cima da cabeça), apagando fogo e o Seu Sereno de lanterna erguida
   | 'panic'
   | 'spray'
-  | 'lantern';
+  | 'lantern'
+  // plano 2, bloco 1: gestos de quem está parado esperando ordem (veja sim/pace.ts)
+  | 'g_look'
+  | 'g_stretch'
+  | 'g_arms'
+  | 'g_scratch'
+  | 'g_belly'
+  | 'g_yawn'
+  | 'g_fidget';
 
 export type FolkLook = Look;
 
@@ -362,6 +370,90 @@ function poseFor(anim: FolkAnim, t: number, mood: number, energy = 100): Pose {
       p.torsoX += 0.1;
       p.headY = 0.12 * Math.sin(t * 5.3);
       p.headX += 0.06;
+      break;
+    }
+    case 'g_look': {
+      // olha em volta devagar, o corpo acompanhando um pouco
+      p.headY = 0.75 * Math.sin(t * 1.1);
+      p.torsoY = 0.12 * Math.sin(t * 1.1 - 0.4);
+      break;
+    }
+    case 'g_stretch': {
+      // espreguiça: braços para cima, peito para trás, na ponta do fôlego
+      const k = 0.5 + 0.5 * Math.sin(t * 1.4);
+      p.armLX = -2.6 - 0.3 * k;
+      p.armRX = -2.6 - 0.3 * k;
+      p.armLOut = 0.22;
+      p.armROut = 0.22;
+      p.elbowL = -0.25;
+      p.elbowR = -0.25;
+      p.torsoX -= 0.12 * k;
+      p.headX -= 0.2 * k;
+      p.hipsY = HIPS_Y + 0.015 * k;
+      break;
+    }
+    case 'g_arms': {
+      // braços cruzados, o peso passando de uma perna para a outra
+      const w = Math.sin(t * 0.9);
+      p.armLX = -1.1;
+      p.armRX = -1.1;
+      p.armLOut = -0.5;
+      p.armROut = -0.5;
+      p.elbowL = -1.9;
+      p.elbowR = -1.9;
+      p.torsoZ = 0.05 * w;
+      p.legOut = 0.04;
+      p.kneeL = Math.max(0, 0.18 * w);
+      p.kneeR = Math.max(0, -0.18 * w);
+      p.headY = 0.2 * Math.sin(t * 0.5);
+      break;
+    }
+    case 'g_scratch': {
+      // coça a cabeça com a mão direita, cabeça de lado
+      p.armRX = -2.3;
+      p.armROut = 0.55;
+      p.elbowR = -2.1 + 0.25 * Math.sin(t * 14);
+      p.headZ = 0.14;
+      p.headX += 0.06;
+      break;
+    }
+    case 'g_belly': {
+      // fome: as duas mãos na barriga, corpo curvado
+      p.armLX = -0.55;
+      p.armRX = -0.55;
+      p.armLOut = -0.28;
+      p.armROut = -0.28;
+      p.elbowL = -1.45 + 0.08 * Math.sin(t * 3);
+      p.elbowR = -1.45 - 0.08 * Math.sin(t * 3);
+      p.torsoX += 0.16;
+      p.headX += 0.12;
+      break;
+    }
+    case 'g_yawn': {
+      // sono: a mão vai à boca e a cabeça cai para trás
+      const k = 0.5 + 0.5 * Math.sin(t * 1.2);
+      p.armRX = -1.7;
+      p.armROut = -0.25;
+      p.elbowR = -2.3;
+      p.headX -= 0.28 * k;
+      p.torsoX -= 0.05 * k;
+      p.armLOut = 0.12;
+      break;
+    }
+    case 'g_fidget': {
+      // apertado: pernas juntas, pulinhos curtos no lugar
+      const b = Math.abs(Math.sin(t * 7));
+      p.legOut = -0.03;
+      p.kneeL = 0.12 + 0.12 * b;
+      p.kneeR = 0.12 + 0.12 * (1 - b);
+      p.hipsY = HIPS_Y - 0.02 + 0.02 * b;
+      p.armLX = -0.3;
+      p.armRX = -0.3;
+      p.armLOut = -0.2;
+      p.armROut = -0.2;
+      p.elbowL = -0.9;
+      p.elbowR = -0.9;
+      p.torsoX += 0.08;
       break;
     }
     case 'refuse': {

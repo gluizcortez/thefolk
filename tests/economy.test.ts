@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CATALOG } from '../src/data/catalog';
 import { BILL_INTERVAL, MINUTES_PER_DAY, billAmount, checkPlacement, footprint, formatMoney, sellValue, useTiles } from '../src/sim';
 import { openField, run, starterSim } from './helpers';
+import { play } from './helpers/player';
 
 describe('dinheiro e modo compra', () => {
   it('formata tostões com separador de milhar', () => {
@@ -97,13 +98,13 @@ describe('dinheiro e modo compra', () => {
   it('a refeição sai da despensa, o lanche cobra e a IA não escolhe o que não pode pagar', () => {
     const broke = openField(6, 6, [{ defId: 'fridge', x: 2, y: 2 }], { x: 2, y: 3, needs: { hunger: 5 } }, 1, 0);
     broke.world.household.pantry = 0;
-    run(broke, 30);
+    play(broke, 30);
     expect(broke.world.folks[0].queue.some((a) => a.objectId === broke.world.objects[0].id)).toBe(false);
     expect(broke.world.folks[0].needs.hunger).toBeLessThan(5);
 
     // com comida na geladeira, come mesmo sem dinheiro
     const stocked = openField(6, 6, [{ defId: 'fridge', x: 2, y: 2 }], { x: 2, y: 3, needs: { hunger: 5 } }, 1, 0);
-    run(stocked, 30);
+    play(stocked, 30);
     expect(stocked.world.folks[0].needs.hunger).toBeGreaterThan(20);
     expect(stocked.world.household.pantry).toBeLessThan(16);
     expect(stocked.world.household.funds).toBe(0);
@@ -111,7 +112,7 @@ describe('dinheiro e modo compra', () => {
     // sem estoque, sobra o lanche, que é pago
     const snack = openField(6, 6, [{ defId: 'fridge', x: 2, y: 2 }], { x: 2, y: 3, needs: { hunger: 5 } }, 1, 100);
     snack.world.household.pantry = 0;
-    run(snack, 30);
+    play(snack, 30);
     expect(snack.world.folks[0].needs.hunger).toBeGreaterThan(20);
     expect(snack.world.household.funds).toBeLessThan(100);
   });
@@ -123,7 +124,6 @@ describe('dinheiro e modo compra', () => {
     const funds = house.funds;
     const amount = billAmount(sim.world, CATALOG);
     expect(amount).toBeGreaterThan(0);
-    sim.world.folks[0].autonomy = false;
     sim.world.folks[0].needs = { ...sim.world.folks[0].needs, bladder: 100, energy: 100 };
     while (sim.world.tick < first) sim.step();
     expect(house.nextBills).toBe(first + BILL_INTERVAL);

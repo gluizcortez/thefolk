@@ -35,6 +35,7 @@ import {
 } from '../src/sim';
 import type { Folk, InteractionDef, Sim, WorldObject } from '../src/sim';
 import { householdSim, run } from './helpers';
+import { playStep } from './helpers/player';
 
 /** Põe o relógio num horário (dia 0 = segunda) sem passar pelas contas. */
 function at(sim: Sim, hour: number, day = 0, minute = 0): void {
@@ -76,7 +77,6 @@ function family(seed = 1) {
   }
   setDating(sim.world, a.id, b.id, true);
   for (const f of sim.world.folks) {
-    f.autonomy = false;
     happy(f);
   }
   const crib = place(sim, 'crib');
@@ -183,7 +183,6 @@ describe('ter um bebê (bloco 11)', () => {
     at(sim, 11);
     const tome = sim.residents()[0];
     happy(tome);
-    tome.autonomy = false;
     const phone = sim.world.objects.find((o) => o.defId === 'phone')!;
     expect(sim.dispatch({ type: 'queueUse', folkId: tome.id, objectId: phone.id, interactionId: 'adopt' })).toBe(false);
     expect(sim.lastProblem).toBe('noCrib');
@@ -218,13 +217,12 @@ describe('cuidar do bebê (bloco 11)', () => {
     expect(baby.kid!.cares[a.id]).toBeGreaterThan(0);
   });
 
-  it('com a IA ligada, os adultos cuidam sozinhos do bebê que chora', () => {
+  it('plano 2: sem ordem, ninguém cuida sozinho do bebê; o choro só avisa', () => {
     const { sim, a, b, baby } = withBaby(2);
-    a.autonomy = true;
-    b.autonomy = true;
     baby.needs.hygiene = 20;
-    until(sim, () => baby.needs.hygiene > 90, 180);
-    expect(baby.needs.hygiene).toBeGreaterThan(90);
+    run(sim, 180);
+    expect(baby.needs.hygiene).toBeLessThan(40);
+    expect([...a.queue, ...b.queue].some((q) => q.interactionId !== undefined)).toBe(false);
   });
 
   it('o bebê dorme sozinho quando cansa e acorda descansado', () => {
@@ -280,7 +278,6 @@ describe('cuidar do bebê (bloco 11)', () => {
     happy(baby);
     sim.step();
     expect(baby.age).toBe('child');
-    expect(baby.autonomy).toBe(true);
     expect(crib.baby).toBeUndefined();
     expect(cribOf(sim.world, baby)).toBeUndefined();
     expect(baby.temper.order).toBe(4);
@@ -302,7 +299,6 @@ describe('escola e boletim (bloco 11)', () => {
     const f = withBaby(seed);
     const kid = f.baby;
     kid.age = 'child';
-    kid.autonomy = false;
     delete f.crib.baby;
     kid.x = 8;
     kid.y = 9;
@@ -427,7 +423,7 @@ describe('equilíbrio (bloco 11)', () => {
     let minHunger = 100;
     let minHygiene = 100;
     for (let m = 0; m < 7 * MINUTES_PER_DAY; m++) {
-      sim.step();
+      playStep(sim);
       if (baby.age === 'baby') {
         minHunger = Math.min(minHunger, baby.needs.hunger);
         minHygiene = Math.min(minHygiene, baby.needs.hygiene);

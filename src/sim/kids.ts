@@ -268,7 +268,6 @@ export function createBaby(world: World, catalog: Catalog, parents: Parent[], cr
     needs: { hunger: 80, energy: 70, hygiene: 90, bladder: 100, comfort: 100, fun: 80, social: 70, ambience: 60 },
     queue: [],
     path: [],
-    autonomy: false,
     idleTicks: 0,
     collapsed: 0,
     look: inheritLook(world, genes),

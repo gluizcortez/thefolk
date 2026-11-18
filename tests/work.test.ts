@@ -19,6 +19,7 @@ import {
 } from '../src/sim';
 import type { Folk } from '../src/sim';
 import { run, workSim } from './helpers';
+import { play, playStep } from './helpers/player';
 
 function hired(seed = 5, careerId = 'office'): { sim: Sim; folk: Folk } {
   const sim = workSim(seed);
@@ -28,7 +29,7 @@ function hired(seed = 5, careerId = 'office'): { sim: Sim; folk: Folk } {
 }
 
 function until(sim: Sim, tick: number): void {
-  while (sim.world.tick < tick) sim.step();
+  while (sim.world.tick < tick) playStep(sim);
 }
 
 /** Leva o folk até o começo do próximo turno, já fora de casa. */
@@ -221,8 +222,8 @@ describe('determinismo com o dia de trabalho completo', () => {
   it('uma semana com eventos, fofoca e vizinhos dá sempre o mesmo resultado', () => {
     const a = hired(21);
     const b = hired(21);
-    run(a.sim, 7 * MINUTES_PER_DAY);
-    run(b.sim, 7 * MINUTES_PER_DAY);
+    play(a.sim, 7 * MINUTES_PER_DAY);
+    play(b.sim, 7 * MINUTES_PER_DAY);
     expect(JSON.stringify(a.sim.world)).toBe(JSON.stringify(b.sim.world));
     expect(a.folk.job!.shifts).toBeGreaterThanOrEqual(4);
     // houve eventos no expediente

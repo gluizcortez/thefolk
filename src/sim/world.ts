@@ -222,7 +222,6 @@ export function makeFolk(id: number, f: FolkSeed): Folk {
     needs: { ...fullNeeds(70), ...f.needs },
     queue: [],
     path: [],
-    autonomy: true,
     idleTicks: 0,
     collapsed: 0,
     look: fullLook(f.look),

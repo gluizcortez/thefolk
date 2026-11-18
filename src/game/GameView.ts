@@ -3,6 +3,7 @@ import { t } from '../i18n';
 import {
   NEED_IDS,
   TICKS_PER_SECOND,
+  idleGesture,
   checkPlacement,
   clockOf,
   edgeOfFace,
@@ -80,6 +81,26 @@ const CAMERA_DISTANCE = 60;
  */
 const TARGET_LINES = 600;
 const MAX_STEPS_PER_FRAME = 60;
+
+/** Plano 2, bloco 1: moldura retangular fina (contorno do objeto sob o mouse), deitada no chão. */
+function outlineGeometry(w: number, h: number, line: number): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  shape.moveTo(-w / 2, -h / 2);
+  shape.lineTo(w / 2, -h / 2);
+  shape.lineTo(w / 2, h / 2);
+  shape.lineTo(-w / 2, h / 2);
+  shape.lineTo(-w / 2, -h / 2);
+  const hole = new THREE.Path();
+  const iw = w / 2 - line;
+  const ih = h / 2 - line;
+  hole.moveTo(-iw, -ih);
+  hole.lineTo(-iw, ih);
+  hole.lineTo(iw, ih);
+  hole.lineTo(iw, -ih);
+  hole.lineTo(-iw, -ih);
+  shape.holes.push(hole);
+  return new THREE.ShapeGeometry(shape);
+}
 const CLICK_SLOP = 6;
 
 /** Animação do folk para interações que não são só "sentar/deitar/dançar". */
@@ -234,6 +255,7 @@ export class GameView {
   private ring = new THREE.Group();
   private hoverTile: THREE.Mesh;
   private hoverPad: THREE.Mesh;
+  private hoverPadKey = '';
   private pings: Ping[] = [];
   /** objeto fantasma do modo compra, seguindo o mouse */
   private ghost: { key: string; group: THREE.Group } | null = null;
@@ -329,7 +351,8 @@ export class GameView {
     this.ring.rotation.x = -Math.PI / 2;
     this.hoverTile = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), flat(0xffffff, 0.3));
     this.hoverTile.rotation.x = -Math.PI / 2;
-    this.hoverPad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), flat(PAL.mustard, 0.6));
+    // plano 2, bloco 1: o destaque do objeto é só um contorno no chão (nada cresce)
+    this.hoverPad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), flat(PAL.mustard, 0.5));
     this.hoverPad.rotation.x = -Math.PI / 2;
     this.ghostPad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), flat(0x6fd06a, 0.45));
     this.ghostPad.rotation.x = -Math.PI / 2;
@@ -689,7 +712,11 @@ export class GameView {
 
     window.addEventListener('keyup', (e) => {
       if (e.key === 'Shift') this.shiftDown = false;
+      this.ctrl.shiftHeld = e.shiftKey;
     });
+    // plano 2, bloco 1: o menu de interações é HTML; o Shift vale para o clique em qualquer lugar
+    window.addEventListener('pointerdown', (e) => (this.ctrl.shiftHeld = e.shiftKey), true);
+    window.addEventListener('blur', () => (this.ctrl.shiftHeld = false));
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
       // bloco 5: com a tela de criar família aberta, o jogo não ouve o teclado
@@ -700,6 +727,7 @@ export class GameView {
         return;
       }
       if (e.key === 'Shift') this.shiftDown = true;
+      this.ctrl.shiftHeld = e.shiftKey;
       if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         if (this.ctrl.mode === 'build') this.ctrl.undoBuild();
@@ -714,7 +742,11 @@ export class GameView {
         case 'Digit1':
         case 'Digit2':
         case 'Digit3':
-          this.ctrl.command({ type: 'setSpeed', speed: Number(e.code.slice(5)) as Speed });
+        case 'Digit4':
+          this.ctrl.commandOrExplain({ type: 'setSpeed', speed: Number(e.code.slice(5)) as Speed });
+          break;
+        case 'Digit0':
+          this.togglePause();
           break;
         case 'KeyQ':
           this.ctrl.rotateCamera(-1);
@@ -758,7 +790,7 @@ export class GameView {
   private togglePause(): void {
     const speed = this.ctrl.world.speed;
     if (speed === 0) {
-      this.ctrl.command({ type: 'setSpeed', speed: this.lastSpeed });
+      this.ctrl.resumeSpeed(this.lastSpeed);
     } else {
       this.lastSpeed = speed;
       this.ctrl.command({ type: 'setSpeed', speed: 0 });
@@ -971,7 +1003,7 @@ export class GameView {
       }
       for (let i = 0; i < steps; i++) this.ctrl.step();
       this.acc -= steps;
-      this.animTime += dt * Math.min(rate / 2, 2.5);
+      this.animTime += dt * Math.min(Math.max(rate, 1), 2.5);
     }
     const alpha = Math.min(1, this.acc);
 
@@ -1008,8 +1040,6 @@ export class GameView {
       });
       if (entry.obj.state) entry.fx.update(entry.obj.state, !!entry.def.upkeep?.bin && entry.obj.state.fill >= 100, this.animTime);
       this.updateNotes(entry);
-      const s = entry === this.hover.entry ? 1.04 : 1;
-      entry.model.group.scale.lerp(this.tmp.set(s, s, s), 0.3);
     }
 
     this.syncFolks();
@@ -1646,6 +1676,15 @@ export class GameView {
     }
 
     const mood = moodOf(sim.catalog, folk.needs);
+    // plano 2, bloco 1: parado sem ordem, o folk faz gestos de espera
+    if (anim === 'idle' && !social && !folk.visit) {
+      const g = idleGesture(folk, sim.world.tick, mood);
+      if (g !== 'none') {
+        anim = `g_${g}` as FolkAnim;
+        if (!expr && g === 'yawn') expr = 'tired';
+        if (!expr && (g === 'belly' || g === 'fidget')) expr = 'sad';
+      }
+    }
     // bloco 7: dança no ritmo da estação que está tocando
     const station = anim === 'dance' && entry ? stationDef(entry.obj.tune) : undefined;
     const time = station ? this.animTime * (station.bpm / 110) : this.animTime;
@@ -1782,7 +1821,12 @@ export class GameView {
     if (entry) {
       this.hoverPad.position.set(entry.center.x, entry.center.y + 0.03, entry.center.z);
       const size = objectSize(entry.def, entry.obj.rot);
-      this.hoverPad.scale.set(size.w + 0.14, size.h + 0.14, 1);
+      const key = `${size.w}x${size.h}`;
+      if (this.hoverPadKey !== key) {
+        this.hoverPadKey = key;
+        this.hoverPad.geometry.dispose();
+        this.hoverPad.geometry = outlineGeometry(size.w + 0.14, size.h + 0.14, 0.05);
+      }
     }
     for (const p of this.pings) {
       p.age += dt;

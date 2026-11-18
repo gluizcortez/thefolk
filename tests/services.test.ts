@@ -20,6 +20,7 @@ import {
 } from '../src/sim';
 import type { Folk, Sim } from '../src/sim';
 import { householdSim, run } from './helpers';
+import { playStep, playUntil } from './helpers/player';
 
 /** Casa pronta com a vizinhança, sem visitas surpresa. */
 function house(seed = 1): Sim {
@@ -49,7 +50,6 @@ describe('despensa', () => {
   it('a refeição gasta porção; sem estoque a geladeira só dá lanche ou comida pedida', () => {
     const sim = house();
     const [tome] = sim.world.folks;
-    for (const f of sim.world.folks) f.autonomy = false;
     const fridge = sim.world.objects.find((o) => o.defId === 'fridge')!;
     const before = sim.world.household.pantry;
     tome.needs.hunger = 20;
@@ -68,9 +68,7 @@ describe('despensa', () => {
   it('mercado por telefone: paga na hora, o entregador toca a campainha e as porções entram', () => {
     const sim = house(2);
     goTo(sim, 1, 9);
-    const [tome, lia] = sim.world.folks;
-    lia.autonomy = false;
-    tome.autonomy = true;
+    const [tome] = sim.world.folks;
     for (const f of sim.world.folks) Object.assign(f.needs, { hunger: 90, energy: 90, bladder: 90, hygiene: 90, fun: 90, social: 90, comfort: 90 });
     sim.world.household.pantry = 2;
     const funds = sim.world.household.funds;
@@ -84,7 +82,8 @@ describe('despensa', () => {
     const door = frontDoor(sim.world, CATALOG);
     const courier = sim.findFolk(zeca.id)!;
     expect([courier.x, courier.y]).toEqual([door.x, door.y]);
-    // quem está em casa atende
+    // plano 2: o jogador manda alguém atender
+    expect(sim.dispatch({ type: 'answerDoor', folkId: tome.id, otherId: courier.id, welcome: true })).toBe(true);
     expect(runUntil(sim, () => hasLog(sim, 'log.groceriesIn'), 120)).toBe(true);
     expect(sim.world.household.pantry).toBe(2 + GROCERIES.portions);
   });
@@ -93,7 +92,6 @@ describe('despensa', () => {
     const sim = house(3);
     goTo(sim, 1, 12);
     const [tome, lia] = sim.world.folks;
-    lia.autonomy = false;
     sim.world.household.pantry = 0;
     const funds = sim.world.household.funds;
     expect(sim.dispatch({ type: 'callService', folkId: tome.id, service: 'takeout' })).toBe(true);
@@ -111,7 +109,6 @@ describe('despensa', () => {
     }
     const fridge = sim.world.objects.find((o) => o.defId === 'fridge')!;
     // só a Lia come agora (o Tomé, com fome, poderia pegar uma porção também)
-    tome.autonomy = false;
     tome.queue = [];
     lia.needs.hunger = 20;
     expect(sim.dispatch({ type: 'queueUse', folkId: lia.id, objectId: fridge.id, interactionId: 'takeout' })).toBe(true);
@@ -122,7 +119,6 @@ describe('despensa', () => {
   it('feira de sábado de manhã: mais barata, só na calçada e só até as 10h', () => {
     const sim = house(4);
     const [tome, lia] = sim.world.folks;
-    for (const f of sim.world.folks) f.autonomy = false;
     const box = sim.world.objects.find((o) => o.defId === 'mailbox')!;
     goTo(sim, 2, 8); // quarta
     sim.step();
@@ -139,13 +135,13 @@ describe('despensa', () => {
     expect(FAIR.price).toBeLessThan(GROCERIES.price);
   });
 
-  it('com a geladeira vazia e gente com fome, a IA pede comida sozinha', () => {
+  it('com a geladeira vazia e gente com fome, o jogador de teste pede comida', () => {
     const sim = house(5);
     goTo(sim, 1, 12);
     sim.world.household.pantry = 0;
     for (const f of sim.world.folks) f.needs.hunger = 30;
     expect(
-      runUntil(sim, () => hasLog(sim, 'log.ordered.groceries') || hasLog(sim, 'log.ordered.takeout'), 240),
+      playUntil(sim, () => hasLog(sim, 'log.ordered.groceries') || hasLog(sim, 'log.ordered.takeout'), 240),
     ).toBe(true);
   });
 });
@@ -161,7 +157,6 @@ describe('campainha', () => {
   it('quem chega toca e espera do lado de fora; ninguém atende e vai embora chateado', () => {
     const sim = house(6);
     goTo(sim, 1, 14);
-    for (const f of sim.world.folks) f.autonomy = false;
     const guest = guestAtDoor(sim);
     expect(guest.visit!.admitted).toBe(false);
     expect(hasLog(sim, 'log.ring')).toBe(true);
@@ -177,7 +172,6 @@ describe('campainha', () => {
   it('atender: convidar para entrar ou dispensar', () => {
     const sim = house(7);
     goTo(sim, 1, 14);
-    for (const f of sim.world.folks) f.autonomy = false;
     const host = sim.world.folks[0];
     const guest = guestAtDoor(sim);
     expect(sim.dispatch({ type: 'answerDoor', folkId: host.id, otherId: guest.id, welcome: true })).toBe(true);
@@ -186,7 +180,6 @@ describe('campainha', () => {
 
     const sim2 = house(8);
     goTo(sim2, 1, 14);
-    for (const f of sim2.world.folks) f.autonomy = false;
     const host2 = sim2.world.folks[0];
     const guest2 = guestAtDoor(sim2);
     expect(sim2.dispatch({ type: 'answerDoor', folkId: host2.id, otherId: guest2.id, welcome: false })).toBe(true);
@@ -195,18 +188,17 @@ describe('campainha', () => {
     expect(mem.some((m) => m.kind === 'turnedAway')).toBe(true);
   });
 
-  it('com a IA ligada, alguém da casa larga o que faz e atende', () => {
+  it('o jogador manda alguém largar o que faz e atender', () => {
     const sim = house(9);
     goTo(sim, 1, 14);
     const guest = guestAtDoor(sim);
-    expect(runUntil(sim, () => guest.visit!.admitted || guest.visit!.leaving, 60)).toBe(true);
+    expect(playUntil(sim, () => guest.visit!.admitted || guest.visit!.leaving, 60)).toBe(true);
     expect(guest.visit!.admitted).toBe(true);
   });
 
   it('sem ninguém para atender, o mercado fica na porta', () => {
     const sim = house(10);
     goTo(sim, 1, 10);
-    for (const f of sim.world.folks) f.autonomy = false;
     sim.world.household.pantry = 0;
     sim.world.household.orders.push({ id: 999, kind: 'groceries', at: sim.world.tick + 2, promised: 0, by: 0, price: 0 });
     expect(runUntil(sim, () => hasLog(sim, 'log.groceriesLeft'), 200)).toBe(true);
@@ -217,7 +209,6 @@ describe('campainha', () => {
 describe('correio e contas', () => {
   it('a conta chega como carta, detalhada, e é paga na caixa de correio', () => {
     const sim = house(11);
-    for (const f of sim.world.folks) f.autonomy = false;
     const house0 = sim.world.household;
     house0.nextBills = sim.world.tick + 2;
     run(sim, 3);
@@ -238,16 +229,15 @@ describe('correio e contas', () => {
     expect(sim.lastProblem).toBe('noBills');
   });
 
-  it('a IA paga as contas sozinha quando tem dinheiro', () => {
+  it('o jogador de teste paga as contas quando tem dinheiro', () => {
     const sim = house(12);
     goTo(sim, 1, 15);
     sim.world.household.bills.push(makeBill(sim.world, CATALOG, 90));
-    expect(runUntil(sim, () => sim.world.household.bills.length === 0, 2 * MINUTES_PER_DAY)).toBe(true);
+    expect(playUntil(sim, () => sim.world.household.bills.length === 0, 2 * MINUTES_PER_DAY)).toBe(true);
   });
 
   it('conta vencida demais traz o oficial de penhora, que leva móveis até cobrir', () => {
     const sim = house(13);
-    for (const f of sim.world.folks) f.autonomy = false;
     goTo(sim, 8, 9);
     const bill = makeBill(sim.world, CATALOG, 400);
     bill.tick = sim.world.tick - (BILL_DUE_DAYS + BAILIFF_GRACE_DAYS + 1) * MINUTES_PER_DAY;
@@ -271,7 +261,6 @@ describe('correio e contas', () => {
 describe('prestadores de serviço', () => {
   it('a faxineira contratada vem de manhã, limpa a casa e cobra a diária', () => {
     const sim = house(14);
-    for (const f of sim.world.folks) f.autonomy = false;
     goTo(sim, 1, 8);
     const tome = sim.world.folks[0];
     expect(sim.dispatch({ type: 'callService', folkId: tome.id, service: 'maid' })).toBe(true);
@@ -298,7 +287,6 @@ describe('prestadores de serviço', () => {
   it('o técnico conserta o que quebrou sem gambiarra e cobra pelas horas', () => {
     const sim = house(15);
     goTo(sim, 1, 9);
-    for (const f of sim.world.folks) f.autonomy = false;
     const tv = sim.world.objects.find((o) => o.defId === 'tv')!;
     tv.state.broken = true;
     tv.state.wear = 90;
@@ -315,7 +303,6 @@ describe('prestadores de serviço', () => {
 describe('jornal', () => {
   it('chega às 6h na calçada; quem lê abre os classificados do dia; jornal velho acumula', () => {
     const sim = house(16);
-    for (const f of sim.world.folks) f.autonomy = false;
     goTo(sim, 1, 6);
     sim.world.mess = [];
     run(sim, 2);
@@ -336,7 +323,7 @@ describe('jornal', () => {
   });
 });
 
-describe('semana sem jogador (bloco 2)', () => {
+describe('semana com o jogador de teste (bloco 2)', () => {
   it('a casa compra comida, paga as contas e ninguém passa fome nem vê o oficial', () => {
     const sim = householdSim(21);
     const start = sim.world.tick;
@@ -344,7 +331,7 @@ describe('semana sem jogador (bloco 2)', () => {
     let orders = 0;
     let seen = 0;
     while (sim.world.tick < start + 7 * MINUTES_PER_DAY) {
-      sim.step();
+      playStep(sim);
       for (const f of sim.residents()) if (f.needs.hunger <= 0) starving++;
       for (const l of sim.world.log) {
         if (l.tick <= seen) continue;

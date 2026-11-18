@@ -25,7 +25,6 @@ const temper = (t: Partial<Temper>): Temper => ({ order: 5, outgoing: 5, pep: 5,
 
 function radioSim(t?: Partial<Temper>): Sim {
   const sim = openField(8, 8, [{ defId: 'speaker', x: 3, y: 3 }], { x: 3, y: 5, needs: { fun: 10, energy: 90 } });
-  sim.world.folks[0].autonomy = false;
   if (t) sim.world.folks[0].temper = temper(t);
   return sim;
 }
@@ -92,7 +91,6 @@ describe('estações de rádio (bloco 7)', () => {
   it('dormir com o som ligado ao lado descansa menos', () => {
     const energyAfter = (tune?: string) => {
       const sim = openField(8, 8, [{ defId: 'bed', x: 1, y: 1 }, { defId: 'speaker', x: 5, y: 1 }], { x: 1, y: 4, needs: { energy: 20 } });
-      sim.world.folks[0].autonomy = false;
       if (tune) sim.world.objects[1].tune = tune;
       const bed = sim.world.objects[0];
       sim.dispatch({ type: 'queueUse', folkId: sim.world.folks[0].id, objectId: bed.id, interactionId: 'sleep' });

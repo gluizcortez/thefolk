@@ -46,6 +46,7 @@ import {
 } from '../src/sim';
 import type { Folk, LifePace, MemberDraft, World, WorldObject } from '../src/sim';
 import { run } from './helpers';
+import { play } from './helpers/player';
 
 const CTX = { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES, catalog: CATALOG, town: TOWN };
 
@@ -181,7 +182,7 @@ describe('bloco 17: uma vida inteira, acelerada', () => {
     const sim = home('off');
     const kid = babyOf(sim);
     kid.kid!.grows = sim.world.tick + 1;
-    run(sim, 3 * MINUTES_PER_DAY);
+    play(sim, 3 * MINUTES_PER_DAY);
     expect(kid.age).toBe('child');
     for (const f of sim.household()) expect(f.nextAge).toBeUndefined();
     expect(sim.residents().filter((f) => f.age === undefined)).toHaveLength(2);
@@ -402,10 +403,10 @@ describe('bloco 17: save v21', () => {
     const sim = home('long');
     const kid = babyOf(sim);
     addAlbum(sim.world, { kind: 'photo', who: [], names: [], photo: 'data:image/jpeg;base64,AA' });
-    run(sim, 5);
+    play(sim, 5);
     const file = serialize(sim.world, 0);
     expect(file.version).toBe(SAVE_VERSION);
-    expect(SAVE_VERSION).toBe(21);
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(21);
     const back = new Sim(CATALOG, deserialize(JSON.parse(JSON.stringify(file)), CTX).world);
     expect(back.world.rules.life).toBe('long');
     expect(back.findFolk(kid.id)!.parents).toEqual(kid.parents);
@@ -440,7 +441,7 @@ describe('bloco 17: semana com o relógio ligado', () => {
     const sim = home('short', true);
     babyOf(sim);
     ensureRelation(sim.world, sim.residents()[0].id, sim.residents()[1].id);
-    run(sim, 7 * MINUTES_PER_DAY);
+    play(sim, 7 * MINUTES_PER_DAY);
     expect(sim.household().length).toBeGreaterThan(0);
     for (const f of sim.household()) {
       if (f.age !== 'baby') expect(f.nextAge).toBeDefined();

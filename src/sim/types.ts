@@ -1330,7 +1330,6 @@ export interface Folk {
   /** queue[0] é a ação em andamento */
   queue: Action[];
   path: Vec[];
-  autonomy: boolean;
   idleTicks: number;
   /** minutos restantes desmaiado de sono (0 = acordado) */
   collapsed: number;
@@ -1548,7 +1547,8 @@ export interface LogEntry {
   params?: Record<string, string | number>;
 }
 
-export type Speed = 0 | 1 | 2 | 3;
+/** 0 pausa, 1 normal, 2 rápido, 3 muito rápido, 4 pular (só com a casa toda ocupada; veja sim/pace.ts) */
+export type Speed = 0 | 1 | 2 | 3 | 4;
 
 export interface World {
   /** 1 tick = 1 minuto de jogo */
@@ -1852,23 +1852,25 @@ export interface PhoneCall {
 
 // ---------- Comandos (única porta de entrada do jogador) ----------
 
+// Plano 2, bloco 1: ordem a um folk substitui o que ele está fazendo (sai
+// limpo da ação atual); com `append` (Shift na tela) vai para o fim da fila.
+
 export type Command =
-  | { type: 'queueUse'; folkId: number; objectId: number; interactionId: string }
-  | { type: 'queueGoto'; folkId: number; x: number; y: number }
-  | { type: 'queueTidy'; folkId: number; messId: number }
-  | { type: 'callService'; folkId: number; service: ServiceOrder }
+  | { type: 'queueUse'; folkId: number; objectId: number; interactionId: string; append?: boolean }
+  | { type: 'queueGoto'; folkId: number; x: number; y: number; append?: boolean }
+  | { type: 'queueTidy'; folkId: number; messId: number; append?: boolean }
+  | { type: 'callService'; folkId: number; service: ServiceOrder; append?: boolean }
   | { type: 'dismissService'; service: 'maid' | 'gardener' }
-  | { type: 'answerDoor'; folkId: number; otherId: number; welcome: boolean }
+  | { type: 'answerDoor'; folkId: number; otherId: number; welcome: boolean; append?: boolean }
   | { type: 'cancel'; folkId: number; actionId: number }
-  | { type: 'setAutonomy'; folkId: number; on: boolean }
   | { type: 'setSpeed'; speed: Speed }
   | { type: 'buy'; defId: string; x: number; y: number; rot: Rotation; color?: string }
   | { type: 'undoBuy' }
   | { type: 'closeBuy' }
   | { type: 'sell'; objectId: number }
   | { type: 'move'; objectId: number; x: number; y: number; rot: Rotation }
-  | { type: 'queueSocial'; folkId: number; otherId: number; socialId: string; topic?: string }
-  | { type: 'invite'; folkId: number; neighborId: number }
+  | { type: 'queueSocial'; folkId: number; otherId: number; socialId: string; topic?: string; append?: boolean }
+  | { type: 'invite'; folkId: number; neighborId: number; append?: boolean }
   | { type: 'takeJob'; folkId: number; careerId: string }
   | { type: 'quitJob'; folkId: number }
   | { type: 'workChoice'; folkId: number; choice: number }
@@ -1881,13 +1883,13 @@ export type Command =
   | { type: 'inspire'; folkId: number }
   | { type: 'setAlarm'; folkId: number; on: boolean }
   // bloco 9
-  | { type: 'startCircle'; folkId: number; otherIds: number[] }
-  | { type: 'joinCircle'; folkId: number; circleId: number }
-  | { type: 'phoneFriend'; folkId: number; neighborId: number }
-  | { type: 'throwParty'; folkId: number; guestIds: number[] }
-  | { type: 'answerPhone'; folkId: number }
+  | { type: 'startCircle'; folkId: number; otherIds: number[]; append?: boolean }
+  | { type: 'joinCircle'; folkId: number; circleId: number; append?: boolean }
+  | { type: 'phoneFriend'; folkId: number; neighborId: number; append?: boolean }
+  | { type: 'throwParty'; folkId: number; guestIds: number[]; append?: boolean }
+  | { type: 'answerPhone'; folkId: number; append?: boolean }
   // bloco 10
-  | { type: 'planWedding'; folkId: number; partnerId: number; guestIds: number[]; surname: SurnameChoice }
+  | { type: 'planWedding'; folkId: number; partnerId: number; guestIds: number[]; surname: SurnameChoice; append?: boolean }
   // bloco 14: par ou ímpar com o Seu Sereno (ou deixar ir)
   | { type: 'bargain'; pick: 'even' | 'odd' | null }
   // bloco 15: bairro

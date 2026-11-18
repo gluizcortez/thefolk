@@ -1,8 +1,12 @@
 export const MINUTES_PER_HOUR = 60;
 export const MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR;
 
-/** ticks (minutos de jogo) por segundo real em cada velocidade */
-export const TICKS_PER_SECOND = [0, 2, 6, 20] as const;
+/**
+ * Ticks (minutos de jogo) por segundo real em cada velocidade: pausa, normal,
+ * rápido, muito rápido e pular (plano 2, bloco 1; só com a casa ocupada, veja
+ * sim/pace.ts). A tela avança a sim por acumulador, então valem frações.
+ */
+export const TICKS_PER_SECOND = [0, 1, 3, 10, 60] as const;
 
 export interface ClockTime {
   day: number;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG } from '../src/data/catalog';
 import { chooseAutonomous, fullNeeds, scoreOptions, urgency } from '../src/sim';
-import { openField, run, starterSim } from './helpers';
+import { openField, starterSim } from './helpers';
 
 function bestDef(sim: ReturnType<typeof starterSim>) {
   const folk = sim.world.folks[0];
@@ -80,16 +80,25 @@ describe('IA por utilidade', () => {
     expect(chooseAutonomous(sim.world, CATALOG, sim.world.folks[0], sim.getNav())).toBeNull();
   });
 
-  it('o folk parado age sozinho; com autonomia desligada, não', () => {
-    const auto = starterSim(3, { ...fullNeeds(85), hunger: 10 });
-    run(auto, 5);
-    const action = auto.world.folks[0].queue[0];
-    expect(action?.source).toBe('auto');
-    expect(auto.findObject(action.objectId!)!.defId).toBe('fridge');
+  it('plano 2: morador sem ordem não sai do lugar por 24 h de jogo, mesmo com fome', () => {
+    const sim = starterSim(3, { ...fullNeeds(85), hunger: 40 });
+    const folk = sim.world.folks[0];
+    const start = { x: folk.x, y: folk.y };
+    let moved = false;
+    for (let i = 0; i < 24 * 60; i++) {
+      sim.step();
+      if (folk.queue.some((a) => a.kind !== 'listen' && a.kind !== 'work')) moved = true;
+      if (!folk.away && (folk.x !== start.x || folk.y !== start.y) && !folk.down) moved = true;
+    }
+    expect(moved).toBe(false);
+    // sofre as consequências: fome lá embaixo, e o jogo segue
+    expect(folk.needs.hunger).toBeLessThan(15);
+    expect(sim.world.tick).toBeGreaterThanOrEqual(24 * 60);
+  });
 
-    const manual = starterSim(3, { ...fullNeeds(85), hunger: 10 });
-    manual.world.folks[0].autonomy = false;
-    run(manual, 30);
-    expect(manual.world.folks[0].queue).toHaveLength(0);
+  it('a conta de utilidade continua valendo para as visitas', () => {
+    const auto = starterSim(3, { ...fullNeeds(85), hunger: 10 });
+    const choice = chooseAutonomous(auto.world, CATALOG, auto.world.folks[0], auto.getNav());
+    expect(auto.findObject(choice!.objectId!)!.defId).toBe('fridge');
   });
 });

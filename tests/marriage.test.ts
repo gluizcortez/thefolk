@@ -26,6 +26,7 @@ import {
 } from '../src/sim';
 import type { Folk, Sim } from '../src/sim';
 import { crowd, householdSim, run } from './helpers';
+import { play } from './helpers/player';
 
 /** Põe o relógio num horário do dia 1 sem passar pelas contas. */
 function at(sim: Sim, hour: number, day = 1): void {
@@ -62,7 +63,6 @@ function couple(seed = 1) {
   const [a, b] = sim.residents();
   love(sim, a.id, b.id);
   for (const f of sim.world.folks) {
-    f.autonomy = false;
     happy(f);
   }
   return { sim, a, b };
@@ -192,7 +192,6 @@ describe('casamento em casa (bloco 10)', () => {
     love(sim, a.id, n.id);
     setBond(sim.world, a.id, n.id, 'engaged');
     for (const f of sim.world.folks) {
-      f.autonomy = false;
       happy(f);
     }
     const savings = savingsOf(n);
@@ -222,7 +221,6 @@ describe('mudar para fora e divórcio (bloco 10)', () => {
     const sim = householdSim(8);
     at(sim, 10);
     const [a, b] = sim.residents();
-    for (const f of sim.world.folks) f.autonomy = false;
     expect(sim.dispatch({ type: 'takeJob', folkId: b.id, careerId: 'office' })).toBe(true);
     expect(sim.dispatch({ type: 'queueSocial', folkId: a.id, otherId: b.id, socialId: 'moveOut' })).toBe(true);
     until(sim, () => !!b.visit, 30);
@@ -238,7 +236,7 @@ describe('mudar para fora e divórcio (bloco 10)', () => {
     // e pode voltar de visita depois, com as relações de sempre
     expect(relationOf(sim.world, a.id, b.id)).toBeTruthy();
     const alone = sim.residents()[0];
-    const fake = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }], { autonomy: false });
+    const fake = crowd([{ x: 1, y: 1 }, { x: 2, y: 1 }], {});
     expect(availableSocials(fake.world, CATALOG, fake.world.folks[0], fake.world.folks[1]).some((d) => d.id === 'moveOut')).toBe(false);
     expect(alone.id).toBe(a.id);
   });
@@ -271,7 +269,7 @@ describe('cama de casal (bloco 10)', () => {
         { name: 'Ana', x: 1, y: 4 },
         { name: 'Bruno', x: 6, y: 4 },
       ],
-      { autonomy: false, objects: [{ defId: 'bedcouple', x: 3, y: 1 }] },
+      { objects: [{ defId: 'bedcouple', x: 3, y: 1 }] },
     );
     const [ana, bruno] = sim.world.folks;
     love(sim, ana.id, bruno.id, 50, 50);
@@ -319,7 +317,7 @@ describe('semana headless do bloco 10', () => {
     sim.world.household.funds += 1000;
     const spot = spotNear(sim.world, CATALOG, 'bedcouple', { x: 4, y: 2 })!;
     expect(sim.dispatch({ type: 'buy', defId: 'bedcouple', x: spot.x, y: spot.y, rot: spot.rot })).toBe(true);
-    run(sim, 7 * MINUTES_PER_DAY);
+    play(sim, 7 * MINUTES_PER_DAY);
     expect(spouseOf(sim.world, a.id)).toBe(b.id);
     for (const f of [a, b]) expect(f.needs.energy).toBeGreaterThan(0);
     expect(sim.world.log.filter((l) => l.key === 'log.collapse').length).toBeLessThan(4);

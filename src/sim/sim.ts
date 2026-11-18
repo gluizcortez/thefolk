@@ -1,4 +1,5 @@
 import { chooseAutonomous } from './ai';
+import { SKIP_SPEED, canSkip } from './pace';
 import type { BuildCommand, BuildProblem, GridChange } from './build';
 import { applyChange, checkGrid, invertChange, isBuildCommand, planBuild, touchesNav } from './build';
 import { WEATHER_HOUR, freshPlant, gardenHour, harvest, replant, rollWeather } from './garden';
@@ -373,6 +374,7 @@ export type CommandProblem =
   | 'away'
   | 'collapsed'
   | 'queueFull'
+  | 'cantSkip'
   | 'invalid'
   | 'visitor'
   | 'socialNotNow'
@@ -500,6 +502,8 @@ export function saverOf(catalog: Catalog, folk: Folk): number {
 const MAX_LOG = 30;
 /** minutos parado antes de a IA procurar algo para fazer */
 const IDLE_BEFORE_AUTO = 3;
+/** plano 2, bloco 1: até quantos tiles o fogo faz o morador parado correr sozinho */
+const REFLEX_FIRE = 10;
 /** de quanto em quanto tempo uma ação autônoma é reavaliada */
 const AUTO_RECHECK = 10;
 const CRITICAL_NEED = 15;
@@ -542,6 +546,8 @@ export class Sim {
   lastProblem: CommandProblem | null = null;
   /** bloco 6: por que o folk recusou a última ordem (necessidade ou mau humor) */
   lastRefusal: NeedId | 'mood' | null = null;
+  /** plano 2, bloco 1: o comando em curso vai para o fim da fila (Shift) em vez de substituir */
+  private appending = false;
   /** resultados de conversa ainda não lidos pela tela (não vai no save) */
   private outcomes: SocialOutcome[] = [];
   /** visitas que chegaram à calçada neste minuto e saem do lote */
@@ -628,6 +634,7 @@ export class Sim {
 
   dispatch(cmd: Command): boolean {
     this.lastProblem = null;
+    this.appending = 'append' in cmd && cmd.append === true;
     const ok = this.run(cmd);
     if (!ok && !this.lastProblem) this.lastProblem = 'invalid';
     return ok;
@@ -644,22 +651,17 @@ export class Sim {
       case 'undoBuild':
         return this.undoBuild();
       case 'setSpeed':
+        // plano 2, bloco 1: pular só com todo mundo dormindo, fora ou ocupado com algo longo
+        if (cmd.speed === SKIP_SPEED && !canSkip(this.world, this.catalog)) return this.fail('cantSkip');
         this.world.speed = cmd.speed;
         return true;
-      case 'setAutonomy': {
-        const folk = this.findFolk(cmd.folkId);
-        if (!folk) return false;
-        if (folk.visit) return this.fail('visitor');
-        folk.autonomy = cmd.on;
-        return true;
-      }
       case 'cancel': {
         const folk = this.findFolk(cmd.folkId);
         if (!folk) return false;
         const idx = folk.queue.findIndex((a) => a.id === cmd.actionId);
         if (idx < 0) return false;
-        folk.queue.splice(idx, 1);
-        if (idx === 0) folk.path = [];
+        if (idx === 0) this.abandon(folk);
+        else folk.queue.splice(idx, 1);
         return true;
       }
       case 'queueUse': {
@@ -1180,14 +1182,47 @@ export class Sim {
     // bloco 14: caído esperando o Seu Sereno, ou preso na piscina
     if (folk.down) return this.fail('down');
     if (folk.adrift) return this.fail('adrift');
-    // ordem do jogador passa por cima do que o folk fazia por conta própria
-    if (folk.queue.some((a) => a.source === 'auto')) {
+    if (!this.appending) {
+      // plano 2, bloco 1: a ordem nova vira a ação atual; a fila inteira cai
+      while (folk.queue.length > 0) this.abandon(folk);
+    } else if (folk.queue.some((a) => a.source === 'auto')) {
+      // com Shift, os reflexos (ouvir, acender a luz) saem da frente da ordem
+      if (folk.queue[0]?.source === 'auto') this.abandon(folk);
       folk.queue = folk.queue.filter((a) => a.source !== 'auto');
-      folk.path = [];
     }
     if (folk.queue.length >= MAX_QUEUE) return this.fail('queueFull');
     folk.queue.push(this.makeAction(partial, 'player'));
     return true;
+  }
+
+  /**
+   * Plano 2, bloco 1: larga a ação em andamento com uma saída limpa. Quem
+   * estava sentado levanta (a postura sai com a ação), o prato fica onde ele
+   * está, a conversa e a roda acabam para os dois lados.
+   */
+  private abandon(folk: Folk): void {
+    const action = folk.queue.shift();
+    folk.path = [];
+    if (!action) return;
+    const world = this.world;
+    // eatAt só existe depois de pegar a comida: o prato está na mão
+    if (action.eatAt !== undefined) {
+      addMess(world, 'plate', folk.x, folk.y, folk.id);
+    }
+    if ((action.kind === 'social' || action.kind === 'listen') && action.otherId !== undefined) {
+      const other = this.findFolk(action.otherId);
+      const head = other?.queue[0];
+      if (other && head && (head.kind === 'listen' || head.kind === 'social') && head.otherId === folk.id) {
+        other.queue.shift();
+        other.path = [];
+      }
+    }
+    if (action.kind === 'circle') {
+      const c = circleOfFolk(world, folk.id);
+      if (c) this.dropFromCircle(folk, c, true);
+    }
+    if (folk.outfit === 'work' && action.kind === 'work') folk.outfit = 'day';
+    folk.idleTicks = 0;
   }
 
   private makeAction(partial: ActionSeed, source: Action['source']): Action {
@@ -1264,6 +1299,8 @@ export class Sim {
     this.stepCircles();
     for (const id of this.departed) this.removeVisitor(id);
     this.departed = [];
+    // plano 2, bloco 1: pular volta ao normal quando alguém acorda, chega ou fica livre
+    if (world.speed === SKIP_SPEED && !canSkip(world, this.catalog)) world.speed = 1;
     if (world.log.length > MAX_LOG) world.log.splice(0, world.log.length - MAX_LOG);
   }
 
@@ -1686,7 +1723,11 @@ export class Sim {
 
     if (folk.queue.length === 0) {
       folk.idleTicks++;
-      if (folk.autonomy && folk.idleTicks >= IDLE_BEFORE_AUTO) this.pickAutonomous(folk);
+      // plano 2, bloco 1: só visita decide sozinha; morador parado espera ordem e só tem reflexos
+      if (folk.idleTicks >= IDLE_BEFORE_AUTO) {
+        if (v) this.pickAutonomous(folk);
+        else this.reflex(folk);
+      }
     } else {
       folk.idleTicks = 0;
     }
@@ -1842,6 +1883,28 @@ export class Sim {
       folk.queue = [];
       folk.path = [];
       this.log('log.collapse', { name: folk.name });
+    }
+  }
+
+  /**
+   * Plano 2, bloco 1: o mínimo que o jogador não conseguiria mandar a tempo.
+   * Fogo perto: corre. Gatuno perto: leva o susto. O resto (ouvir quem
+   * puxa conversa, acordar com o despertador, sair da frente) já anda sozinho.
+   */
+  private reflex(folk: Folk): void {
+    const world = this.world;
+    if (folk.down || folk.age === 'baby') return;
+    if (world.fires.length > 0) {
+      const fire = nearestFire(world, folk, REFLEX_FIRE);
+      if (fire) {
+        folk.idleTicks = 0;
+        folk.queue.push(this.makeAction({ kind: 'panic', target: { x: fire.x, y: fire.y } }, 'auto'));
+        return;
+      }
+    }
+    const thief = this.burglar();
+    if (thief && !thief.visit?.leaving && reach(world, folk, thief) <= 6 && folk.thought?.kind !== 'fear') {
+      setThought(folk, 'fear', 'burglar', world.tick, 30);
     }
   }
 
@@ -2488,6 +2551,8 @@ export class Sim {
     if (head?.kind === 'leave' || head?.kind === 'work') return;
     // bloco 16: garçom com pedido na mão não para para conversar
     if (other.visit?.service?.tray) return;
+    // nem com prato pronto ou mesa esperando pedido (senão a mesa desiste)
+    if (other.visit?.service?.kind === 'waiter' && this.world.outing?.orders.some((o) => o.stage === 'ready' || o.stage === 'wait')) return;
     // quem está apertado termina o que ia fazer antes de dar atenção
     if (head && this.urgent(other)) return;
     if (head) {
@@ -3760,7 +3825,6 @@ export class Sim {
       },
       queue: [],
       path: [],
-      autonomy: service === null,
       idleTicks: 0,
       collapsed: 0,
       look: { ...n.look },
@@ -4728,7 +4792,6 @@ export class Sim {
     if (crib) delete crib.baby;
     const kid = baby.kid!;
     baby.age = 'child';
-    baby.autonomy = true;
     kid.asleep = false;
     kid.homework = 'none';
     kid.neglect = 0;

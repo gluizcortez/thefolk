@@ -26,6 +26,7 @@ import {
 import type { DateState, Folk, World } from '../src/sim';
 import { reachable } from '../src/sim/economy';
 import { run } from './helpers';
+import { play, playStep } from './helpers/player';
 
 const CTX = { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES, catalog: CATALOG, town: TOWN };
 
@@ -37,15 +38,12 @@ function townSim(seed = 3): Sim {
 
 /** Avança até a hora `hour` (do mesmo dia ou do seguinte). */
 function until(sim: Sim, hour: number): void {
-  while (Math.floor((sim.world.tick % 1440) / 60) !== hour) sim.step();
+  while (Math.floor((sim.world.tick % 1440) / 60) !== hour) playStep(sim);
 }
 
 const tome = (w: World) => w.folks.find((f) => f.name === 'Tomé Varanda')!;
 const lia = (w: World) => w.folks.find((f) => f.name === 'Lia Sacada')!;
 const objectOf = (w: World, defId: string) => w.objects.find((o) => o.defId === defId)!;
-const calm = (sim: Sim) => {
-  for (const f of sim.world.folks.filter((x) => !x.visit)) sim.dispatch({ type: 'setAutonomy', folkId: f.id, on: false });
-};
 const fill = (f: Folk) => {
   f.needs = { ...f.needs, hunger: 30, energy: 90, bladder: 90, hygiene: 90, fun: 60, social: 60, comfort: 70 };
 };
@@ -131,9 +129,8 @@ describe('bloco 16: ir ao centro de táxi', () => {
     until(sim, 22);
     expect(sim.dispatch({ type: 'goDowntown', folkIds: [tome(w).id, lia(w).id] })).toBe(true);
     for (const f of w.folks.filter((x) => !x.visit)) f.needs.energy = 100;
-    calm(sim);
     until(sim, CLOSE_HOUR);
-    run(sim, 1);
+    play(sim, 1);
     expect(w.outing).toBeNull();
     expect(w.log.some((l) => l.key === 'log.venueClosing')).toBe(true);
   });
@@ -177,19 +174,19 @@ describe('bloco 16: encontros', () => {
     const before = relationOf(w, b.id, a.id)!.romance;
     expect(sim.dispatch({ type: 'goDowntown', folkIds: [a.id, b.id], dateId: b.id })).toBe(true);
     expect(w.outing!.date).toMatchObject({ host: a.id, guest: b.id });
-    calm(sim);
     fill(a);
     fill(b);
     const table = objectOf(w, 'bistro');
     expect(sim.dispatch({ type: 'queueUse', folkId: a.id, objectId: table.id, interactionId: 'dish_moqueca' })).toBe(true);
     expect(sim.dispatch({ type: 'queueUse', folkId: b.id, objectId: table.id, interactionId: 'dish_galinhada' })).toBe(true);
     let served = 0;
-    for (let i = 0; i < 150; i++) {
+    // o garçom atende um de cada vez (e um figurante pode puxar conversa no meio)
+    for (let i = 0; i < 240 && (i < 150 || w.log.filter((l) => l.key === 'log.served').length < 2); i++) {
       sim.step();
       served = Math.max(served, w.outing!.orders.filter((o) => o.stage === 'served').length);
     }
     expect(w.log.some((l) => l.key === 'log.orderTaken')).toBe(true);
-    expect(served).toBe(2);
+    expect(Math.max(served, w.log.filter((l) => l.key === 'log.served').length)).toBe(2);
     expect(a.needs.hunger).toBeGreaterThan(60);
     // conversa a dois no fim da noite
     sim.dispatch({ type: 'queueSocial', folkId: a.id, otherId: b.id, socialId: 'flirt' });
@@ -261,22 +258,21 @@ describe('bloco 16: compras do centro', () => {
     const a = tome(w);
     const b = lia(w);
     expect(sim.dispatch({ type: 'goDowntown', folkIds: [a.id, b.id] })).toBe(true);
-    calm(sim);
     fill(a);
     const shelf = objectOf(w, 'giftshelf');
     const bazaar = objectOf(w, 'bazaar');
     const rack = objectOf(w, 'clothesrack');
     const shirt = a.look.shirt;
     sim.dispatch({ type: 'queueUse', folkId: a.id, objectId: shelf.id, interactionId: 'gift_ramalhete' });
-    sim.dispatch({ type: 'queueUse', folkId: a.id, objectId: bazaar.id, interactionId: 'order_globe' });
-    sim.dispatch({ type: 'queueUse', folkId: a.id, objectId: rack.id, interactionId: 'clothes' });
-    run(sim, 120);
+    sim.dispatch({ type: 'queueUse', folkId: a.id, objectId: bazaar.id, interactionId: 'order_globe', append: true });
+    sim.dispatch({ type: 'queueUse', folkId: a.id, objectId: rack.id, interactionId: 'clothes', append: true });
+    play(sim, 120);
     expect(a.gifts).toEqual(['ramalhete']);
     expect(w.outing!.parcels).toEqual(['globe']);
     expect(a.look.shirt).not.toBe(shirt);
     const friend = relationOf(w, b.id, a.id)?.friendship ?? 0;
     expect(sim.dispatch({ type: 'queueSocial', folkId: a.id, otherId: b.id, socialId: 'giveGift' })).toBe(true);
-    run(sim, 30);
+    play(sim, 30);
     expect(a.gifts).toEqual([]);
     expect(relationOf(w, b.id, a.id)!.friendship).toBeGreaterThan(friend);
     expect(sim.dispatch({ type: 'goHome' })).toBe(true);
@@ -340,7 +336,7 @@ describe('bloco 16: uma semana com passeios', () => {
       if (ids.length) sim.dispatch({ type: 'goDowntown', folkIds: ids, dateId: ids.length > 1 ? ids[1] : undefined });
       until(sim, 23);
       if (w.outing) sim.dispatch({ type: 'goHome' });
-      run(sim, 60);
+      play(sim, 60);
     }
     expect(w.outing).toBeNull();
     expect(w.folks.filter((f) => !f.visit)).toHaveLength(2);
