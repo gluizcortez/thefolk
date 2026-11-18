@@ -6,6 +6,7 @@ import { GameView } from './game/GameView';
 import { t } from './i18n';
 import { FamilyCreator } from './ui/creator';
 import { Hud } from './ui/hud';
+import { TownPanel } from './ui/town';
 import './ui/style.css';
 
 const AUTOSAVE_MS = 30_000;
@@ -43,6 +44,9 @@ async function boot(): Promise<void> {
   // bloco 5: sem save, o jogo começa na tela de criar família
   const creator = new FamilyCreator(document.getElementById('ui')!, ctrl, (look, wear) => view.portrait(look, wear));
   hud.openCreator = () => creator.show(true);
+  // bloco 15: a tela do bairro (vista na tela do jogo, painel por cima)
+  const town = new TownPanel(document.getElementById('ui')!, ctrl, view.town);
+  town.newFamilyAt = (lotId) => creator.showForLot(lotId);
   if (!hadSave) creator.show(false);
   if (import.meta.env.DEV) (window as unknown as { thefolkCreator: FamilyCreator }).thefolkCreator = creator;
   if (import.meta.env.DEV) (window as unknown as { thefolkView: GameView }).thefolkView = view;

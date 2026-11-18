@@ -10,10 +10,12 @@ import { freshState } from './upkeep';
 import { freshPlant } from './garden';
 import { NEUTRAL_TEMPER, fullLook, monthFor, temperFromTraits } from './temper';
 import { seedInterests } from './topics';
+import { foundTown } from './town';
+import type { TownPlan } from './town';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 18;
+export const SAVE_VERSION = 19;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -23,6 +25,8 @@ export interface MigrationContext {
   ties?: RelationSeed[];
   /** catálogo, para a migração achar lugar para objetos novos (caixa de correio) */
   catalog?: Catalog;
+  /** bloco 15: planta do bairro (sem ela, o save antigo segue só com a casa) */
+  town?: TownPlan;
 }
 
 /** Dinheiro e saída da casa para saves da fatia 1 (só existia a casa pronta). */
@@ -266,6 +270,15 @@ const migrations: Record<number, Migration> = {
     world.rules = world.rules ?? { death: true };
     world.lastBurglary = world.lastBurglary ?? world.tick;
     addMissingNeighbors(world, ctx);
+    return { ...save, world: world as unknown as Obj };
+  },
+  // bloco 15: bairro. A casa de agora vira um lote da rua (o da família em
+  // jogo) e os vizinhos passam a morar nas casas prontas em volta; quem já se
+  // mudou para a casa fica onde está.
+  18: (save, ctx) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    world.town = null;
+    if (ctx.town && ctx.catalog) foundTown(world, ctx.catalog, ctx.town);
     return { ...save, world: world as unknown as Obj };
   },
 };

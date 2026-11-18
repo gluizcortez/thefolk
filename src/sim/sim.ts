@@ -212,6 +212,8 @@ import {
   wearTick,
 } from './upkeep';
 import { BILL_INTERVAL, isServiceNeighbor } from './world';
+import type { TownProblem } from './town';
+import { TOWN_HOUR, foundFamily, leaveFamily, moveHouse, playFamily, streetSide, townDay } from './town';
 import {
   BAILIFF_HOUR,
   GROCERIES,
@@ -260,7 +262,6 @@ import {
   rename,
   restoreName,
   ringOnLot,
-  savingsOf,
   setBond,
   spouseOf,
   weddingNames,
@@ -376,7 +377,9 @@ export type CommandProblem =
   | 'down'
   | 'adrift'
   | 'noBargain'
-  | 'noBargainer';
+  | 'noBargainer'
+  // bloco 15
+  | TownProblem;
 
 /** Resultado de uma conversa, para a tela mostrar o que mudou (não vai no save). */
 export interface SocialOutcome {
@@ -531,6 +534,7 @@ export class Sim {
     w.spirits ??= [];
     w.rules ??= { death: true };
     w.lastBurglary ??= w.tick;
+    w.town ??= null;
     this.fireAware = false;
     ensureAllInterests(w, this.catalog);
   }
@@ -751,6 +755,13 @@ export class Sim {
         return this.planWedding(cmd.folkId, cmd.partnerId, cmd.guestIds, cmd.surname);
       case 'bargain':
         return this.bargain(cmd.pick);
+      // bloco 15: bairro
+      case 'playFamily':
+        return this.town(playFamily(this.world, this.catalog, cmd.familyId));
+      case 'moveHouse':
+        return this.town(moveHouse(this.world, this.catalog, cmd.lotId));
+      case 'foundFamily':
+        return this.town(foundFamily(this.world, this.catalog, cmd.draft, cmd.lotId));
       case 'answerPhone': {
         const folk = this.findFolk(cmd.folkId);
         if (!folk) return false;
@@ -1137,6 +1148,8 @@ export class Sim {
       }
     }
     if (minute === BOARD_HOUR * 60) refreshBoard(world, this.catalog);
+    // bloco 15: a vida das outras casas do bairro anda uma vez por dia
+    if (minute === TOWN_HOUR * 60) townDay(world, this.catalog);
     if (minute === 0 && Math.floor(world.tick / MINUTES_PER_DAY) % HABIT_PERIOD_DAYS === 0) this.settleTempers();
     this.stepVisits();
     for (const folk of [...world.folks]) {
@@ -2214,6 +2227,8 @@ export class Sim {
   }
 
   private planPath(folk: Folk, action: Action) {
+    // bloco 15: visita do bairro volta pela calçada para o lado da casa dela
+    if (action.kind === 'leave' && folk.visit && !folk.visit.service) return findPath(this.nav, folk, this.streetDoor(folk.id));
     if (action.kind === 'work' || action.kind === 'leave' || action.kind === 'school') return findPath(this.nav, folk, this.world.exit);
     if (action.kind === 'goto') {
       return action.target ? findPath(this.nav, folk, action.target) : null;
@@ -2511,6 +2526,33 @@ export class Sim {
     }
   }
 
+  // ---------- bloco 15: bairro ----------
+
+  /** Depois de trocar de família ou de casa: lote novo, caminhos novos, nada para desfazer. */
+  private town(problem: TownProblem | null): boolean {
+    if (problem) return this.fail(problem);
+    this.prepare();
+    this.undoStack = [];
+    this.buyStack = [];
+    this.invalidateNav();
+    this.objectStamp++;
+    return true;
+  }
+
+  /**
+   * Bloco 15: ponta da calçada por onde chega (e para onde volta) quem mora
+   * no bairro, do lado da casa dela; sem caminho por ali, usa a condução.
+   */
+  streetDoor(personId: number): { x: number; y: number } {
+    const world = this.world;
+    const side = streetSide(world, personId);
+    if (side === 0) return { ...world.exit };
+    const x = side < 0 ? 0 : world.grid.w - 1;
+    const at = { x, y: world.exit.y };
+    if (!this.nav.isFree(at.x, at.y) || !findPath(this.nav, at, world.exit)) return { ...world.exit };
+    return at;
+  }
+
   // ---------- bloco 10: vida a dois ----------
 
   /**
@@ -2532,7 +2574,8 @@ export class Sim {
     other.job = career ? { ...newJob(career.id), level: Math.min(career.level, this.catalog.careers[career.id].levels.length - 1) } : null;
     if (n?.boss) this.log('log.bossMovedIn', names);
     this.log('log.movedIn', names);
-    const money = n ? savingsOf(n) : 0;
+    // bloco 15: quem tinha casa no bairro leva a parte dele do dinheiro da família
+    const money = n ? leaveFamily(this.world, n) : 0;
     if (money > 0) {
       this.world.household.funds += money;
       this.log('log.movedInMoney', { name: other.name, amount: money });
@@ -3133,14 +3176,16 @@ export class Sim {
   private spawnVisitor(n: Neighbor, until: number, hostId: number, service: ServiceVisit | null = null): void {
     const world = this.world;
     const r = () => nextFloat(world);
+    // bloco 15: quem mora no bairro chega a pé pela calçada, do lado da casa dela
+    const from = service ? world.exit : this.streetDoor(n.id);
     const folk: Folk = {
       id: n.id,
       name: n.name,
       traits: [...n.traits],
-      x: world.exit.x,
-      y: world.exit.y,
-      px: world.exit.x,
-      py: world.exit.y,
+      x: from.x,
+      y: from.y,
+      px: from.x,
+      py: from.y,
       facing: { x: 0, y: -1 },
       needs: {
         hunger: 55 + r() * 35,

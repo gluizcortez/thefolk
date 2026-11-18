@@ -3,6 +3,7 @@ import type { GameController } from '../game/controller';
 import { t } from '../i18n';
 import {
   LOOK_LIMITS,
+  cleanName,
   MAX_FAMILY,
   MAX_NAME,
   MAX_TRAITS,
@@ -66,6 +67,8 @@ export class FamilyCreator {
   private speedBefore: Speed = 1;
   /** bloco 14: perigos podem matar (desligado: quem cairia escapa por um triz) */
   private death = true;
+  /** bloco 15: família nova para um lote do bairro (0 = jogo novo) */
+  private lotId = 0;
 
   constructor(
     private readonly host: HTMLElement,
@@ -83,6 +86,17 @@ export class FamilyCreator {
 
   /** Abre a tela. `cancellable` = há um jogo para onde voltar. */
   show(cancellable: boolean): void {
+    this.lotId = 0;
+    this.openCard(cancellable);
+  }
+
+  /** Bloco 15: família nova que chega a um lote do bairro (o jogo continua o mesmo). */
+  showForLot(lotId: number): void {
+    this.lotId = lotId;
+    this.openCard(true);
+  }
+
+  private openCard(cancellable: boolean): void {
     this.cancellable = cancellable;
     // o tempo para enquanto a família é criada
     this.speedBefore = this.ctrl.world.speed;
@@ -148,7 +162,8 @@ export class FamilyCreator {
 
   private renderHead(): HTMLElement {
     const head = el('div', 'creator-head');
-    const title = el('div', 'creator-title', t('create.title'));
+    const lot = this.lotId ? this.ctrl.world.town?.lots.find((l) => l.id === this.lotId) : undefined;
+    const title = el('div', 'creator-title', lot ? t('town.creating', { number: lot.number }) : t('create.title'));
     const surname = el('label', 'creator-surname');
     const input = el('input');
     input.value = this.draft.surname;
@@ -377,14 +392,27 @@ export class FamilyCreator {
       cancel.addEventListener('click', () => this.cancel());
       buttons.append(cancel);
     }
-    const start = el('button', 'btn btn-go creator-start', t('create.start'));
+    const start = el('button', 'btn btn-go creator-start', t(this.lotId ? 'town.startHere' : 'create.start'));
     start.addEventListener('click', () => {
       if (familyProblem(this.ctrl.sim.catalog, this.draft)) return;
+      if (this.lotId) {
+        // bloco 15: chega ao bairro no lote escolhido (o resto do jogo continua)
+        if (this.ctrl.townCommand({ type: 'foundFamily', lotId: this.lotId, draft: this.draft })) {
+          this.ctrl.toast(t('town.arrived', { name: cleanName(this.draft.surname) }));
+          this.hide();
+        }
+        return;
+      }
       this.ctrl.newFamily(this.draft, this.death);
       this.hide();
     });
-    buttons.append(ready, start);
-    foot.append(el('div', 'creator-note', t('create.note')), death, note, buttons);
+    if (this.lotId) {
+      buttons.append(start);
+      foot.append(note, buttons);
+    } else {
+      buttons.append(ready, start);
+      foot.append(el('div', 'creator-note', t('create.note')), death, note, buttons);
+    }
     queueMicrotask(() => this.refreshFoot());
     return foot;
   }

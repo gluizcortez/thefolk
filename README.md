@@ -503,6 +503,15 @@ npm run preview  # serve o dist/ localmente
   assusta. Homenagear na lápide acalma até ele descansar. A opção "Perigos
   podem matar" no criador desliga a morte (quem cairia escapa por um triz);
   casa vazia mostra o fim e oferece família nova ou carregar.
+- **Bairro (bloco 15)**: o botão "Bairro" mostra a Vila Taramela de cima,
+  com as casas de verdade dos dez lotes da Rua das Taramelas. Clicando num
+  lote: jogar com a família que mora lá (a de agora fica guardada do jeito
+  que estava), mudar a família para um terreno vago ou casa à venda (a casa
+  de agora é vendida pelo terreno, obra e móveis) ou trazer uma família nova
+  (chega com ⟡ 6.000 e paga o lote). As famílias fora de jogo recebem
+  salário nos dias de turno, pagam as contas e se visitam; o mural "Pelo
+  bairro" conta o que aconteceu. Visitas do bairro chegam a pé pela calçada,
+  do lado da casa delas, e voltam para lá.
 
 ## Deploy na Vercel
 
@@ -752,6 +761,15 @@ Decisões principais do núcleo:
   `data/peril.ts`, arte em `game/art/peril.ts` (`flames` serve à lareira e ao
   fogo solto); `GameView.updatePerils` desenha fogo, fumaça, jato e fantasma.
   `Sim.objectStamp` avisa a tela quando a simulação tira ou põe objeto.
+- **Bairro (bloco 15)** mora em `sim/town.ts`. O `World` continua sendo o
+  lote em jogo; `World.town` guarda os lotes (`Lot.home` com grid, objetos e
+  saída dos lotes fora de jogo), as famílias (`Family`, com `stash` da família
+  guardada) e o mural. Quem é de uma família fora de jogo é vizinho com
+  `Neighbor.home`. Comandos `playFamily`, `moveHouse` e `foundFamily`;
+  `townDay` faz a vida resumida às 3h; `streetDoor` escolhe a ponta da
+  calçada das visitas. Planta do bairro e das casas em `data/town.ts`; a vista
+  em `game/town.ts` (`TownView`, desenhada na mesma imagem interna) e o painel
+  em `ui/town.ts`.
 - **Bebês e crianças (bloco 11)** moram em `sim/kids.ts` (regras puras:
   necessidades do bebê, herança, horário da escola, nota). `Folk` ganhou
   `age` ('baby' | 'child'; adulto não tem) e `kid` (nascimento, quando cresce,
@@ -959,7 +977,19 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
   polícia, afogamento, fome e fogo que matam, Seu Sereno e a barganha no par
   ou ímpar, lápide e urna, fantasma, luto, lareira e a opção "sem morte"
   (save v18).
-- Próximo: bloco 15, bairro: vários lotes e famílias.
+- **Bloco 15 (feito)**: bairro com dez lotes e vista de cima, seis famílias
+  de vizinhos em casas de verdade, trocar de família e voltar, mudança com
+  venda da casa, família nova em lote vago ou casa à venda, vida resumida das
+  outras casas e visitas que vêm da casa delas (save v19).
+- Próximo: bloco 16, centro da cidade: passeios e encontros.
+
+## Limitações conhecidas do bloco 15
+
+- O bairro tem uma rua só e dez lotes fixos; não dá para criar lote novo.
+- Crianças e bebês de família fora de jogo não crescem até ela voltar a jogo.
+- Em volta do lote em jogo, as casas de enfeite ainda são as de antes (as de
+  verdade aparecem na vista do bairro).
+- Quem se muda para fora pelo divórcio vai morar fora do bairro.
 
 ## Limitações conhecidas do bloco 14
 

@@ -2,6 +2,7 @@ import { CATALOG } from '../data/catalog';
 import { starterHouse } from '../data/house';
 import { familySeed } from '../data/family';
 import { NEIGHBORS, NEIGHBOR_TIES } from '../data/neighbors';
+import { TOWN } from '../data/town';
 import { hasText, t } from '../i18n';
 import { idbBackend } from '../platform/saveStore';
 import type { SaveBackend, SlotId, SlotMeta } from '../platform/slots';
@@ -24,9 +25,12 @@ import {
 import { Sim, createWorld, isBuildCommand } from '../sim';
 import type { Command, FamilyDraft, FenceKind, Folk, OpeningKind, Rotation, Side, Speed, World } from '../sim';
 import { MAX_LEVELS, levelOfRow } from '../sim';
-import { cleanName, familyProblem } from '../sim';
+import { cleanName, familyProblem, foundTown } from '../sim';
 
 export type Mode = 'live' | 'buy' | 'build';
+
+/** Bloco 15: tela do lote (o jogo) ou do bairro (vista de cima com todos os lotes). */
+export type Screen = 'lot' | 'town';
 
 /**
  * Ferramenta do modo construção. Bloco 12: meia parede, coluna, escada,
@@ -58,7 +62,7 @@ export interface Placing {
 import type { WallMode } from './art/house';
 
 /** Dados de fora do núcleo que as migrações de save usam. */
-const MIGRATION = { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES, catalog: CATALOG };
+const MIGRATION = { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES, catalog: CATALOG, town: TOWN };
 
 /** Bloco 7: o que aconteceu com um comando (a camada de som escuta). */
 export type CommandListener = (cmd: Command, ok: boolean) => void;
@@ -182,8 +186,16 @@ export class GameController {
   private commandListeners: CommandListener[] = [];
   private readonly db: SaveBackend = idbBackend;
 
+  /** bloco 15: tela do bairro aberta? */
+  screen: Screen = 'lot';
+  /** bloco 15: lote escolhido na tela do bairro */
+  townLot = 0;
+  /** bloco 15: muda quando lotes ou famílias mudam (a tela do bairro refaz as casas) */
+  townVersion = 0;
+  private speedBeforeTown: Speed = 1;
+
   constructor() {
-    this.sim = new Sim(CATALOG, createWorld(starterHouse(freshSeed())));
+    this.sim = new Sim(CATALOG, townWorld(createWorld(starterHouse(freshSeed()))));
     this.selectedFolkId = this.sim.world.folks[0].id;
     this.lastFolk = this.sim.world.folks[0];
   }
@@ -439,6 +451,54 @@ export class GameController {
     this.seenLog = world.tick;
     this.viewLevel = 0;
     this.worldVersion++;
+    this.townVersion++;
+    this.screen = 'lot';
+  }
+
+  // ---------- bloco 15: bairro ----------
+
+  /** Abre a vista do bairro (o tempo para enquanto está aberta). */
+  openTown(): void {
+    if (!this.world.town || this.screen === 'town') return;
+    if (this.mode !== 'live') this.setMode('live');
+    this.speedBeforeTown = this.world.speed === 0 ? 1 : this.world.speed;
+    this.command({ type: 'setSpeed', speed: 0 });
+    this.screen = 'town';
+    this.townLot = this.sim.world.town?.lots.find((l) => l.familyId === this.world.town?.active)?.id ?? 0;
+    this.townVersion++;
+  }
+
+  /** Volta para o lote em jogo, na velocidade de antes. */
+  closeTown(): void {
+    if (this.screen !== 'town') return;
+    this.screen = 'lot';
+    if (!this.houseEmpty) this.command({ type: 'setSpeed', speed: this.speedBeforeTown });
+  }
+
+  /** Joga com outra família, muda de casa ou traz família nova: o lote em jogo é outro. */
+  townCommand(cmd: Extract<Command, { type: 'playFamily' | 'moveHouse' | 'foundFamily' }>): boolean {
+    if (!this.commandOrExplain(cmd)) return false;
+    const world = this.world;
+    const first = world.folks.find((f) => !f.visit) ?? world.folks[0];
+    if (first) {
+      this.selectedFolkId = first.id;
+      this.lastFolk = first;
+    }
+    this.placing = null;
+    this.seenStamp = this.sim.objectStamp;
+    this.pausedForBargain = 0;
+    this.hadBargain = false;
+    this.pausedForEvent = 0;
+    this.hadEvent = false;
+    this.seenLog = world.tick;
+    this.viewLevel = 0;
+    this.worldVersion++;
+    this.objectsVersion++;
+    this.gridVersion++;
+    this.townVersion++;
+    this.speedBeforeTown = 1;
+    this.closeTown();
+    return true;
   }
 
   // ---------- bloco 7: jogos salvos ----------
@@ -565,7 +625,7 @@ export class GameController {
   }
 
   newGame(death = true): void {
-    this.replaceWorld(createWorld({ ...starterHouse(freshSeed()), death }));
+    this.replaceWorld(townWorld(createWorld({ ...starterHouse(freshSeed()), death })));
     this.toast(t('toast.newGame'));
     void this.freshSlot();
   }
@@ -573,7 +633,7 @@ export class GameController {
   /** Bloco 5: começa de novo com a família criada na tela de criação. */
   newFamily(draft: FamilyDraft, death = true): boolean {
     if (familyProblem(this.sim.catalog, draft)) return false;
-    this.replaceWorld(createWorld({ ...familySeed(draft, freshSeed()), death }));
+    this.replaceWorld(townWorld(createWorld({ ...familySeed(draft, freshSeed()), death })));
     this.toast(t('toast.newFamily', { name: cleanName(draft.surname) }));
     void this.freshSlot();
     return true;
@@ -591,6 +651,12 @@ function translateParams(params?: Record<string, string | number>): Record<strin
   const inner: Record<string, string | number> = { ...out, about: out.about ?? out.name };
   for (const [k, v] of Object.entries(params)) if (typeof v === 'string' && hasText(v)) out[k] = t(v, inner);
   return out;
+}
+
+/** Bloco 15: o jogo novo já nasce num bairro (a casa pronta é o lote 5). */
+function townWorld(world: World): World {
+  foundTown(world, CATALOG, TOWN);
+  return world;
 }
 
 function freshSeed(): number {

@@ -6,7 +6,7 @@ import { PAL, seeded } from './palette';
 // Tudo que fica em volta do terreno e é só cenário: gramado, calçada, rua,
 // cerca, árvores e as casas dos vizinhos. Nada daqui existe na simulação.
 
-function tree(x: number, z: number, s: number, rnd: () => number): THREE.Group {
+export function tree(x: number, z: number, s: number, rnd: () => number): THREE.Group {
   const g = new THREE.Group();
   const leaves = texMat('treeLeaves');
   g.add(cyl(0.11 * s, 0.2 * s, 1.4 * s, 8, texMat('bark')));
@@ -29,7 +29,7 @@ function tree(x: number, z: number, s: number, rnd: () => number): THREE.Group {
   return g;
 }
 
-function bush(x: number, z: number, s: number): THREE.Mesh {
+export function bush(x: number, z: number, s: number): THREE.Mesh {
   const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.45 * s, 2), texMat('treeLeaves', { color: 0xc8e8b8 }));
   tileUV(m, 2, 2);
   m.scale.y = 0.75;
@@ -64,7 +64,7 @@ function flowerBed(x: number, z: number, len: number, alongX: boolean): THREE.Gr
 }
 
 /** Carro estacionado na rua, com a frente para +x. */
-function car(x: number, z: number, color: number): THREE.Group {
+export function car(x: number, z: number, color: number): THREE.Group {
   const g = new THREE.Group();
   const paint = colorMat(color, { gloss: 0.9 });
   const steel = texMat('chrome', { gloss: 1 });
@@ -99,7 +99,7 @@ function car(x: number, z: number, color: number): THREE.Group {
   return g;
 }
 
-function streetLamp(x: number, z: number): THREE.Group {
+export function streetLamp(x: number, z: number): THREE.Group {
   const g = new THREE.Group();
   const iron = colorMat(0x24332c, { gloss: 0.4 });
   g.add(
@@ -194,7 +194,7 @@ function clothesline(x: number, z0: number, z1: number): THREE.Group {
   return g;
 }
 
-function hydrant(x: number, z: number): THREE.Group {
+export function hydrant(x: number, z: number): THREE.Group {
   const g = new THREE.Group();
   const red = colorMat(0xc9382f, { gloss: 0.6 });
   g.add(

@@ -331,6 +331,7 @@ export class Hud {
   private levelLabel = el('span', 'level-label');
   /** bloco 5: abre a tela de criar família */
   openCreator: (() => void) | null = null;
+  private townButton: HTMLButtonElement | null = null;
   private buildButton = el('button', 'btn btn-buy');
   private buildEl = el('div', 'card catalog build');
   private buildTabs = el('div', 'catalog-tabs');
@@ -463,7 +464,16 @@ export class Hud {
       if (this.openCreator) this.openCreator();
       else this.ctrl.newGame();
     });
-    bar.append(save, games, this.soundButton, fresh);
+    // bloco 15: o bairro (trocar de família, mudar de casa, família nova)
+    const town = el('button', 'btn', t('hud.town'));
+    town.title = t('hud.townTip');
+    town.addEventListener('click', () => {
+      this.system.close();
+      this.ctrl.openTown();
+    });
+    town.hidden = !this.ctrl.world.town;
+    this.townButton = town;
+    bar.append(town, save, games, this.soundButton, fresh);
     this.root.append(bar, this.system.el);
   }
 
@@ -713,6 +723,7 @@ export class Hud {
 
   update(): void {
     const world = this.ctrl.world;
+    if (this.townButton) this.townButton.hidden = !world.town;
     // bloco 14: casa vazia: só o aviso (não há a quem mostrar)
     if (this.renderOver()) return;
     const folk = this.ctrl.folk;
@@ -1831,7 +1842,8 @@ export class Hud {
   private renderOver(): boolean {
     const empty = this.ctrl.houseEmpty;
     const creatorOpen = !!document.querySelector('.creator:not([hidden])');
-    const show = empty && !creatorOpen;
+    // bloco 15: com o bairro aberto o aviso some (dá para escolher outra família lá)
+    const show = empty && !creatorOpen && this.ctrl.screen !== 'town';
     if (show === this.overShown) return empty;
     this.overShown = show;
     this.overEl.hidden = !show;
@@ -1845,6 +1857,11 @@ export class Hud {
     const load = el('button', 'btn', t('over.load'));
     load.addEventListener('click', () => this.system.toggle('saves'));
     row.append(load, fam);
+    if (this.ctrl.world.town) {
+      const town = el('button', 'btn btn-go', t('over.town'));
+      town.addEventListener('click', () => this.ctrl.openTown());
+      row.append(town);
+    }
     card.append(row);
     this.overEl.replaceChildren(card);
     return empty;

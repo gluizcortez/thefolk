@@ -1,5 +1,6 @@
 // Tipos do núcleo de simulação. Nada aqui (nem em sim/) pode importar Three.js ou DOM.
 // Todo o estado (`World`) é um objeto puro e serializável em JSON.
+import type { FamilyDraft } from './family';
 
 export const NEED_IDS = [
   'hunger',
@@ -795,6 +796,8 @@ export interface Neighbor {
   /** bloco 11: criança fora do bairro (colégio interno, levada pela visitadora) */
   away?: 'boarding' | 'fostered';
   age?: Age;
+  /** bloco 15: família (Family.id) com quem mora num lote do bairro; sem campo = mora fora do bairro */
+  home?: number;
 }
 
 export interface Visit {
@@ -1502,6 +1505,71 @@ export interface World {
   rules: { death: boolean };
   /** bloco 14: tick do último gatuno */
   lastBurglary: number;
+  /** bloco 15: o bairro com os lotes e as famílias (null = só a casa, como nos testes antigos) */
+  town: Town | null;
+}
+
+// ---------- Bloco 15: bairro com vários lotes e famílias ----------
+
+/** O que fica no lote quando a família dele não está em jogo (ou quando ninguém mora). */
+export interface LotHome {
+  grid: Grid;
+  objects: WorldObject[];
+  exit: Vec;
+}
+
+/** Um terreno do bairro, de um lado da rua. */
+export interface Lot {
+  id: number;
+  /** número na rua */
+  number: number;
+  /** 0 = lado de cima da rua (frente para o sul), 1 = lado de baixo (frente para o norte) */
+  side: 0 | 1;
+  /** posição ao longo da rua (0 = ponta oeste) */
+  col: number;
+  /** preço do terreno sem nada em cima */
+  land: number;
+  /** família que mora (0 = ninguém: à venda ou vago) */
+  familyId: number;
+  /**
+   * Casa e móveis guardados. null = terreno vazio, ou o lote em jogo (a casa
+   * dele mora no próprio World).
+   */
+  home: LotHome | null;
+}
+
+/** O que a família em jogo deixa guardado quando outra passa a ser jogada. */
+export interface FamilyStash {
+  folks: Folk[];
+  household: Household;
+  mess: Mess[];
+  /** tick em que saiu de jogo */
+  at: number;
+}
+
+/** Uma família do bairro. Quem é dela: Neighbor.home (fora de jogo) ou os moradores (em jogo). */
+export interface Family {
+  id: number;
+  name: string;
+  lotId: number;
+  /** tostões da família quando não está em jogo (em jogo vale household.funds) */
+  funds: number;
+  /** estado completo de quando foi jogada (null = nunca jogada ou recém-chegada) */
+  stash: FamilyStash | null;
+  /** tick em que chegou ao bairro */
+  since: number;
+}
+
+export interface Town {
+  name: string;
+  street: string;
+  lots: Lot[];
+  families: Family[];
+  /** família em jogo */
+  active: number;
+  nextFamily: number;
+  /** o que andou acontecendo nas outras casas (mais recente no fim) */
+  feed: LogEntry[];
 }
 
 // ---------- Bloco 9: assuntos, rodas, telefone e festas ----------
@@ -1644,6 +1712,10 @@ export type Command =
   | { type: 'planWedding'; folkId: number; partnerId: number; guestIds: number[]; surname: SurnameChoice }
   // bloco 14: par ou ímpar com o Seu Sereno (ou deixar ir)
   | { type: 'bargain'; pick: 'even' | 'odd' | null }
+  // bloco 15: bairro
+  | { type: 'playFamily'; familyId: number }
+  | { type: 'moveHouse'; lotId: number }
+  | { type: 'foundFamily'; lotId: number; draft: FamilyDraft }
   // modo construção: linhas de paredes vão de vértice a vértice do grid
   | { type: 'buildWalls'; x0: number; y0: number; x1: number; y1: number }
   | { type: 'eraseWalls'; x0: number; y0: number; x1: number; y1: number }

@@ -149,7 +149,8 @@ export function seedNeighbors(seeds: NeighborSeed[], nextId: number): Neighbor[]
 /** Vizinhos que só prestam serviço não aparecem sem avisar nem viram colegas. */
 export function isServiceNeighbor(n: Neighbor): boolean {
   // bloco 11: criança no colégio interno (ou levada pela visitadora) também não aparece
-  return n.service !== undefined || n.away !== undefined;
+  // bloco 15: bebê de uma família do bairro também não sai sozinho
+  return n.service !== undefined || n.away !== undefined || n.age === 'baby';
 }
 
 /**
@@ -202,19 +203,10 @@ export function seedRelations(world: World, seeds: RelationSeed[]): void {
   }
 }
 
-export function createWorld(seed: WorldSeed): World {
-  let nextId = 1;
-  const objects = seed.objects.map((o) => ({
-    defId: o.defId,
-    x: o.x,
-    y: o.y,
-    rot: o.rot ?? 0,
-    paid: 0,
-    id: nextId++,
-    state: freshState(),
-  }));
-  const folks: Folk[] = seed.folks.map((f) => ({
-    id: nextId++,
+/** Bloco 15: um morador novo a partir da semente (createWorld e família nova no bairro). */
+export function makeFolk(id: number, f: FolkSeed): Folk {
+  return {
+    id,
     name: f.name,
     traits: [...f.traits],
     x: f.x,
@@ -245,7 +237,21 @@ export function createWorld(seed: WorldSeed): World {
     gig: null,
     business: null,
     visit: null,
+  };
+}
+
+export function createWorld(seed: WorldSeed): World {
+  let nextId = 1;
+  const objects = seed.objects.map((o) => ({
+    defId: o.defId,
+    x: o.x,
+    y: o.y,
+    rot: o.rot ?? 0,
+    paid: 0,
+    id: nextId++,
+    state: freshState(),
   }));
+  const folks: Folk[] = seed.folks.map((f) => makeFolk(nextId++, f));
   const neighbors = seedNeighbors(seed.neighbors ?? [], nextId);
   nextId += neighbors.length;
   const world: World = {
@@ -281,6 +287,7 @@ export function createWorld(seed: WorldSeed): World {
     spirits: [],
     rules: { death: seed.death ?? true },
     lastBurglary: seed.startTick,
+    town: null,
   };
   seedRelations(world, seed.relations ?? []);
   seedWorkplaceTies(world);

@@ -69,6 +69,7 @@ import { fireAt } from '../sim/peril';
 import type { Fire, Spirit } from '../sim/types';
 import { WearFx, buildMess } from './art/upkeep';
 import type { GameController } from './controller';
+import { TownView } from './town';
 
 /** 30° dá a projeção 2:1 das vistas isométricas clássicas */
 const ELEVATION = THREE.MathUtils.degToRad(30);
@@ -281,6 +282,8 @@ export class GameView {
   private fireViews = new Map<number, { group: THREE.Group; tick(time: number, heat: number): void; smoke: THREE.Sprite[]; light: THREE.PointLight | null }>();
   private spiritViews = new Map<string, { model: FolkModel; mats: THREE.MeshPhongMaterial[] }>();
   private sprays = new Map<number, THREE.Mesh>();
+  /** bloco 15: a vista do bairro (desenhada na mesma imagem interna) */
+  readonly town: TownView;
 
   constructor(
     private readonly container: HTMLElement,
@@ -334,6 +337,7 @@ export class GameView {
 
     this.post.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), retroPass(this.frameBuffer.texture)));
 
+    this.town = new TownView(ctrl);
     this.bindInput();
     window.addEventListener('resize', () => this.resize());
     this.resize();
@@ -576,14 +580,30 @@ export class GameView {
 
   private bindInput(): void {
     const el = this.renderer.domElement;
+    const ndc = (e: PointerEvent): [number, number] => {
+      const rect = el.getBoundingClientRect();
+      return [((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1];
+    };
     el.addEventListener('pointerdown', (e) => {
       el.setPointerCapture(e.pointerId);
+      // bloco 15: no bairro o clique escolhe um lote e o arrasto anda pela rua
+      if (this.ctrl.screen === 'town') {
+        this.town.pointerDown(e.clientX, e.clientY);
+        return;
+      }
       // no modo construção o botão esquerdo traça; o direito arrasta a câmera
       const building = this.ctrl.mode === 'build' && e.button === 0 && !this.hud.isMenuOpen();
       Object.assign(this.pointer, { down: true, x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, dragged: false, building });
       if (building) this.beginBuildDrag(e.clientX, e.clientY);
     });
     el.addEventListener('pointermove', (e) => {
+      if (this.ctrl.screen === 'town') {
+        const [nx, ny] = ndc(e);
+        this.town.pointerMove(e.clientX, e.clientY, nx, ny, el.clientHeight);
+        el.style.cursor = this.town.hover ? 'pointer' : 'default';
+        this.hud.setTooltip(0, 0, null);
+        return;
+      }
       const p = this.pointer;
       this.shiftDown = e.shiftKey;
       if (this.ctrl.mode === 'build' && (!p.down || p.building)) {
@@ -624,6 +644,12 @@ export class GameView {
       p.y = e.clientY;
     });
     el.addEventListener('pointerup', (e) => {
+      if (this.ctrl.screen === 'town') {
+        const [nx, ny] = ndc(e);
+        const lot = this.town.pointerUp(nx, ny);
+        if (lot) this.ctrl.townLot = lot;
+        return;
+      }
       const wasDrag = this.pointer.dragged;
       const wasBuilding = this.pointer.building;
       this.pointer.down = false;
@@ -650,6 +676,10 @@ export class GameView {
       'wheel',
       (e) => {
         e.preventDefault();
+        if (this.ctrl.screen === 'town') {
+          this.town.zoom(e.deltaY);
+          return;
+        }
         this.viewHeight = THREE.MathUtils.clamp(this.viewHeight * (e.deltaY > 0 ? 1.1 : 0.9), 4, 24);
       },
       { passive: false },
@@ -663,6 +693,11 @@ export class GameView {
       if (e.target instanceof HTMLInputElement) return;
       // bloco 5: com a tela de criar família aberta, o jogo não ouve o teclado
       if (document.querySelector('.creator:not([hidden])')) return;
+      // bloco 15: no bairro só o Esc (volta para o lote) vale
+      if (this.ctrl.screen === 'town') {
+        if (e.code === 'Escape') this.ctrl.closeTown();
+        return;
+      }
       if (e.key === 'Shift') this.shiftDown = true;
       if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
@@ -910,6 +945,20 @@ export class GameView {
     }
     if (this.builtGrid !== this.ctrl.gridVersion) this.buildHouse();
     const world = this.ctrl.world;
+
+    // bloco 15: com o bairro aberto, a tela mostra a rua inteira (o tempo está parado)
+    if (this.ctrl.screen === 'town') {
+      const el = this.renderer.domElement;
+      this.town.render(this.renderer, this.frameBuffer, el.clientWidth / Math.max(1, el.clientHeight));
+      this.renderer.setRenderTarget(null);
+      this.renderer.render(this.post, this.postCamera);
+      this.hudClock += dt;
+      if (this.hudClock > 0.09) {
+        this.hudClock = 0;
+        this.hud.update();
+      }
+      return;
+    }
 
     const rate = TICKS_PER_SECOND[world.speed];
     if (rate > 0) {

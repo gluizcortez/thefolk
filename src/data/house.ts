@@ -1,4 +1,5 @@
 import type { RoomStyle, WorldSeed } from '../sim/world';
+import type { HousePlan } from '../sim/town';
 import { NEIGHBORS, NEIGHBOR_TIES } from './neighbors';
 import { gridFromMap } from '../sim/world';
 import { monthFor, temperFromTraits } from '../sim/temper';
@@ -119,4 +120,9 @@ export function starterHouse(seed = 20001): WorldSeed {
     relations: [{ a: 'Tomé Varanda', b: 'Lia Sacada', friendship: 22, respect: 5 }, ...NEIGHBOR_TIES],
     neighbors: NEIGHBORS,
   };
+}
+
+/** Bloco 15: a mesma casa como planta de lote do bairro (para as casas vizinhas iguais). */
+export function starterPlan(): HousePlan {
+  return { map: MAP, rooms: ROOMS, doors: DOORS, windows: WINDOWS, objects: starterHouse().objects, exit: HOUSE_EXIT };
 }

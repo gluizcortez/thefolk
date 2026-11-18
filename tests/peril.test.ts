@@ -312,7 +312,7 @@ describe('save v18 (bloco 14)', () => {
     raw.world.neighbors = (raw.world.neighbors as { service?: string }[]).filter((n) => !['firefighter', 'police', 'burglar', 'reaper'].includes(n.service ?? ''));
     const file = deserialize(raw, { neighbors: NEIGHBORS, catalog: CATALOG });
     expect(file.version).toBe(SAVE_VERSION);
-    expect(SAVE_VERSION).toBe(18);
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(18);
     const w = file.world;
     expect(w.fires).toEqual([]);
     expect(w.help).toEqual({ fire: 0, police: 0 });
