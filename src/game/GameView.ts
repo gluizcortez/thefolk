@@ -71,6 +71,7 @@ import type { Fire, Spirit } from '../sim/types';
 import { WearFx, buildMess } from './art/upkeep';
 import type { GameController } from './controller';
 import { TownView } from './town';
+import { shownWallMode } from './viewMode';
 
 /** 30° dá a projeção 2:1 das vistas isométricas clássicas */
 const ELEVATION = THREE.MathUtils.degToRad(30);
@@ -593,10 +594,19 @@ export class GameView {
       .multiplyScalar(30)
       .add(this.sun.target.position);
 
-    const state = `${this.ctrl.wallMode}|${Math.sin(this.azimuth) > 0}|${Math.cos(this.azimuth) > 0}|${this.ctrl.viewLevel}`;
+    // plano 2, bloco 3: o modo escolhido vira o modo mostrado (o telhado some
+    // sozinho na obra e de perto, a não ser que o jogador fixe o modo)
+    const tool = this.ctrl.buildTool;
+    const shown = shownWallMode(this.ctrl.wallMode, this.ctrl.wallPinned, {
+      building: this.ctrl.mode === 'build',
+      roofTool: this.ctrl.mode === 'build' && (tool === 'roof' || tool === 'slab' || tool === 'unslab'),
+      viewHeight: this.viewHeight,
+    });
+    this.ctrl.shownWall = shown;
+    const state = `${shown}|${Math.sin(this.azimuth) > 0}|${Math.cos(this.azimuth) > 0}|${this.ctrl.viewLevel}`;
     if (state !== this.wallState) {
       this.wallState = state;
-      this.house.update(this.ctrl.wallMode, Math.sin(this.azimuth), Math.cos(this.azimuth), this.ctrl.viewLevel);
+      this.house.update(shown, Math.sin(this.azimuth), Math.cos(this.azimuth), this.ctrl.viewLevel);
       this.previewKey = '';
     }
   }
@@ -761,6 +771,18 @@ export class GameView {
           e.preventDefault();
           this.ctrl.changeLevel(-1);
           break;
+        // plano 2, bloco 3: modos de vista (Home sobe as paredes, End desce; P fixa)
+        case 'Home':
+          e.preventDefault();
+          this.ctrl.stepWallMode(1);
+          break;
+        case 'End':
+          e.preventDefault();
+          this.ctrl.stepWallMode(-1);
+          break;
+        case 'KeyP':
+          this.ctrl.wallPinned = !this.ctrl.wallPinned;
+          break;
         case 'KeyE':
           this.ctrl.rotateCamera(1);
           break;
@@ -894,8 +916,14 @@ export class GameView {
 
   /** Bloco 12: onde o raio do mouse acerta o chão do andar que se está vendo. */
   private levelPoint(): THREE.Vector3 | null {
-    const h = this.ctrl.viewLevel * LEVEL_H;
+    // plano 2, bloco 3: a laje se marca na altura do telhado
+    const h = this.ctrl.viewLevel * LEVEL_H + (this.slabTool() ? WALL_H : 0);
     return this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -h), new THREE.Vector3());
+  }
+
+  /** Plano 2, bloco 3: ferramenta de marcar ou tirar laje na mão. */
+  private slabTool(): boolean {
+    return this.ctrl.mode === 'build' && (this.ctrl.buildTool === 'slab' || this.ctrl.buildTool === 'unslab');
   }
 
   /** Bloco 12: tile (em linhas do grid inteiro) de um ponto do chão do andar visto. */
@@ -2029,7 +2057,7 @@ export class GameView {
     if (isLineTool(tool)) {
       const v = this.vertexAt(clientX, clientY);
       if (v) this.buildDrag = { start: v, cur: v };
-    } else if (tool === 'floor' || tool === 'yard') {
+    } else if (tool === 'floor' || tool === 'yard' || tool === 'slab' || tool === 'unslab') {
       const t = this.tileAt(clientX, clientY);
       if (t) this.buildDrag = { start: t, cur: t };
     }
@@ -2084,6 +2112,12 @@ export class GameView {
       const a = drag?.start ?? tile;
       const b = drag?.cur ?? tile;
       if (a && b) cmd = { type: 'paintFloor', x0: a.x, y0: a.y, x1: b.x, y1: b.y, floorId: this.ctrl.floorId };
+    } else if (tool === 'slab' || tool === 'unslab') {
+      const tile = this.tileAt(clientX, clientY);
+      if (drag && tile) drag.cur = tile;
+      const a = drag?.start ?? tile;
+      const b = drag?.cur ?? tile;
+      if (a && b) cmd = { type: 'markFlatRoof', x0: a.x, y0: a.y, x1: b.x, y1: b.y, flat: tool === 'slab' };
     } else if (isOpeningTool(tool)) {
       const face = this.faceAt(clientX, clientY);
       if (face) cmd = { type: 'placeOpening', edge: edgeOfFace(face), kind: tool };
@@ -2129,6 +2163,7 @@ export class GameView {
       const ok = this.ctrl.commandOrExplain(cmd);
       if (ok && cmd.type === 'placeOpening') this.addPing(...this.edgeCenter(cmd.edge));
       if (ok && (tool === 'floor' || tool === 'yard') && cmd.type === 'paintFloor') this.addPing(cmd.x1, cmd.y1);
+      if (ok && cmd.type === 'markFlatRoof') this.addPing(cmd.x1, cmd.y1);
       if (ok && (cmd.type === 'placeStairs' || cmd.type === 'removeStairs')) this.addPing(cmd.x, cmd.y);
     }
     this.previewKey = '';
@@ -2276,6 +2311,19 @@ export class GameView {
       );
       frame.position.set((xa + xb + 1) / 2, 0.05, (ya + yb + 1) / 2);
       this.buildPreview.add(mesh, frame);
+    } else if (cmd.type === 'markFlatRoof') {
+      // plano 2, bloco 3: retângulo da laje na altura do telhado
+      const top = rowOn(grid, Math.max(0, levelOfRow(grid, cmd.y0)), 0);
+      const xa = Math.max(0, Math.min(cmd.x0, cmd.x1));
+      const xb = Math.min(grid.w - 1, Math.max(cmd.x0, cmd.x1));
+      const ya = Math.max(top, Math.min(cmd.y0, cmd.y1));
+      const yb = Math.min(top + grid.h - 1, Math.max(cmd.y0, cmd.y1));
+      const color = !ok ? bad : cmd.flat ? PAL.mustard : 0x9ad0e8;
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(xb - xa + 1, 0.14, yb - ya + 1), previewMat(color, 0.55));
+      slab.material.depthTest = false;
+      slab.position.set((xa + xb + 1) / 2, WALL_H + 0.1, (ya + yb + 1) / 2);
+      slab.renderOrder = 4;
+      this.buildPreview.add(slab);
     } else if (cmd.type === 'paintWalls') {
       const art = COVER_ART[cmd.coveringId];
       for (const face of cmd.faces) {

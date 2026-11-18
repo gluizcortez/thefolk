@@ -53,7 +53,7 @@ export type Screen = 'lot' | 'town';
  * Ferramenta do modo construção. Bloco 12: meia parede, coluna, escada,
  * telhado e os estilos de porta e janela (cada um é uma ferramenta).
  */
-export type BuildTool = 'wall' | 'half' | 'erase' | 'column' | 'stairs' | OpeningKind | 'floor' | 'paint' | 'roof' | FenceKind | 'yard';
+export type BuildTool = 'wall' | 'half' | 'erase' | 'column' | 'stairs' | OpeningKind | 'floor' | 'paint' | 'roof' | 'slab' | 'unslab' | FenceKind | 'yard';
 
 /** Bloco 13: ferramentas que se arrastam de vértice a vértice (paredes, cercas, derrubar). */
 export function isLineTool(tool: BuildTool): boolean {
@@ -76,7 +76,8 @@ export interface Placing {
   /** bloco 4: cor escolhida no catálogo */
   color?: string;
 }
-import type { WallMode } from './art/house';
+import type { WallMode } from './viewMode';
+import { stepWallMode } from './viewMode';
 
 /** Dados de fora do núcleo que as migrações de save usam. */
 const MIGRATION = { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES, catalog: CATALOG, town: TOWN };
@@ -199,6 +200,10 @@ export class GameController {
   worldVersion = 0;
   /** como as paredes são mostradas (só visual, não entra no save) */
   wallMode: WallMode = 'cutaway';
+  /** plano 2, bloco 3: modo fixo (o telhado não some sozinho) */
+  wallPinned = false;
+  /** plano 2, bloco 3: o modo que a tela está mostrando (escrito pela tela) */
+  shownWall: WallMode = 'cutaway';
   /** quartos de volta da câmera a partir da vista inicial */
   camQuarter = 0;
   mode: Mode = 'live';
@@ -486,9 +491,14 @@ export class GameController {
     if (log.length > 0) this.seenLog = Math.max(this.seenLog, log[log.length - 1].tick);
   }
 
-  cycleWallMode(): WallMode {
-    const order: WallMode[] = ['cutaway', 'down', 'up'];
-    this.wallMode = order[(order.indexOf(this.wallMode) + 1) % order.length];
+  /** Plano 2, bloco 3: escolhe o modo de vista. */
+  setWallMode(mode: WallMode): void {
+    this.wallMode = mode;
+  }
+
+  /** Plano 2, bloco 3: sobe (1) ou desce (-1) um degrau nos modos de vista (Home e End). */
+  stepWallMode(dir: number): WallMode {
+    this.wallMode = stepWallMode(this.wallMode, dir);
     return this.wallMode;
   }
 

@@ -54,6 +54,7 @@ export const PARTS: BuildParts = {
   stairs: { price: 650 },
   column: { price: 40 },
   roof: { price: 2 },
+  slab: { price: 6 },
   // bloco 13: cerca de ripas, mureta de tijolo e portão (por metro / peça)
   fence: { price: 8 },
   lowwall: { price: 12 },

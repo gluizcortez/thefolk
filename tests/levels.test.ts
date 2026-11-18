@@ -168,9 +168,9 @@ describe('andares (bloco 12)', () => {
     expect(sim.dispatch({ type: 'toggleColumn', x: 1, y: 12 })).toBe(true);
     expect(sim.world.grid.columns).toEqual(['1,12']);
     expect(sim.dispatch({ type: 'setRoof', style: 'gable', color: 'slate' })).toBe(true);
-    expect(sim.world.grid.roof).toEqual({ style: 'gable', color: 'slate' });
+    expect(sim.world.grid.roof).toMatchObject({ style: 'gable', color: 'slate' });
     expect(sim.dispatch({ type: 'undoBuild' })).toBe(true);
-    expect(sim.world.grid.roof).toEqual({ style: 'hip', color: 'terracotta' });
+    expect(sim.world.grid.roof).toMatchObject({ style: 'hip', color: 'terracotta' });
     expect(sim.dispatch({ type: 'undoBuild' })).toBe(true);
     expect(sim.world.grid.columns).toEqual([]);
   });
@@ -238,7 +238,7 @@ describe('save v16 (bloco 12)', () => {
     expect(up.world.grid.floor.length).toBe(w * rowsOf(up.world.grid));
     expect(up.world.grid.floor.slice(0, w * h)).toEqual(sim.world.grid.floor.slice(0, w * h));
     expect(up.world.grid.stairs).toEqual([]);
-    expect(up.world.grid.roof).toEqual({ style: 'hip', color: 'terracotta' });
+    expect(up.world.grid.roof).toEqual({ style: 'hip', color: 'terracotta', pitch: 'mid', flat: [] });
   });
 });
 

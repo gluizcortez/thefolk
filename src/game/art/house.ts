@@ -9,9 +9,14 @@ import {
   splitsRoom,
   levelOfRow,
   levelsOf,
-  roofHeights,
+  PITCH,
+  ROOF_FLAT,
   ROOF_PITCH,
+  ROOF_SLOPE,
+  roofEaves,
+  roofHeights,
   roofMask,
+  roofRidges,
   rowOn,
   stairPlan,
   strideOf,
@@ -19,7 +24,8 @@ import {
 import { ball, box, colorMat, cyl, rod, setShadows, texMat } from './build';
 import { PAL } from './palette';
 
-export type WallMode = 'cutaway' | 'down' | 'up';
+import type { WallMode } from '../viewMode';
+export type { WallMode } from '../viewMode';
 
 export const WALL_H = 2.6;
 export const LOW_H = 0.28;
@@ -572,24 +578,42 @@ export class House {
    * Bloco 12: telhado de cada andar, montado sobre a máscara de tiles cobertos.
    * Cada quadrado vira dois triângulos pelas alturas dos cantos; a diagonal
    * acompanha a espiga (quatro águas) ou a cumeeira. Onde a beira fica alta
-   * (pontas das duas águas) sobe um oitão de alvenaria.
+   * (pontas das duas águas, fundo da uma água) sobe um oitão.
+   *
+   * Plano 2, bloco 3: a casa parece inteira de fora. Beiral com testeira
+   * (a tábua que acompanha a beira, inclusive na rampa do oitão), calha nas
+   * beiras baixas com condutor descendo nos cantos do térreo, cumeeira de
+   * telha capa, oitão com a mesma textura da parede de baixo e laje plana
+   * com platibanda onde o jogador marcou.
    */
   private buildRoofs(): void {
     if (!this.catalog) return;
     const { grid } = this;
-    const style = grid.roof?.style ?? 'hip';
-    const tint = ROOF_TINT[grid.roof?.color ?? 'terracotta'] ?? ROOF_TINT.terracotta;
+    const roof = grid.roof;
+    const style = roof?.style ?? 'hip';
+    const pitch = PITCH[roof?.pitch ?? 'mid'] ?? ROOF_PITCH;
+    const tint = ROOF_TINT[roof?.color ?? 'terracotta'] ?? ROOF_TINT.terracotta;
     const masks = roofMask(grid, this.catalog);
     const tiles = texMat('roofTile', { color: tint, doubleSide: true });
-    const gableMat = texMat('wallExterior', { doubleSide: true });
+    const capMat = texMat('roofTile', { color: shade(tint, 0.78) });
+    const fasciaMat = colorMat(PAL.white, { doubleSide: true });
+    const gutterMat = colorMat(0x8c9097, { gloss: 0.5 });
+    const slabMat = colorMat(0xbdb6a8);
+    const parapetMat = texMat('wallExterior');
+    const parapetCap = colorMat(PAL.wallCap);
     const W = grid.w + 1;
     for (let n = 0; n < masks.length && n < this.roofs.length; n++) {
       const mask = masks[n];
-      if (!mask.some((v) => v === 1)) continue;
-      const heights = roofHeights(mask, grid.w, grid.h, style);
+      if (!mask.some((v) => v !== 0)) continue;
+      const holder = this.roofs[n];
+      const heights = roofHeights(mask, grid.w, grid.h, style, pitch);
       const top = rowOn(grid, n, 0);
-      const covered = (x: number, y: number) => x >= 0 && y >= 0 && x < grid.w && y < grid.h && mask[y * grid.w + x] === 1;
-      // canto puxado para fora no beiral
+      const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < grid.w && y < grid.h;
+      const anyRoof = (x: number, y: number) => inside(x, y) && mask[y * grid.w + x] !== 0;
+      const slope = (x: number, y: number) => inside(x, y) && mask[y * grid.w + x] === ROOF_SLOPE;
+      const flat = (x: number, y: number) => inside(x, y) && mask[y * grid.w + x] === ROOF_FLAT;
+      const eaveDrop = EAVE * pitch;
+      // canto puxado para fora no beiral (não avança sobre a laje vizinha)
       const corner = (vx: number, vy: number): [number, number, number] => {
         let dx = 0;
         let dz = 0;
@@ -599,7 +623,7 @@ export class House {
           [vx - 1, vy],
           [vx, vy],
         ]) {
-          if (covered(tx, ty)) continue;
+          if (anyRoof(tx, ty)) continue;
           dx += tx + 0.5 - vx;
           dz += ty + 0.5 - vy;
         }
@@ -608,9 +632,11 @@ export class House {
         const ox = m > 0.01 ? (dx / m) * EAVE : 0;
         const oz = m > 0.01 ? (dz / m) * EAVE : 0;
         // a beira desce um pouco além da parede
-        if (m > 0.01 && h <= 0) h = -EAVE * ROOF_PITCH;
-        return [vx + ox, WALL_H + 0.04 + h, top + vy + oz];
+        if (m > 0.01 && h <= 0) h = -eaveDrop;
+        return [vx + ox, WALL_H + 0.04 + Math.max(h, -eaveDrop), top + vy + oz];
       };
+
+      // ---- telhas ----
       const pos: number[] = [];
       const uv: number[] = [];
       const tri = (a: number[], b: number[], c: number[]) => {
@@ -627,7 +653,7 @@ export class House {
       };
       for (let y = 0; y < grid.h; y++) {
         for (let x = 0; x < grid.w; x++) {
-          if (!covered(x, y)) continue;
+          if (!slope(x, y)) continue;
           const h00 = heights[y * W + x];
           const h10 = heights[y * W + x + 1];
           const h01 = heights[(y + 1) * W + x];
@@ -645,50 +671,145 @@ export class House {
           }
         }
       }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-      geo.computeVertexNormals();
-      const mesh = new THREE.Mesh(geo, tiles);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      this.roofs[n].add(mesh);
+      if (pos.length) {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, tiles);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        holder.add(mesh);
+      }
 
-      // oitões: beira com canto alto vira parede em triângulo (ou trapézio)
-      const gp: number[] = [];
-      const guv: number[] = [];
-      const wall = (x0: number, z0: number, x1: number, z1: number, h0: number, h1: number) => {
+      // ---- testeira: a tábua que acompanha toda a beira das telhas ----
+      const fp: number[] = [];
+      const board = (a: number[], b: number[]) => {
+        const lo = 0.13;
+        fp.push(...a, ...b, b[0], b[1] - lo, b[2], ...a, b[0], b[1] - lo, b[2], a[0], a[1] - lo, a[2]);
+      };
+      for (let y = 0; y < grid.h; y++) {
+        for (let x = 0; x < grid.w; x++) {
+          if (!slope(x, y)) continue;
+          if (!anyRoof(x, y - 1)) board(corner(x, y), corner(x + 1, y));
+          if (!anyRoof(x, y + 1)) board(corner(x + 1, y + 1), corner(x, y + 1));
+          if (!anyRoof(x - 1, y)) board(corner(x, y + 1), corner(x, y));
+          if (!anyRoof(x + 1, y)) board(corner(x + 1, y), corner(x + 1, y + 1));
+        }
+      }
+      if (fp.length) {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(fp, 3));
+        g.computeVertexNormals();
+        holder.add(new THREE.Mesh(g, fasciaMat));
+      }
+
+      // ---- cumeeira ----
+      for (const r of roofRidges(heights, grid.w, grid.h)) {
+        const h = heights[r.y0 * W + r.x0];
+        const alongX = r.y0 === r.y1;
+        // meia telha capa deitada ao longo de x (a metade de cima), girada para z se preciso
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.04, 6, 1, false, 0, Math.PI), capMat);
+        cap.rotation.z = Math.PI / 2;
+        cap.castShadow = true;
+        const pivot = new THREE.Group();
+        pivot.add(cap);
+        if (!alongX) pivot.rotation.y = Math.PI / 2;
+        pivot.position.set((r.x0 + r.x1) / 2, WALL_H + 0.04 + h + 0.01, top + (r.y0 + r.y1) / 2);
+        holder.add(pivot);
+      }
+
+      // ---- calha nas beiras baixas e condutores nos cantos do térreo ----
+      for (const e of roofEaves(mask, heights, grid.w, grid.h)) {
+        const alongX = e.y0 === e.y1;
+        // estica até o canto do beiral quando a beira dobra ali
+        const innerX = alongX ? 0 : e.dx < 0 ? e.x0 : e.x0 - 1;
+        const innerY = alongX ? (e.dy < 0 ? e.y0 : e.y0 - 1) : 0;
+        const startOpen = alongX ? !anyRoof(e.x0 - 1, innerY) : !anyRoof(innerX, e.y0 - 1);
+        const endOpen = alongX ? !anyRoof(e.x1, innerY) : !anyRoof(innerX, e.y1);
+        const a = (alongX ? e.x0 : e.y0) - (startOpen ? EAVE : 0);
+        const b = (alongX ? e.x1 : e.y1) + (endOpen ? EAVE : 0);
+        const gy = WALL_H + 0.04 - eaveDrop - 0.12;
+        const ox = alongX ? 0 : e.dx * (EAVE + 0.05);
+        const oz = alongX ? e.dy * (EAVE + 0.05) : 0;
+        const gut = alongX
+          ? box(b - a, 0.09, 0.11, gutterMat, (a + b) / 2, gy, top + e.y0 + oz)
+          : box(0.11, 0.09, b - a, gutterMat, e.x0 + ox, gy, top + (a + b) / 2);
+        holder.add(gut);
+        if (n !== 0) continue;
+        // condutor: desce no canto de fora até o chão
+        for (const [open, at] of [
+          [startOpen, a + 0.08],
+          [endOpen, b - 0.08],
+        ] as [boolean, number][]) {
+          if (!open) continue;
+          const px = alongX ? at : e.x0 + ox;
+          const pz = alongX ? top + e.y0 + oz : top + at;
+          holder.add(box(0.07, gy, 0.07, gutterMat, px, 0, pz));
+        }
+      }
+
+      // ---- oitões: beira com canto alto vira parede com a textura da parede de baixo ----
+      const gables = new Map<string, { p: number[]; uv: number[] }>();
+      const wall = (tex: string, x0: number, z0: number, x1: number, z1: number, h0: number, h1: number) => {
         if (h0 <= 0 && h1 <= 0) return;
         const yb = WALL_H;
         const p = [
           [x0, yb, z0],
           [x1, yb, z1],
-          [x1, yb + Math.max(0, h1), z1],
-          [x0, yb + Math.max(0, h0), z0],
+          [x1, yb + Math.max(0, h1) + 0.04, z1],
+          [x0, yb + Math.max(0, h0) + 0.04, z0],
         ];
+        const out = gables.get(tex) ?? { p: [], uv: [] };
         for (const i of [0, 1, 2, 0, 2, 3]) {
-          gp.push(...p[i]);
-          guv.push(i === 1 || i === 2 ? 1 : 0, (p[i][1] - yb) / WALL_H + 0.1);
+          out.p.push(...p[i]);
+          // o desenho da parede de um metro, recomeçando em cima da parede de baixo
+          out.uv.push(i === 1 || i === 2 ? 1 : 0, (p[i][1] - yb) / WALL_H);
         }
+        gables.set(tex, out);
       };
+      // a face de fora do oitão: a da parede de baixo; ao lado de laje (cômodo), tijolo de fora
+      const outer = (x: number, y: number, side: string) => (this.indoor(x, y) ? EXTERIOR.tex : this.finishOf(x, y, side).tex);
       for (let y = 0; y < grid.h; y++) {
         for (let x = 0; x < grid.w; x++) {
-          if (!covered(x, y)) continue;
+          if (!slope(x, y)) continue;
           const z = top + y;
-          if (!covered(x, y - 1)) wall(x, z, x + 1, z, heights[y * W + x], heights[y * W + x + 1]);
-          if (!covered(x, y + 1)) wall(x, z + 1, x + 1, z + 1, heights[(y + 1) * W + x], heights[(y + 1) * W + x + 1]);
-          if (!covered(x - 1, y)) wall(x, z, x, z + 1, heights[y * W + x], heights[(y + 1) * W + x]);
-          if (!covered(x + 1, y)) wall(x + 1, z, x + 1, z + 1, heights[y * W + x + 1], heights[(y + 1) * W + x + 1]);
+          if (!slope(x, y - 1)) wall(outer(x, z - 1, 'S'), x, z, x + 1, z, heights[y * W + x], heights[y * W + x + 1]);
+          if (!slope(x, y + 1)) wall(outer(x, z + 1, 'N'), x, z + 1, x + 1, z + 1, heights[(y + 1) * W + x], heights[(y + 1) * W + x + 1]);
+          if (!slope(x - 1, y)) wall(outer(x - 1, z, 'E'), x, z, x, z + 1, heights[y * W + x], heights[(y + 1) * W + x]);
+          if (!slope(x + 1, y)) wall(outer(x + 1, z, 'W'), x + 1, z, x + 1, z + 1, heights[y * W + x + 1], heights[(y + 1) * W + x + 1]);
         }
       }
-      if (gp.length) {
-        const g2 = new THREE.BufferGeometry();
-        g2.setAttribute('position', new THREE.Float32BufferAttribute(gp, 3));
-        g2.setAttribute('uv', new THREE.Float32BufferAttribute(guv, 2));
-        g2.computeVertexNormals();
-        const gm = new THREE.Mesh(g2, gableMat);
+      for (const [tex, g] of gables) {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(g.p, 3));
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(g.uv, 2));
+        geo.computeVertexNormals();
+        const gm = new THREE.Mesh(geo, texMat(tex, { doubleSide: true }));
         gm.receiveShadow = true;
-        this.roofs[n].add(gm);
+        gm.castShadow = true;
+        holder.add(gm);
+      }
+
+      // ---- laje: placa plana com platibanda onde dá para fora ----
+      for (let y = 0; y < grid.h; y++) {
+        for (let x = 0; x < grid.w; x++) {
+          if (!flat(x, y)) continue;
+          const z = top + y;
+          const slab = box(1.002, 0.16, 1.002, slabMat, x + 0.5, WALL_H - 0.04, z + 0.5);
+          slab.receiveShadow = true;
+          holder.add(slab);
+          const P = 0.42;
+          const T = 0.14;
+          const side = (open: boolean, w: number, d: number, cx: number, cz: number) => {
+            if (!open) return;
+            holder.add(box(w, P, d, parapetMat, cx, WALL_H, cz), box(w + 0.04, 0.05, d + 0.04, parapetCap, cx, WALL_H + P, cz));
+          };
+          side(!anyRoof(x, y - 1), 1, T, x + 0.5, z + T / 2);
+          side(!anyRoof(x, y + 1), 1, T, x + 0.5, z + 1 - T / 2);
+          side(!anyRoof(x - 1, y), T, 1, x + T / 2, z + 0.5);
+          side(!anyRoof(x + 1, y), T, 1, x + 1 - T / 2, z + 0.5);
+        }
       }
     }
   }
@@ -700,13 +821,16 @@ export class House {
    * paredes inteiras, e o telhado só com as paredes levantadas.
    */
   update(mode: WallMode, camX: number, camZ: number, view = 0): void {
-    this.levels.forEach((g, n) => (g.visible = n <= view));
-    this.roofs.forEach((g, n) => (g.visible = mode === 'up' && n <= view));
+    // plano 2, bloco 3: telhado à vista mostra a casa inteira, todos os andares
+    const full = mode === 'roof';
+    this.levels.forEach((g, n) => (g.visible = full || n <= view));
+    // o telhado dos andares de baixo do que se vê fica sempre (varanda do térreo)
+    this.roofs.forEach((g, n) => (g.visible = full || n < view));
     for (const w of this.walls) {
       let behindIndoor: boolean;
       if (w.north) behindIndoor = camZ > 0 ? this.roomy(w.x, w.y - 1) : this.roomy(w.x, w.y);
       else behindIndoor = camX > 0 ? this.roomy(w.x - 1, w.y) : this.roomy(w.x, w.y);
-      const m = w.level < view ? 'up' : mode;
+      const m = full || w.level < view ? 'up' : mode;
       w.isTall = m === 'up' || (m === 'cutaway' && !behindIndoor);
       w.tall.visible = w.isTall;
       w.low.visible = !w.isTall;
@@ -717,11 +841,17 @@ export class House {
       p.low.visible = !tall;
     }
     for (const c of this.columns) {
-      const tall = c.level < view || mode !== 'down';
+      const tall = full || c.level < view || mode !== 'down';
       c.tall.visible = tall;
       c.low.visible = !tall;
     }
   }
+}
+
+/** Cor um pouco mais escura (ou clara, com f > 1). */
+function shade(color: number, f: number): number {
+  const c = new THREE.Color(color).multiplyScalar(f);
+  return c.getHex();
 }
 
 /** Bloco 13: fundura da piscina e a altura da água abaixo da borda. */

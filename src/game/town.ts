@@ -179,7 +179,7 @@ export class TownView {
     const catalog = this.ctrl.sim.catalog;
     const house = new House(home.grid, catalog.floors, catalog);
     const levels = home.grid.levels ?? 1;
-    house.update('up', 1, 1, levels - 1);
+    house.update('roof', 1, 1, levels - 1);
     g.add(house.group);
     for (const obj of home.objects) {
       const def = catalog.objects[obj.defId];

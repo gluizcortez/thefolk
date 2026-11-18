@@ -2,6 +2,8 @@ import { HAIR, PAINT, SHIRT, SKIN, css } from '../game/art/palette';
 import { COVER_ART, FLOOR_ART } from '../game/art/house';
 import type { BuildTool, FocusTarget, GameController } from '../game/controller';
 import { OPENING_TOOLS, isOpeningTool } from '../game/controller';
+import { WALL_MODES, isWallMode } from '../game/viewMode';
+import type { WallMode } from '../game/viewMode';
 import { ROOF_COLORS } from '../data/build';
 import { hasText, t } from '../i18n';
 import {
@@ -123,6 +125,7 @@ import type {
   Catalog,
   Command,
   World,
+  RoofPitch,
   RoofStyle,
   Action,
   CareerDef,
@@ -237,16 +240,21 @@ interface UiPrefs {
   scale: UiScale;
   tab: Tab;
   help: boolean;
+  /** plano 2, bloco 3: modo de vista escolhido e se está fixo */
+  walls: WallMode;
+  pin: boolean;
 }
 const PREFS_KEY = 'thefolk.ui';
 
 function loadUiPrefs(): UiPrefs {
-  const base: UiPrefs = { scale: 'm', tab: 'needs', help: false };
+  const base: UiPrefs = { scale: 'm', tab: 'needs', help: false, walls: 'cutaway', pin: false };
   try {
     const raw = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<UiPrefs>;
     if (raw.scale && raw.scale in UI_SCALES) base.scale = raw.scale;
     if (raw.tab && TABS.includes(raw.tab)) base.tab = raw.tab;
     if (typeof raw.help === 'boolean') base.help = raw.help;
+    if (isWallMode(raw.walls)) base.walls = raw.walls;
+    if (typeof raw.pin === 'boolean') base.pin = raw.pin;
   } catch {
     // sem armazenamento (janela privada): fica no padrão
   }
@@ -286,6 +294,8 @@ const TOOL_TAB: Record<BuildTool, BuildTab> = {
   floor: 'floors',
   paint: 'coverings',
   roof: 'roof',
+  slab: 'roof',
+  unslab: 'roof',
   // bloco 13: quintal
   fence: 'yard',
   lowwall: 'yard',
@@ -507,7 +517,11 @@ export class Hud {
   private thumbnail: ((art: string) => string) | null = null;
   private swatch: ((texture: string, tall?: boolean) => string) | null = null;
   /** bloco 12: botão do modo das paredes e nome do andar visto */
-  private wallsButton = el('button', 'btn');
+  /** plano 2, bloco 3: os quatro modos de vista e o botão de fixar */
+  private wallModesEl = el('div', 'card wallmodes');
+  private wallButtons = new Map<WallMode, HTMLButtonElement>();
+  private pinButton = el('button', 'wm-btn wm-pin');
+  private wallSig = '';
   private levelLabel = el('span', 'level-label');
   private helpEl = el('div', 'help card');
   /** bloco 5: abre a tela de criar família */
@@ -530,6 +544,8 @@ export class Hud {
     this.system = new SystemCards(ctrl);
     this.system.onChange = () => this.renderPop();
     this.tab = this.prefs.tab;
+    ctrl.wallMode = this.prefs.walls;
+    ctrl.wallPinned = this.prefs.pin;
     this.applyScale();
     this.buildViewBar();
     this.root.append(this.householdEl);
@@ -704,12 +720,34 @@ export class Hud {
       b.addEventListener('click', () => this.ctrl.rotateCamera(dir));
       return b;
     };
-    const walls = this.wallsButton;
-    walls.textContent = t(`hud.walls.${this.ctrl.wallMode}`);
-    walls.title = t('hud.wallsTip');
-    walls.addEventListener('click', () => {
-      walls.textContent = t(`hud.walls.${this.ctrl.cycleWallMode()}`);
+    // plano 2, bloco 3: modos de vista num controle só (Home e End, P fixa)
+    const walls = this.wallModesEl;
+    walls.setAttribute('role', 'radiogroup');
+    walls.setAttribute('aria-label', t('hud.walls.title'));
+    const WALL_ICON: Record<WallMode, IconId> = { roof: 'viewRoof', up: 'viewUp', cutaway: 'viewCut', down: 'viewDown' };
+    for (const mode of [...WALL_MODES].reverse()) {
+      const b = el('button', 'wm-btn');
+      b.innerHTML = iconSvg(WALL_ICON[mode], 18);
+      b.title = `${t(`hud.walls.${mode}`)} · ${t(`hud.walls.${mode}Tip`)}`;
+      b.setAttribute('aria-label', t(`hud.walls.${mode}`));
+      b.setAttribute('role', 'radio');
+      b.addEventListener('click', () => {
+        this.ctrl.setWallMode(mode);
+        this.saveWallPrefs();
+        this.update();
+      });
+      this.wallButtons.set(mode, b);
+      walls.append(b);
+    }
+    this.pinButton.innerHTML = iconSvg('pin', 16);
+    this.pinButton.title = t('hud.walls.pinTip');
+    this.pinButton.setAttribute('aria-label', t('hud.walls.pin'));
+    this.pinButton.addEventListener('click', () => {
+      this.ctrl.wallPinned = !this.ctrl.wallPinned;
+      this.saveWallPrefs();
+      this.update();
     });
+    walls.append(this.pinButton);
     // bloco 12: andar que se vê (PageUp / PageDown)
     const floors = el('div', 'levelbar');
     const step = (glyph: string, tip: string, dir: number) => {
@@ -738,6 +776,8 @@ export class Hud {
       ['Tab', 'hud.keys.tabDo'],
       ['Q · E', 'hud.keys.turnDo'],
       ['PageUp · PageDown', 'hud.keys.levelDo'],
+      ['Home · End', 'hud.keys.wallsDo'],
+      ['P', 'hud.keys.pinDo'],
       ['V · B · C', 'hud.keys.modesDo'],
       ['F · O', 'hud.keys.popsDo'],
       ['M', 'hud.keys.muteDo'],
@@ -755,6 +795,29 @@ export class Hud {
     this.helpEl.append(head, table, el('div', 'panel-note', t('hud.keys.mouse')));
     this.helpEl.hidden = !this.prefs.help;
     this.root.append(bar, this.helpEl);
+  }
+
+  /** Plano 2, bloco 3: marca o modo escolhido, o que a tela mostra agora e o fixo. */
+  private renderWallModes(): void {
+    const c = this.ctrl;
+    const sig = `${c.wallMode}|${c.shownWall}|${c.wallPinned}`;
+    if (sig === this.wallSig) return;
+    if (this.wallSig && (c.wallMode !== this.prefs.walls || c.wallPinned !== this.prefs.pin)) this.saveWallPrefs();
+    this.wallSig = sig;
+    for (const [mode, b] of this.wallButtons) {
+      b.classList.toggle('on', mode === c.wallMode);
+      // o telhado sumiu sozinho: o modo mostrado fica marcado de leve
+      b.classList.toggle('auto', mode === c.shownWall && mode !== c.wallMode);
+      b.setAttribute('aria-checked', String(mode === c.wallMode));
+    }
+    this.pinButton.classList.toggle('on', c.wallPinned);
+    this.pinButton.setAttribute('aria-pressed', String(c.wallPinned));
+  }
+
+  private saveWallPrefs(): void {
+    this.prefs.walls = this.ctrl.wallMode;
+    this.prefs.pin = this.ctrl.wallPinned;
+    saveUiPrefs(this.prefs);
   }
 
   private toggleHelp(): void {
@@ -1225,8 +1288,7 @@ export class Hud {
     this.root.dataset.mode = this.ctrl.mode;
     const levelText = t(`hud.level.${this.ctrl.viewLevel}`);
     if (this.levelLabel.textContent !== levelText) this.levelLabel.textContent = levelText;
-    const wallsText = t(`hud.walls.${this.ctrl.wallMode}`);
-    if (this.wallsButton.textContent !== wallsText) this.wallsButton.textContent = wallsText;
+    this.renderWallModes();
 
     // bloco 13: o dia mostra quando está chovendo
     const dayText = t('hud.dayShortWeek', { day: clock.day, weekday: t(`weekday.${(clock.day - 1) % 7}`) }) + (raining(world) ? ' ☂' : '');
@@ -3349,7 +3411,7 @@ export class Hud {
     const depth = c.sim.undoDepth;
     const funds = c.world.household.funds;
     const roof = c.world.grid.roof;
-    const sig = `${this.buildTab}|${c.buildTool}|${c.floorId}|${c.coveringId}|${depth}|${funds}|${c.viewLevel}|${c.stairDir}|${roof?.style}|${roof?.color}`;
+    const sig = `${this.buildTab}|${c.buildTool}|${c.floorId}|${c.coveringId}|${depth}|${funds}|${c.viewLevel}|${c.stairDir}|${roof?.style}|${roof?.color}|${roof?.pitch}|${roof?.flat?.length}`;
     if (sig === this.buildSig) return;
     this.buildSig = sig;
     for (const b of this.buildTabs.children) {
@@ -3404,29 +3466,57 @@ export class Hud {
       }
     } else if (this.buildTab === 'roof') {
       // bloco 12: estilo e cor do telhado (vale para a casa inteira)
+      // plano 2, bloco 3: uma água, inclinação e laje por trecho
       const area = roofArea(c.world.grid, catalog);
       const price = area * catalog.parts.roof.price;
-      const set = (style: RoofStyle, color: string) => () => {
-        c.commandOrExplain({ type: 'setRoof', style, color });
-        c.wallMode = 'up';
+      const cost = price > 0 ? formatMoney(price) : t('build.free');
+      const cur = { style: 'hip' as RoofStyle, color: 'terracotta', pitch: 'mid' as RoofPitch, ...roof };
+      const set = (style: RoofStyle, color: string, pitch: RoofPitch) => () => {
+        if (c.buildTool !== 'roof') c.setBuildTool('roof');
+        c.commandOrExplain({ type: 'setRoof', style, color, pitch });
       };
-      const cur = roof ?? { style: 'hip', color: 'terracotta' };
-      for (const style of ['hip', 'gable'] as RoofStyle[]) {
-        add(t(`build.roof.${style}`), price > 0 ? formatMoney(price) : t('build.free'), sw('roof'), cur.style === style, set(style, cur.color), t(`build.roof.${style}Tip`));
+      // desenho de cada opção: a casa de frente, com a cor do telhado escolhida
+      const tile = `#${(ROOF_COLORS[cur.color] ?? ROOF_COLORS.terracotta).toString(16).padStart(6, '0')}`;
+      const glyphItem = (name: string, on: boolean, shape: string, pick: () => void, tip: string) => {
+        const item = el('button', 'item');
+        item.classList.toggle('on', on);
+        const glyph = el('span', 'item-img item-glyph pitch-glyph');
+        glyph.innerHTML = `<svg viewBox="0 0 48 40" width="48" height="40" aria-hidden="true"><rect x="9" y="22" width="30" height="16" fill="#c8735a" stroke="currentColor" stroke-width="2"/><path d="${shape}" fill="${tile}" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></svg>`;
+        item.append(glyph, el('span', 'item-name', name), el('span', 'item-price', cost));
+        item.title = tip;
+        item.addEventListener('click', () => {
+          pick();
+          this.renderBuild();
+        });
+        this.buildItems.append(item);
+      };
+      const STYLE_SHAPE: Record<RoofStyle, string> = {
+        hip: 'M4 23L16 8H32L44 23z',
+        gable: 'M4 23L24 5L44 23z',
+        shed: 'M4 23L44 9V23z',
+      };
+      for (const style of ['hip', 'gable', 'shed'] as RoofStyle[]) {
+        glyphItem(t(`build.roof.${style}`), c.buildTool === 'roof' && cur.style === style, STYLE_SHAPE[style], set(style, cur.color, cur.pitch), t(`build.roof.${style}Tip`));
+      }
+      for (const pitch of ['low', 'mid', 'steep'] as RoofPitch[]) {
+        const peak = pitch === 'low' ? 14 : pitch === 'mid' ? 8 : 2;
+        glyphItem(t(`build.pitch.${pitch}`), c.buildTool === 'roof' && cur.pitch === pitch, `M4 23L24 ${peak}L44 23z`, set(cur.style, cur.color, pitch), t(`build.pitch.${pitch}`));
       }
       for (const color of Object.keys(ROOF_COLORS)) {
         const item = el('button', 'item');
         item.classList.toggle('on', cur.color === color);
         const chip = el('span', 'item-img item-glyph');
         chip.style.background = `#${ROOF_COLORS[color].toString(16).padStart(6, '0')}`;
-        item.append(chip, el('span', 'item-name', t(`build.roofColor.${color}`)), el('span', 'item-price', price > 0 ? formatMoney(price) : t('build.free')));
+        item.append(chip, el('span', 'item-name', t(`build.roofColor.${color}`)), el('span', 'item-price', cost));
         item.title = t(`build.roofColor.${color}`);
         item.addEventListener('click', () => {
-          set(cur.style as RoofStyle, color)();
+          set(cur.style, color, cur.pitch)();
           this.renderBuild();
         });
         this.buildItems.append(item);
       }
+      add(t('build.slab'), t('build.perTile', { price: formatMoney(catalog.parts.slab.price) }), sw('wallPlaster'), c.buildTool === 'slab', tool('slab'), t('build.hint.slab'));
+      add(t('build.unslab'), t('build.free'), sw('roof'), c.buildTool === 'unslab', tool('unslab'), t('build.hint.unslab'));
     } else if (this.buildTab === 'yard') {
       // bloco 13: cerca, mureta, portão, piscina, caminho e deck (só no térreo)
       add(t('build.fence'), t('build.perMeter', { price: formatMoney(catalog.parts.fence.price) }), sw('picket'), c.buildTool === 'fence', tool('fence'), t('build.hint.fence'));

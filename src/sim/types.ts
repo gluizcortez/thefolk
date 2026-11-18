@@ -995,6 +995,8 @@ export type BuildParts = Record<EdgeKind, PartDef> & {
   stairs: PartDef;
   column: PartDef;
   roof: PartDef;
+  /** plano 2, bloco 3: laje no lugar da telha, por tile */
+  slab: PartDef;
 };
 
 export interface Catalog {
@@ -1086,11 +1088,17 @@ export interface Stair {
   level: number;
 }
 
-/** Bloco 12: telhado automático (duas águas ou quatro águas) e a cor. */
-export type RoofStyle = 'gable' | 'hip';
+/** Bloco 12: telhado automático (duas águas ou quatro águas) e a cor. Plano 2, bloco 3: uma água. */
+export type RoofStyle = 'gable' | 'hip' | 'shed';
+/** Plano 2, bloco 3: inclinação do telhado. */
+export type RoofPitch = 'low' | 'mid' | 'steep';
 export interface Roof {
   style: RoofStyle;
   color: string;
+  /** plano 2, bloco 3: inclinação (sem campo = 'mid') */
+  pitch?: RoofPitch;
+  /** plano 2, bloco 3: tiles cobertos por laje em vez de telha ("x,y", y na linha do andar) */
+  flat?: string[];
 }
 
 export interface Grid {
@@ -1915,7 +1923,9 @@ export type Command =
   | { type: 'placeStairs'; x: number; y: number; dir: Side }
   | { type: 'removeStairs'; x: number; y: number }
   | { type: 'toggleColumn'; x: number; y: number }
-  | { type: 'setRoof'; style: RoofStyle; color: string }
+  | { type: 'setRoof'; style: RoofStyle; color: string; pitch?: RoofPitch }
+  /** plano 2, bloco 3: marca (flat true) ou desmarca um retângulo de laje no andar do primeiro canto */
+  | { type: 'markFlatRoof'; x0: number; y0: number; x1: number; y1: number; flat: boolean }
   | { type: 'paintFloor'; x0: number; y0: number; x1: number; y1: number; floorId: string }
   | { type: 'paintWalls'; faces: string[]; coveringId: string }
   | { type: 'undoBuild' };

@@ -472,11 +472,22 @@ npm run preview  # serve o dist/ localmente
   ocupa três tiles, abre o vão no andar de cima e precisa de piso livre no
   patamar; clicar numa escada com a ferramenta a tira. No andar de cima,
   "Sem piso" no lugar da grama tira o piso.
-- **Telhado (bloco 12)**: aparece com "Paredes: inteiras" e se monta sozinho
-  sobre todo cômodo fechado que não tem cômodo fechado em cima (o térreo sob
-  um quarto não ganha telhado; a varanda ao lado, sim). Aba Telhado: quatro
-  águas ou duas águas (com oitões nas pontas) e seis cores de telha; trocar
-  custa 2 ⟡ por tile coberto.
+- **Telhado (bloco 12, refeito no plano 2, bloco 3)**: toda casa tem telhado.
+  Ele se monta sozinho sobre toda a área construída: cômodo fechado com piso
+  de dentro e, no térreo, a varanda coberta (piso de dentro sem paredes,
+  grudado num cômodo); o que tem piso no andar de cima não ganha telhado, e o
+  pátio cercado de grama fica a céu aberto. Aba Telhado: quatro águas, duas
+  águas (oitões nas pontas) ou uma água (alta atrás, baixa na frente), três
+  inclinações e seis cores (2 ⟡ por tile coberto); **Laje** (6 ⟡ o tile)
+  troca a telha por laje plana com platibanda num retângulo arrastado, e
+  **Tirar laje** volta a telha.
+- **Modos de vista (plano 2, bloco 3)**: no canto de cima, quatro botões:
+  telhado à vista (a casa inteira, todos os andares), paredes inteiras (sem
+  telhado), paredes recortadas (o padrão) e paredes baixas. Home sobe e End
+  desce. Com o telhado à vista, ele some sozinho ao abrir a obra ou ao
+  aproximar a câmera de um cômodo, e volta ao afastar; o alfinete (P) fixa o
+  modo. A ferramenta de telhado e a de laje sempre mostram o telhado. O modo
+  escolhido fica guardado no navegador.
 - **Peças novas (bloco 12)**: meia parede (fecha o passo sem dividir o
   cômodo), coluna nos cantos, porta de vidro, porta dupla, arco (passagem sem
   folha), janela alta (+6 de ambiente) e basculante (+2).
@@ -607,10 +618,11 @@ src/
   game/       cena 3D (Three.js): só lê o estado e manda comandos
     GameView.ts     câmera, luz, entrada do mouse e laço de quadros
     controller.ts   ponte entre a tela, a HUD e a Sim
+    viewMode.ts     plano 2: os quatro modos de vista e quando o telhado some sozinho
     art/            modelos e texturas, tudo gerado por código
       textures.ts     texturas pintadas em canvas, com granulado
       build.ts        ajudantes de malha e material
-      house.ts        pisos, paredes (com corte), portas e janelas
+      house.ts        pisos, paredes (com corte), portas, janelas e telhado
       furniture.ts    um modelo por objeto, com as âncoras de sentar e deitar
       folk.ts         folk de proporção adulta, rosto e animações
       scenery.ts      jardim, cerca, rua e vizinhança
@@ -1093,6 +1105,14 @@ traços e cidade aberta com o bairro dentro dela).
   de seis opções e com o indisponível em cinza e o motivo; avisos que levam a
   câmera ao lugar, com histórico; letra pequena, média ou grande e tabela de
   atalhos (H). O save não subiu (preferências ficam no navegador).
+- **Bloco 3 (feito)**: telhado em toda casa. Cobre toda a área construída
+  (cômodos, varanda coberta e garagem, também nas casas do bairro), com
+  quatro águas, duas águas ou uma água, três inclinações, seis cores e laje
+  plana com platibanda por trecho. Quatro modos de vista num controle só
+  (telhado à vista, paredes inteiras, recortadas e baixas; Home e End trocam,
+  P fixa); o telhado some sozinho na obra e de perto e volta ao afastar.
+  Fachada com testeira, calha e condutor, cumeeira e oitão na textura da
+  parede (save v23).
 
 ## Limitações conhecidas do bloco 1 (plano 2)
 
@@ -1102,6 +1122,16 @@ traços e cidade aberta com o bairro dentro dela).
   sozinhos (como nos jogos do gênero); o jogador pode cancelar.
 - Ninguém atende porta ou telefone sem ordem: quem toca vai embora e a
   ligação cai.
+
+## Limitações conhecidas do bloco 3 (plano 2)
+
+- Uma água sempre cai para a frente (sul) ou para o leste; o jogador não
+  escolhe o lado.
+- Com o telhado à vista, folks e objetos do andar de cima só aparecem se o
+  andar visto for o de cima.
+- Laje do andar de cima não vira terraço de pisar; terraço é piso aberto
+  sem telhado.
+- Não há água-furtada nem chaminé; a varanda coberta só existe no térreo.
 
 ## Limitações conhecidas do bloco 2 (plano 2)
 
@@ -1157,8 +1187,8 @@ traços e cidade aberta com o bairro dentro dela).
 ## Limitações conhecidas do bloco 12
 
 - Paredes só retas (sem parede diagonal) e escada só reta, de três tiles.
-- O telhado é um só estilo e cor para a casa inteira, sem mansarda nem
-  telhado plano, e cobre também um cercado de paredes no quintal.
+- O telhado é um só estilo, cor e inclinação para a casa inteira (a laje é
+  por trecho), sem mansarda.
 - Derrubar parede de baixo não confere se tem parede em cima apoiada nela.
 - Ninguém cai do andar de cima: o vão não tem perigo, só não se pisa nele.
 - Com o telhado à vista, os balões de quem está dentro aparecem por cima.

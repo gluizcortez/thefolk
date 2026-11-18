@@ -125,7 +125,7 @@ describe('save v22 (plano 2, bloco 1)', () => {
     }
     const file = deserialize(old, CTX);
     expect(file.version).toBe(SAVE_VERSION);
-    expect(SAVE_VERSION).toBe(22);
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(22);
     for (const f of file.world.folks) {
       expect('autonomy' in f).toBe(false);
       if (!f.visit) expect(f.queue).toHaveLength(0);

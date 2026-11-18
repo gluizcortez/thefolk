@@ -14,13 +14,14 @@ import {
   levelOfRow,
   levelsOf,
   objectSize,
+  roofed,
   rowOn,
   stairPlan,
   strideOf,
   useTiles,
   wallBehind,
 } from './grid';
-import { roofArea } from './roof';
+import { PITCH, roofArea, roofMask } from './roof';
 import { poolProblem } from './yard';
 import { computeRooms, roomAt } from './rooms';
 import type { Catalog, Command, EdgeKind, Grid, OpeningKind, Roof, Side, Stair, Vec, World } from './types';
@@ -54,7 +55,9 @@ export type BuildProblem =
   | 'holdsPool'
   | 'onWater'
   | 'groundOnly'
-  | 'noFence';
+  | 'noFence'
+  // plano 2, bloco 3
+  | 'noRoof';
 
 /** O que muda no grid. `null` apaga a entrada. */
 export interface GridChange {
@@ -79,6 +82,7 @@ const BUILD_TYPES = [
   'removeStairs',
   'toggleColumn',
   'setRoof',
+  'markFlatRoof',
   'buildFences',
 ] as const;
 
@@ -538,11 +542,47 @@ export function planBuild(world: World, catalog: Catalog, cmd: BuildCommand): Bu
       break;
     }
     case 'setRoof': {
-      const cur = grid.roof;
-      if (cur && cur.style === cmd.style && cur.color === cmd.color) return fail('nothing');
-      if (cmd.style !== 'gable' && cmd.style !== 'hip') return fail('unknown');
-      change.roof = { style: cmd.style, color: cmd.color };
+      const cur = roofed(grid).roof!;
+      const pitch = cmd.pitch ?? cur.pitch ?? 'mid';
+      if (cur.style === cmd.style && cur.color === cmd.color && cur.pitch === pitch) return fail('nothing');
+      if (cmd.style !== 'gable' && cmd.style !== 'hip' && cmd.style !== 'shed') return fail('unknown');
+      if (!PITCH[pitch]) return fail('unknown');
+      change.roof = { ...cur, style: cmd.style, color: cmd.color, pitch };
       cost = roofArea(grid, catalog) * catalog.parts.roof.price;
+      break;
+    }
+    case 'markFlatRoof': {
+      // plano 2, bloco 3: laje num retângulo do andar do primeiro canto
+      const level = levelOfRow(grid, cmd.y0);
+      if (level < 0) return fail('outside');
+      const cur = roofed(grid).roof!;
+      const mask = roofMask(grid, catalog)[level];
+      const top = rowOn(grid, level, 0);
+      const xa = Math.max(0, Math.min(cmd.x0, cmd.x1));
+      const xb = Math.min(grid.w - 1, Math.max(cmd.x0, cmd.x1));
+      const ya = Math.max(top, Math.min(cmd.y0, cmd.y1));
+      const yb = Math.min(top + grid.h - 1, Math.max(cmd.y0, cmd.y1));
+      if (xa > xb || ya > yb) return fail('outside');
+      const flat = new Set(cur.flat ?? []);
+      let touched = 0;
+      let covered = 0;
+      for (let y = ya; y <= yb; y++) {
+        for (let x = xa; x <= xb; x++) {
+          const key = `${x},${y}`;
+          if (mask[(y - top) * grid.w + x]) covered++;
+          if (cmd.flat && !flat.has(key) && mask[(y - top) * grid.w + x]) {
+            flat.add(key);
+            touched++;
+          } else if (!cmd.flat && flat.has(key)) {
+            flat.delete(key);
+            touched++;
+          }
+        }
+      }
+      if (cmd.flat && covered === 0) return fail('noRoof');
+      if (touched === 0) return fail('nothing');
+      change.roof = { ...cur, flat: [...flat].sort() };
+      cost = cmd.flat ? touched * catalog.parts.slab.price : 0;
       break;
     }
     case 'paintWalls': {

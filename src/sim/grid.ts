@@ -104,7 +104,13 @@ export function withLevels(grid: Grid, n: number): Grid {
 }
 
 /** Telhado de quem ainda não escolheu. */
-export const DEFAULT_ROOF = { style: 'hip', color: 'terracotta' } as const;
+export const DEFAULT_ROOF = { style: 'hip', color: 'terracotta', pitch: 'mid', flat: [] as string[] } as const;
+
+/** Plano 2, bloco 3: todo grid tem telhado completo (estilo, cor, inclinação e laje). */
+export function roofed(grid: Grid): Grid {
+  const r = grid.roof;
+  return { ...grid, roof: { style: r?.style ?? 'hip', color: r?.color ?? 'terracotta', pitch: r?.pitch ?? 'mid', flat: [...(r?.flat ?? [])] } };
+}
 
 /** Grid pronto para o bloco 12: todos os andares, lista de escadas e colunas, telhado. */
 export function storied(grid: Grid): Grid {
@@ -113,7 +119,7 @@ export function storied(grid: Grid): Grid {
     ...out,
     stairs: out.stairs ?? [],
     columns: out.columns ?? [],
-    roof: out.roof ?? { ...DEFAULT_ROOF },
+    roof: roofed(out).roof,
   };
 }
 

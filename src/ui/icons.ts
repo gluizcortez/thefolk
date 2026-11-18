@@ -24,7 +24,7 @@ export type ThoughtIcon =
   | 'swim';
 
 /** Plano 2, bloco 2: ícones da HUD (modos, fila, abas). */
-export type HudIcon = 'map' | 'gear' | 'walk' | 'work' | 'gift' | 'bell' | 'hand' | 'back';
+export type HudIcon = 'map' | 'gear' | 'walk' | 'work' | 'gift' | 'bell' | 'hand' | 'back' | 'viewRoof' | 'viewUp' | 'viewCut' | 'viewDown' | 'pin';
 
 export type IconId = NeedId | 'sleep' | ThoughtIcon | HudIcon;
 
@@ -70,10 +70,16 @@ export const ICON_PATHS: Record<IconId, string> = {
   bell: 'M6 17v-6a6 6 0 0 1 12 0v6l2 2H4zM10 21h4',
   hand: 'M7 12V6a1.500 1.500 0 0 1 3 0v5M10 11V4.500a1.500 1.500 0 0 1 3 0V11M13 11V5.500a1.500 1.500 0 0 1 3 0V12M16 12V8.500a1.500 1.500 0 0 1 3 0V15a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-3l-3-5a1.500 1.500 0 0 1 2.500-1.500L7 13',
   back: 'M10 6l-6 6 6 6M4 12h16',
+  // plano 2, bloco 3: modos de vista (telhado, paredes inteiras, recortadas, baixas) e fixar
+  viewRoof: 'M2 12L12 4l10 8M5 10v10h14V10M10 20v-5h4v5',
+  viewUp: 'M4 5h16M5 5v15h14V5M9 9h2M13 9h2',
+  viewCut: 'M4 20V5h9M4 20h16v-6M13 5v3M4 9h9',
+  viewDown: 'M3 20h18M4 20v-4h16v4M9 16v4M15 16v4',
+  pin: 'M9 3h6l-1 6 3 3H7l3-3zM12 12v9',
 };
 
 /** Ícones desenhados só com traço (sem preenchimento). */
-export const STROKED = new Set<IconId>(['sleep', 'yes', 'no', 'mood', 'mess', 'miss', 'broom', 'coin', 'skill', 'alarm', 'book', 'burglar', 'grave', 'swim', 'map', 'gear', 'walk', 'work', 'gift', 'bell', 'hand', 'back']);
+export const STROKED = new Set<IconId>(['sleep', 'yes', 'no', 'mood', 'mess', 'miss', 'broom', 'coin', 'skill', 'alarm', 'book', 'burglar', 'grave', 'swim', 'map', 'gear', 'walk', 'work', 'gift', 'bell', 'hand', 'back', 'viewRoof', 'viewUp', 'viewCut', 'viewDown', 'pin']);
 
 export function iconSvg(id: IconId, size = 18): string {
   const stroked = STROKED.has(id);

@@ -198,6 +198,13 @@ puras (agrupamento de categorias, motivo de indisponível).
 
 ## Bloco 3 — Telhado em toda casa e modos de vista (save v24)
 
+**Feito em 18/11/2026.** Como o bloco 2 não subiu o save, este ficou com o
+v23 (a migração completa o telhado de toda casa, inclusive as do bairro, com
+inclinação média e sem laje). O pátio cercado de paredes com chão de fora
+(grama, deck) fica a céu aberto; varanda coberta é piso de dentro grudado num
+cômodo, só no térreo (em cima, piso aberto é terraço). Atalhos: Home sobe e
+End desce os modos, P fixa. As casas de enfeite já tinham telhado.
+
 - **Todo prédio tem telhado.** Hoje o telhado só cobre cômodo fechado; passa
   a cobrir toda a área construída (cômodos, varandas cobertas, garagem),
   incluindo as casas de enfeite e as do bairro. Casa sem telhado deixa de

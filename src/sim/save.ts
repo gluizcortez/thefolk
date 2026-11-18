@@ -2,7 +2,7 @@ import { relKey } from './relations';
 import type { Catalog, Grid, Neighbor, Vec, World, WorldObject } from './types';
 import { checkPlacement } from './economy';
 import { savingsOf } from './marriage';
-import { footprint, objectSize, storied } from './grid';
+import { footprint, objectSize, roofed, storied } from './grid';
 import { computeRooms, lightsIn } from './rooms';
 import { START_PANTRY } from './services';
 import type { NeighborSeed, RelationSeed } from './world';
@@ -15,7 +15,7 @@ import type { TownPlan } from './town';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 22;
+export const SAVE_VERSION = 23;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -338,6 +338,17 @@ const migrations: Record<number, Migration> = {
         ...world.town,
         families: world.town.families.map((fam) => (fam.stash ? { ...fam, stash: { ...fam.stash, folks: fam.stash.folks.map(fix) } } : fam)),
       };
+    }
+    return { ...save, world: world as unknown as Obj };
+  },
+  // plano 2, bloco 3: todo telhado ganha inclinação e lista de laje (o telhado
+  // passa a cobrir toda a área construída, inclusive nas casas do bairro)
+  22: (save) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    world.grid = roofed(world.grid);
+    if (world.outing?.home?.grid) world.outing = { ...world.outing, home: { ...world.outing.home, grid: roofed(world.outing.home.grid) } };
+    if (world.town) {
+      world.town = { ...world.town, lots: world.town.lots.map((lot) => (lot.home ? { ...lot, home: { ...lot.home, grid: roofed(lot.home.grid) } } : lot)) };
     }
     return { ...save, world: world as unknown as Obj };
   },
