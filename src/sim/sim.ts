@@ -2,7 +2,59 @@ import { chooseAutonomous } from './ai';
 import type { BuildCommand, BuildProblem, GridChange } from './build';
 import { applyChange, checkGrid, invertChange, isBuildCommand, planBuild, touchesNav } from './build';
 import { WEATHER_HOUR, freshPlant, gardenHour, harvest, replant, rollWeather } from './garden';
-import { poolHasLadder, poolOf } from './yard';
+import { poolHasLadder, poolOf, poolTiles } from './yard';
+import {
+  ADRIFT_DRAIN,
+  BARGAIN_MINUTES,
+  BURGLAR_HOUR,
+  BURGLAR_REWARD,
+  CHASE_STEPS,
+  DOUSE_EXTINGUISHER,
+  DOUSE_HOSE,
+  FIRE_RESPONSE,
+  FLEE_RADIUS,
+  FUEL_BARE,
+  HEARTH_MINUTES,
+  HEARTH_SPARK,
+  HONOR_REST,
+  MOURN_DAYS,
+  MOURN_FRIENDSHIP,
+  NEAR_MISS_REST,
+  PANIC_MINUTES,
+  POLICE_RESPONSE,
+  SCARE_GAP,
+  SCARE_RADIUS,
+  SCORCH_DEATH,
+  SHOCK_FIRE,
+  SOOTY_MINUTES,
+  SPIRIT_CHANCE,
+  SPIRIT_FROM,
+  SPIRIT_REST_PER_NIGHT,
+  SPIRIT_STEP,
+  SPIRIT_TO,
+  STARVE_MINUTES,
+  STEAL_MINUTES,
+  addFire,
+  asleep,
+  bargainWon,
+  burglarNight,
+  cookFireChance,
+  douseFire,
+  fireAt,
+  fireMinute,
+  fireSideTiles,
+  freeSpotFor,
+  hearthNeighbors,
+  lootTarget,
+  memorialKind,
+  nearestFire,
+  reach,
+  safetyOf,
+  smokeSeen,
+  spiritStep,
+  spiritTiles,
+  throwFingers,
+} from './peril';
 import {
   AWAY_DECAY,
   CALL_AHEAD,
@@ -100,7 +152,7 @@ import { MINUTES_PER_DAY, clockOf } from './clock';
 import type { PlaceProblem } from './economy';
 import { billAmount, checkPlacement, formatMoney, objectBusy, sellValue } from './economy';
 import type { Nav } from './grid';
-import { blocksStep, buildNav, edgeKey, nearestFootprintTile, useTiles } from './grid';
+import { blocksStep, buildNav, edgeKey, floorAt, footprint, nearestFootprintTile, useTiles } from './grid';
 import { NEED_MAX, applyEffects, clampNeed, decayNeeds, moodOf } from './needs';
 import { isDark, lightsIn, roomAt, roomsOf, shining } from './rooms';
 import { NOISY_SLEEP, danceBonus, favoriteStation, isStereo, playing, pressTune, stereosIn } from './music';
@@ -140,6 +192,9 @@ import type {
   Vec,
   World,
   WorldObject,
+  DeathCause,
+  Passing,
+  Spirit,
 } from './types';
 import { NEED_IDS } from './types';
 import type { Chain } from './upkeep';
@@ -262,6 +317,11 @@ import {
   tableCompany,
 } from './furnish';
 
+/** Bloco 14: quem entra sem tocar a campainha. */
+const NO_BELL: Partial<Record<ServiceKind, boolean>> = { bailiff: true, social: true, firefighter: true, police: true, burglar: true, reaper: true };
+/** Bloco 14: quem vem de uniforme (e não se despede ao sair). */
+const UNIFORMED: Partial<Record<ServiceKind, boolean>> = { firefighter: true, police: true, burglar: true, reaper: true };
+
 /** Por que o último comando foi recusado (para a interface explicar). */
 export type CommandProblem =
   | PlaceProblem
@@ -311,7 +371,12 @@ export type CommandProblem =
   | 'baby'
   | 'tooYoung'
   | 'noCrib'
-  | 'expecting';
+  | 'expecting'
+  // bloco 14
+  | 'down'
+  | 'adrift'
+  | 'noBargain'
+  | 'noBargainer';
 
 /** Resultado de uma conversa, para a tela mostrar o que mudou (não vai no save). */
 export interface SocialOutcome {
@@ -398,7 +463,7 @@ const COLLAPSE_ENERGY_PER_MINUTE = 0.3;
 
 type ActionSeed = Pick<
   Action,
-  'kind' | 'objectId' | 'interactionId' | 'target' | 'otherId' | 'socialId' | 'messId' | 'serviceId' | 'welcome' | 'circleId' | 'topic' | 'guests' | 'wedding'
+  'kind' | 'objectId' | 'interactionId' | 'target' | 'otherId' | 'socialId' | 'messId' | 'serviceId' | 'welcome' | 'circleId' | 'topic' | 'guests' | 'wedding' | 'armed'
 >;
 
 /** minutos de conversa na porta antes de decidir */
@@ -438,6 +503,10 @@ export class Sim {
   private undoStack: { back: GridChange; cost: number }[] = [];
   /** bloco 4: compras, vendas e mudanças do modo compra que dá para desfazer */
   private buyStack: BuyUndo[] = [];
+  /** bloco 14: sobe quando a própria simulação tira ou põe objetos (fogo, gatuno, lápide); a tela redesenha */
+  objectStamp = 0;
+  /** bloco 14: já reagiu ao fogo que está queimando (não vai no save) */
+  private fireAware = false;
 
   constructor(catalog: Catalog, world: World) {
     this.catalog = catalog;
@@ -453,6 +522,16 @@ export class Sim {
     w.party ??= null;
     w.lastParty ??= null;
     w.call ??= null;
+    // bloco 14
+    w.fires ??= [];
+    w.help ??= { fire: 0, police: 0 };
+    w.passings ??= [];
+    w.lastBargain ??= null;
+    w.departed ??= [];
+    w.spirits ??= [];
+    w.rules ??= { death: true };
+    w.lastBurglary ??= w.tick;
+    this.fireAware = false;
     ensureAllInterests(w, this.catalog);
   }
 
@@ -670,6 +749,8 @@ export class Sim {
       }
       case 'planWedding':
         return this.planWedding(cmd.folkId, cmd.partnerId, cmd.guestIds, cmd.surname);
+      case 'bargain':
+        return this.bargain(cmd.pick);
       case 'answerPhone': {
         const folk = this.findFolk(cmd.folkId);
         if (!folk) return false;
@@ -868,11 +949,21 @@ export class Sim {
     const obj = this.findObject(objectId);
     const def = obj && this.defOf(obj);
     if (!obj || !def) return false;
-    if (objectBusy(this.world, objectId)) return this.fail('inUse');
+    // bloco 14: a escadinha sai mesmo com gente nadando, e quem estava na água fica preso
+    const swimmers = def.pool === 'in' ? this.world.folks.filter((f) => f.queue[0]?.phase === 'using' && f.queue[0].objectId === objectId) : [];
+    if (swimmers.length === 0 && objectBusy(this.world, objectId)) return this.fail('inUse');
     const value = sellValue(this.world, obj, def);
     this.world.household.funds += value;
     this.pushBuyUndo({ kind: 'sell', obj: JSON.parse(JSON.stringify(obj)) as WorldObject, got: value });
     this.removeObject(objectId);
+    for (const f of swimmers) {
+      const pool = poolTiles(this.world.grid, this.catalog, obj.x, obj.y);
+      if (pool.length === 0 || poolHasLadder(this.world, this.catalog, pool) || f.visit || f.age !== undefined) continue;
+      f.adrift = { x: obj.x, y: obj.y };
+      f.queue = [];
+      f.path = [];
+      this.log('log.adrift', { name: f.name });
+    }
     return true;
   }
 
@@ -933,6 +1024,7 @@ export class Sim {
   /** Tira o objeto do lote (venda ou penhora) e de todas as filas. */
   private removeObject(objectId: number, quiet = false): void {
     const gone = this.findObject(objectId);
+    this.objectStamp++;
     this.world.objects = this.world.objects.filter((o) => o.id !== objectId);
     for (const folk of this.world.folks) {
       const idx = folk.queue.findIndex((a) => a.objectId === objectId);
@@ -991,6 +1083,9 @@ export class Sim {
     if (folk.age === 'baby') return this.fail('baby');
     if (folk.away) return this.fail('away');
     if (folk.collapsed > 0) return this.fail('collapsed');
+    // bloco 14: caído esperando o Seu Sereno, ou preso na piscina
+    if (folk.down) return this.fail('down');
+    if (folk.adrift) return this.fail('adrift');
     // ordem do jogador passa por cima do que o folk fazia por conta própria
     if (folk.queue.some((a) => a.source === 'auto')) {
       folk.queue = folk.queue.filter((a) => a.source !== 'auto');
@@ -1022,6 +1117,8 @@ export class Sim {
     if (minute === WEATHER_HOUR * 60) rollWeather(world);
     if (minute % 60 === 30) gardenHour(world, this.catalog, this.logger);
     this.stepServices(minute);
+    // bloco 14: fogo, socorro, gatuno, Seu Sereno e fantasmas
+    this.stepPerils(minute);
     // bloco 9: telefone tocando e festa
     this.stepPhone();
     this.stepParty();
@@ -1042,7 +1139,14 @@ export class Sim {
     if (minute === BOARD_HOUR * 60) refreshBoard(world, this.catalog);
     if (minute === 0 && Math.floor(world.tick / MINUTES_PER_DAY) % HABIT_PERIOD_DAYS === 0) this.settleTempers();
     this.stepVisits();
-    for (const folk of world.folks) {
+    for (const folk of [...world.folks]) {
+      // bloco 14: quem caiu espera o Seu Sereno sem fazer nada
+      if (folk.down) {
+        folk.px = folk.x;
+        folk.py = folk.y;
+        continue;
+      }
+      if (!world.folks.includes(folk)) continue;
       this.stepJob(folk);
       if (folk.age === 'child' && !folk.visit) this.stepSchool(folk);
       if (folk.gig) checkGigDeadline(world, this.catalog, this.logger, folk);
@@ -1204,6 +1308,13 @@ export class Sim {
     else if (it.special === 'buffet') this.setBuffet(folk, action);
     else if (it.special === 'unpack') this.unpack(folk, action);
     else if (it.special === 'adopt') this.adopt(folk);
+    // bloco 14
+    else if (it.special === 'callFire') this.callHelp(folk, 'fire');
+    else if (it.special === 'callPolice') this.callHelp(folk, 'police');
+    else if (it.special === 'honor') this.honor(folk, action);
+    else if (it.special === 'kindle' || it.special === 'smother') {
+      this.hearthSpecial(folk, action.objectId !== undefined ? this.findObject(action.objectId) : undefined, it);
+    }
   }
 
   // ---------- trabalho ----------
@@ -1416,6 +1527,13 @@ export class Sim {
       return;
     }
 
+    // bloco 14: chamas, fome no zero, piscina sem escadinha; e o luto pesa na diversão
+    if (this.stepDanger(folk) || folk.down) return;
+    if (folk.mourning !== undefined) {
+      if (folk.mourning <= this.world.tick) delete folk.mourning;
+      else folk.needs.fun = Math.max(0, folk.needs.fun - 0.05);
+    }
+
     if (folk.collapsed > 0) {
       decayNeeds(this.world, this.catalog, folk, 0.5);
       folk.needs.energy = Math.min(NEED_MAX, folk.needs.energy + COLLAPSE_ENERGY_PER_MINUTE);
@@ -1609,6 +1727,8 @@ export class Sim {
 
   private pickAutonomous(folk: Folk): void {
     folk.idleTicks = 0;
+    // bloco 14: fogo e gatuno passam na frente de tudo
+    if (this.perilWish(folk)) return;
     if (this.answerIfRinging(folk)) return;
     // bloco 9: atender o telefone e entrar (ou puxar) uma roda de conversa
     if (this.answerPhoneIfRinging(folk)) return;
@@ -1686,6 +1806,15 @@ export class Sim {
       this.processCircle(folk, action);
       return;
     }
+    // bloco 14: apagar fogo e pânico
+    if (action.kind === 'douse') {
+      this.processDouse(folk, action);
+      return;
+    }
+    if (action.kind === 'panic') {
+      this.processPanic(folk, action);
+      return;
+    }
 
     if (action.phase === 'queued') {
       const path = this.planPath(folk, action);
@@ -1724,6 +1853,15 @@ export class Sim {
       }
       if (action.kind === 'leave') {
         this.departed.push(folk.id);
+        return;
+      }
+      // bloco 14: pegou o extintor; agora corre até o fogo
+      if (action.kind === 'use' && this.interactionOf(action)?.special === 'douse') {
+        action.kind = 'douse';
+        action.armed = true;
+        action.phase = 'queued';
+        action.target = undefined;
+        folk.path = [];
         return;
       }
       if (action.eatAt !== undefined) {
@@ -1795,6 +1933,8 @@ export class Sim {
         this.world.household.funds -= cost;
       }
       if (it) consumeFor(this.world, it);
+      // bloco 14: quem cozinha mal pode pôr fogo no fogão
+      if (obj && odef && it && this.cookingFire(folk, obj, odef, it)) return;
       // bloco 9: petisco sai da mesa; atender e ligar já sabem com quem falam
       if (obj && it?.snacks === 'eat') obj.snacks = Math.max(0, (obj.snacks ?? 0) - 1);
       if (it?.special === 'answer') {
@@ -1858,6 +1998,7 @@ export class Sim {
         if (!it.care) wearTick(this.catalog, folk, used, usedDef);
         else if (careTick(this.world, this.catalog, this.logger, folk, used, usedDef, it)) {
           this.trainCare(folk, it);
+          if (it.care === 'repair') this.shockFire(folk, used);
           if (!folk.visit) wishOnTidy(this.world, this.catalog, this.logger, folk);
           this.finish(folk);
           this.chain(folk, afterCare(used, it), action.source);
@@ -1919,6 +2060,14 @@ export class Sim {
   private afterDive(folk: Folk, obj: WorldObject, def: ObjectDef): void {
     const pool = poolOf(this.world, this.catalog, obj, def);
     if (pool.length === 0 || poolHasLadder(this.world, this.catalog, pool)) return;
+    // bloco 14: morador fica preso na água até alguém pôr uma escadinha (ou cansar de vez)
+    if (!folk.visit && folk.age === undefined) {
+      folk.adrift = { ...pool[0] };
+      folk.queue = [];
+      folk.path = [];
+      this.log('log.adrift', { name: folk.name });
+      return;
+    }
     folk.needs.energy = Math.max(0, folk.needs.energy - 20);
     folk.needs.comfort = Math.max(0, folk.needs.comfort - 25);
     folk.needs.fun = Math.max(0, folk.needs.fun - 15);
@@ -2781,6 +2930,11 @@ export class Sim {
   /** Faxineira, técnico ou oficial de penhora trabalhando dentro do lote. */
   private stepWorker(folk: Folk): void {
     const sv = folk.visit!.service!;
+    // bloco 14: bombeiros, polícia, gatuno e o Seu Sereno
+    if (sv.kind === 'firefighter') return this.stepFirefighter(folk);
+    if (sv.kind === 'police') return this.stepPolice(folk);
+    if (sv.kind === 'burglar') return this.stepBurglar(folk);
+    if (sv.kind === 'reaper') return this.stepReaper(folk);
     if (folk.queue.length > 0) {
       this.processAction(folk);
       return;
@@ -2954,6 +3108,8 @@ export class Sim {
       const v = f.visit;
       if (!v || v.leaving) continue;
       const late = hour >= VISIT_CURFEW || hour < 6;
+      // bloco 14: socorro, gatuno e o Seu Sereno vão embora quando terminam (de madrugada, inclusive)
+      if (v.service && UNIFORMED[v.service.kind]) continue;
       if (v.service) {
         // quem trabalha tem a chave: só vai embora no fim do serviço (ou de madrugada)
         if (late || world.tick >= v.until) this.startLeaving(f);
@@ -3019,21 +3175,23 @@ export class Sim {
       gig: null,
       business: null,
       // bloco 2: todo mundo toca a campainha, menos o oficial de penhora
-      visit: { until, leaving: false, hostId, admitted: service?.kind === 'bailiff' || service?.kind === 'social', rang: -1, service },
+      visit: { until, leaving: false, hostId, admitted: service !== null && !!NO_BELL[service.kind], rang: -1, service },
     };
+    // bloco 14: bombeiro, policial, gatuno e o Seu Sereno vêm vestidos para o serviço
+    if (service && UNIFORMED[service.kind]) folk.outfit = 'work';
     // bloco 11: criança da vizinhança vem como criança
     if (n.age) folk.age = n.age;
     world.folks.push(folk);
   }
 
-  private startLeaving(folk: Folk): void {
+  private startLeaving(folk: Folk, quiet = false): void {
     if (!folk.visit || folk.visit.leaving) return;
     folk.visit.leaving = true;
     // larga conversas: quem ouvia é liberado pelo próprio processListen
     folk.queue = [this.makeAction({ kind: 'leave' }, 'player')];
     folk.path = [];
     if (folk.collapsed > 0) folk.collapsed = 0;
-    this.log('log.leaving', { name: folk.name });
+    if (!quiet) this.log('log.leaving', { name: folk.name });
   }
 
   private removeVisitor(id: number): void {
@@ -3054,6 +3212,14 @@ export class Sim {
       f.queue = f.queue.filter((a) => !(a.otherId === id && (a.kind === 'social' || a.kind === 'listen')));
       if (idx === 0) f.path = [];
     }
+    // bloco 14: socorro que vai embora libera o chamado; gatuno que escapa leva o que pegou
+    const sv = folk.visit?.service;
+    if (sv?.kind === 'firefighter' && !world.folks.some((f) => f.visit?.service?.kind === 'firefighter')) world.help.fire = 0;
+    if (sv?.kind === 'police') world.help.police = 0;
+    if (sv?.kind === 'burglar' && !sv.caught) {
+      this.log(sv.loot ? 'log.burglarEscaped' : 'log.burglarGone', { object: sv.loot ? (this.catalog.objects[sv.loot.defId]?.name ?? '') : '' });
+    }
+    if (sv && UNIFORMED[sv.kind]) return;
     this.log('log.left', { name: folk.name });
   }
 
@@ -4151,6 +4317,836 @@ export class Sim {
       this.sendAway(kid, 'fostered');
     }
     this.startLeaving(folk);
+  }
+
+  // ---------- bloco 14: perigos, morte e fantasmas ----------
+
+  /** Um minuto dos perigos: lareira, fogo, socorro, gatuno, Seu Sereno e fantasmas. */
+  private stepPerils(minute: number): void {
+    const world = this.world;
+    for (const obj of world.objects) {
+      if (!obj.lit || !this.defOf(obj)?.hearth) continue;
+      // a lenha acaba e a lareira apaga sozinha
+      if ((obj.blaze ?? 0) <= world.tick) {
+        obj.lit = false;
+        delete obj.blaze;
+        continue;
+      }
+      for (const near of hearthNeighbors(world, this.catalog, obj)) {
+        if (nextFloat(world) >= HEARTH_SPARK) continue;
+        const fire = addFire(world, this.catalog, near.x, near.y);
+        if (fire) this.log('log.hearthFire', { object: this.defOf(near)?.name ?? '' });
+      }
+    }
+    this.stepFires();
+    const help = world.help;
+    if (help.fire > 0 && world.tick >= help.fire) {
+      // o fogo já foi apagado? então nem vêm
+      if (world.fires.length > 0 && this.spawnCrew('firefighter') > 0) {
+        help.fire = -1;
+        this.log('log.firefightersArrive');
+      } else help.fire = 0;
+    }
+    if (help.police > 0 && world.tick >= help.police) {
+      if (this.burglar() && this.spawnCrew('police') > 0) {
+        help.police = -1;
+        this.log('log.policeArrive');
+      } else help.police = 0;
+    }
+    if (minute === BURGLAR_HOUR * 60 && this.residents().some((f) => !f.away) && !this.burglar() && burglarNight(world, this.catalog)) {
+      world.lastBurglary = world.tick;
+      this.spawnCrew('burglar');
+    }
+    this.watchBurglar();
+    if (world.passings.length > 0 && !world.folks.some((f) => f.visit?.service?.kind === 'reaper')) this.spawnCrew('reaper');
+    this.stepSpirits(minute);
+  }
+
+  /** Quem atende o chamado: todos os vizinhos daquele serviço que não estão no lote. Devolve quantos vieram. */
+  private spawnCrew(kind: ServiceKind): number {
+    let n = 0;
+    for (const nb of this.world.neighbors) {
+      if (nb.service !== kind || this.findFolk(nb.id)) continue;
+      this.spawnVisitor(nb, this.world.tick + 12 * 60, 0, { kind, order: null, fee: 0, started: -1, done: 0, target: 0, blame: 0 });
+      n++;
+    }
+    return n;
+  }
+
+  /** O gatuno no lote (se houver). */
+  private burglar(): Folk | undefined {
+    return this.world.folks.find((f) => f.visit?.service?.kind === 'burglar');
+  }
+
+  /** Fogo: esquenta, espalha, queima; o detector de fumaça chama os bombeiros. */
+  private stepFires(): void {
+    const world = this.world;
+    if (world.fires.length === 0) {
+      this.fireAware = false;
+      return;
+    }
+    if (!this.fireAware) {
+      this.fireAware = true;
+      this.fireStarted();
+    }
+    const r = fireMinute(world, this.catalog);
+    for (const obj of r.burnt) {
+      if (!this.findObject(obj.id)) continue;
+      const def = this.defOf(obj);
+      this.removeObject(obj.id, true);
+      if (def) {
+        for (const t of footprint(obj, def)) {
+          const f = fireAt(world, t.x, t.y);
+          if (f) f.fuel = Math.min(f.fuel, FUEL_BARE);
+        }
+      }
+      addMess(world, 'ash', obj.x, obj.y, 0);
+      this.log('log.burnt', { object: def?.name ?? '' });
+    }
+    for (const obj of r.ruined) this.log('log.ruinedByFire', { object: this.defOf(obj)?.name ?? '' });
+    if (world.help.fire === 0 && smokeSeen(world, this.catalog)) {
+      world.help.fire = world.tick + FIRE_RESPONSE;
+      this.log('log.smokeAlarm');
+      this.wakeAll('fire');
+    }
+    if (world.fires.length === 0) {
+      this.fireAware = false;
+      this.log('log.fireBurntOut');
+    }
+  }
+
+  /** O fogo começou: as visitas fogem e quem estava à toa larga o que fazia. */
+  private fireStarted(): void {
+    const world = this.world;
+    this.log('log.fireStarted');
+    const r = this.residents()[0];
+    if (r) createNews(world, this.catalog, this.logger, 'houseFire', r.id, 0);
+    const stay: ServiceKind[] = ['firefighter', 'police', 'reaper'];
+    for (const f of world.folks) {
+      if (f.away || f.down || f.age === 'baby') continue;
+      if (f.visit) {
+        if (!f.visit.service || !stay.includes(f.visit.service.kind)) this.startLeaving(f);
+        continue;
+      }
+      setThought(f, 'fear', 'fire', world.tick, 60);
+      const fire = nearestFire(world, f);
+      if (asleep(f, this.catalog, world)) {
+        if (fire && reach(world, f, fire) <= 4) this.wake(f, 'fire');
+      } else if (f.queue[0]?.source === 'auto') {
+        f.queue = [];
+        f.path = [];
+        f.idleTicks = IDLE_BEFORE_AUTO;
+      }
+    }
+  }
+
+  /** Acorda quem dorme (alarme, fumaça, susto). */
+  private wake(folk: Folk, icon: string): void {
+    if (asleep(folk, this.catalog, this.world)) this.finish(folk);
+    folk.queue = folk.queue.filter((a) => a.source === 'player');
+    folk.path = [];
+    folk.idleTicks = IDLE_BEFORE_AUTO;
+    setThought(folk, 'fear', icon, this.world.tick, 45);
+  }
+
+  private wakeAll(icon: string): void {
+    for (const f of this.residents()) {
+      if (f.away || f.down || f.collapsed > 0) continue;
+      if (asleep(f, this.catalog, this.world)) this.wake(f, icon);
+    }
+  }
+
+  /**
+   * Perigo de agora para quem está no lote: chamas no tile, fome no zero,
+   * piscina sem escadinha. Devolve true se o folk não age neste minuto.
+   */
+  private stepDanger(folk: Folk): boolean {
+    const world = this.world;
+    if (folk.age === 'baby') return false;
+    if (fireAt(world, folk.x, folk.y)) {
+      folk.scorch = (folk.scorch ?? 0) + 1;
+      folk.needs.comfort = Math.max(0, folk.needs.comfort - 1);
+      folk.needs.hygiene = Math.max(0, folk.needs.hygiene - 0.8);
+      setThought(folk, 'fear', 'fire', world.tick, 20);
+      if (folk.visit) {
+        // bombeiro tem roupa para isso; o resto sai correndo
+        if (folk.visit.service?.kind === 'firefighter' || folk.visit.service?.kind === 'reaper') folk.scorch = 0;
+        else this.startLeaving(folk);
+      } else if (folk.age === 'child') {
+        // criança é tirada das chamas pelos adultos (não se machuca, mas leva um susto)
+        if (folk.scorch >= 3) this.escapeFire(folk);
+      } else if (folk.scorch >= SCORCH_DEATH) {
+        this.fall(folk, 'fire');
+        return true;
+      }
+    } else if (folk.scorch) {
+      folk.scorch = Math.max(0, folk.scorch - 0.5);
+      if (folk.scorch === 0) delete folk.scorch;
+    }
+    if (!folk.visit && folk.age === undefined) {
+      if (folk.needs.hunger <= 0) {
+        folk.starving = (folk.starving ?? 0) + 1;
+        if (folk.starving === 1) this.log('log.starving', { name: folk.name });
+        if (folk.starving === STARVE_MINUTES - 60) this.log('log.starvingLast', { name: folk.name });
+        if (folk.starving >= STARVE_MINUTES) {
+          this.fall(folk, 'hunger');
+          return true;
+        }
+      } else if (folk.starving) delete folk.starving;
+    }
+    if (folk.adrift) {
+      decayNeeds(world, this.catalog, folk, 1);
+      folk.needs.energy = Math.max(0, folk.needs.energy - ADRIFT_DRAIN);
+      folk.needs.fun = Math.max(0, folk.needs.fun - 0.1);
+      folk.needs.hygiene = Math.min(NEED_MAX, folk.needs.hygiene + 0.1);
+      const pool = poolTiles(world.grid, this.catalog, folk.adrift.x, folk.adrift.y);
+      if (pool.length === 0 || poolHasLadder(world, this.catalog, pool)) {
+        delete folk.adrift;
+        this.log('log.outOfPool', { name: folk.name });
+        return true;
+      }
+      if (folk.needs.energy <= 0) {
+        this.fall(folk, 'drown');
+        return true;
+      }
+      if (world.tick % 30 === 0) setThought(folk, 'fear', 'swim', world.tick, 20);
+      return true;
+    }
+    return false;
+  }
+
+  /** Sai das chamas para o tile livre mais perto que não esteja pegando fogo. */
+  private escapeFire(folk: Folk): void {
+    const world = this.world;
+    for (let r = 1; r <= 4; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const x = folk.x + dx;
+          const y = folk.y + dy;
+          if (!this.nav.isFree(x, y) || fireAt(world, x, y)) continue;
+          if (!findPath(this.nav, folk, { x, y })) continue;
+          folk.queue = [this.makeAction({ kind: 'goto', target: { x, y } }, 'player')];
+          folk.path = [];
+          return;
+        }
+      }
+    }
+  }
+
+  /**
+   * Bloco 14: quem tem fogo por perto apaga (com extintor), liga para os
+   * bombeiros ou entra em pânico do lado das chamas; quem vê o gatuno liga
+   * para a polícia. Devolve true se decidiu algo.
+   */
+  private perilWish(folk: Folk): boolean {
+    const world = this.world;
+    if (folk.visit || folk.down || folk.age === 'baby') return false;
+    if (world.fires.length > 0) {
+      const fire = nearestFire(world, folk);
+      if (!fire) return false;
+      if (folk.age === undefined) {
+        const ext = safetyOf(world, this.catalog, 'extinguisher');
+        const extDef = ext && this.defOf(ext);
+        if (ext && extDef && findPathToAny(this.nav, folk, useTiles(world, this.nav, ext, extDef))) {
+          folk.queue.push(this.makeAction({ kind: 'use', objectId: ext.id, interactionId: 'douse' }, 'auto'));
+          return true;
+        }
+        if (world.help.fire === 0 && !world.folks.some((f) => f.queue.some((a) => a.interactionId === 'callFire'))) {
+          const phone = this.nearestSpecial(folk, 'callFire');
+          if (phone) {
+            folk.queue.push(this.makeAction({ kind: 'use', objectId: phone.obj.id, interactionId: phone.it.id }, 'auto'));
+            return true;
+          }
+        }
+      }
+      folk.queue.push(this.makeAction({ kind: 'panic', target: { x: fire.x, y: fire.y } }, 'auto'));
+      return true;
+    }
+    const thief = this.burglar();
+    if (thief && !thief.visit?.leaving && reach(world, folk, thief) <= 6) {
+      setThought(folk, 'fear', 'burglar', world.tick, 30);
+      if (folk.age === undefined && world.help.police === 0 && !world.folks.some((f) => f.queue.some((a) => a.interactionId === 'callPolice'))) {
+        const phone = this.nearestSpecial(folk, 'callPolice');
+        if (phone) {
+          folk.queue.push(this.makeAction({ kind: 'use', objectId: phone.obj.id, interactionId: phone.it.id }, 'auto'));
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /** Apagar fogo: com o extintor na mão (morador) ou com a mangueira (bombeiro). */
+  private processDouse(folk: Folk, action: Action): void {
+    const world = this.world;
+    let fire = action.target ? fireAt(world, action.target.x, action.target.y) : undefined;
+    if (!fire) {
+      fire = nearestFire(world, folk, folk.visit ? Infinity : 12) ?? (folk.visit ? world.fires[0] : undefined);
+      if (!fire) {
+        this.finish(folk);
+        return;
+      }
+      action.target = { x: fire.x, y: fire.y };
+      action.phase = 'queued';
+      folk.path = [];
+    }
+    const tiles = fireSideTiles(world, this.nav, fire);
+    if (action.phase === 'queued') {
+      if (tiles.some((t) => t.x === folk.x && t.y === folk.y)) {
+        action.phase = 'using';
+      } else {
+        let path = findPathToAny(this.nav, folk, tiles);
+        if (!path) {
+          // este foco não dá para alcançar: tenta outro que dê
+          for (const other of world.fires) {
+            if (other === fire) continue;
+            const p = findPathToAny(this.nav, folk, fireSideTiles(world, this.nav, other));
+            if (p && (!path || p.length < path.length)) {
+              path = p;
+              action.target = { x: other.x, y: other.y };
+            }
+          }
+        }
+        if (path) {
+          folk.path = path;
+          action.phase = 'walking';
+        } else {
+          this.log('log.noPath', { name: folk.name });
+          this.finish(folk);
+          return;
+        }
+      }
+    }
+    if (action.phase === 'walking') {
+      const moved = this.stepAlong(folk, action);
+      if (moved !== 'arrived') return;
+      action.phase = 'queued';
+      return;
+    }
+    if (!tiles.some((t) => t.x === folk.x && t.y === folk.y) || reach(world, folk, fire) > 2) {
+      action.phase = 'queued';
+      return;
+    }
+    folk.facing = { x: Math.sign(fire.x - folk.x), y: Math.sign(fire.y - folk.y) };
+    folk.needs.energy = Math.max(0, folk.needs.energy - 0.1);
+    folk.needs.hygiene = Math.max(0, folk.needs.hygiene - 0.1);
+    action.elapsed++;
+    const hose = folk.visit?.service?.kind === 'firefighter';
+    if (!douseFire(world, fire, hose ? DOUSE_HOSE : DOUSE_EXTINGUISHER)) return;
+    action.target = undefined;
+    action.phase = 'queued';
+    if (world.fires.length === 0) {
+      this.fireAware = false;
+      this.log(hose ? 'log.firefightersDone' : 'log.fireOut', { name: folk.name });
+      if (!folk.visit) this.trainCare(folk, { skill: { id: 'handiness', xpPerMinute: 10 } } as InteractionDef);
+    }
+  }
+
+  /** Pânico: corre até perto do fogo e fica sacudindo os braços (perigoso!). */
+  private processPanic(folk: Folk, action: Action): void {
+    const world = this.world;
+    const fire = nearestFire(world, folk);
+    if (!fire) {
+      this.finish(folk);
+      return;
+    }
+    if (action.phase === 'queued') {
+      const tiles = fireSideTiles(world, this.nav, fire);
+      const path = tiles.some((t) => t.x === folk.x && t.y === folk.y) ? [] : findPathToAny(this.nav, folk, tiles);
+      if (path && path.length > 0) {
+        folk.path = path;
+        action.phase = 'walking';
+      } else action.phase = 'using';
+    }
+    if (action.phase === 'walking') {
+      const moved = this.stepAlong(folk, action);
+      if (moved !== 'arrived') return;
+      action.phase = 'using';
+    }
+    if (reach(world, folk, fire) <= 3) folk.facing = { x: Math.sign(fire.x - folk.x), y: Math.sign(fire.y - folk.y) };
+    folk.needs.fun = Math.max(0, folk.needs.fun - 0.15);
+    folk.needs.comfort = Math.max(0, folk.needs.comfort - 0.1);
+    setThought(folk, 'fear', 'fire', world.tick, 10);
+    action.elapsed++;
+    if (action.elapsed >= PANIC_MINUTES) this.finish(folk);
+  }
+
+  /** Cozinhar mal põe fogo no fogão: a comida se perde e começa o fogo. */
+  private cookingFire(folk: Folk, obj: WorldObject, def: ObjectDef, it: InteractionDef): boolean {
+    if (folk.visit || !it.portions || it.skill?.id !== 'cooking') return false;
+    if (def.line !== 'stove' && def.id !== 'stove' && def.id !== 'grill') return false;
+    if (nextFloat(this.world) >= cookFireChance(skillLevel(folk, 'cooking'))) return false;
+    const t = nearestFootprintTile(obj, def, folk);
+    if (!addFire(this.world, this.catalog, t.x, t.y)) return false;
+    this.log('log.cookFire', { name: folk.name, object: def.name });
+    this.finish(folk);
+    return true;
+  }
+
+  /** Fim do conserto: o choque com Jeito zero pode virar fogo no aparelho. */
+  private shockFire(folk: Folk, obj: WorldObject): void {
+    if ((folk.sooty ?? 0) !== this.world.tick + SOOTY_MINUTES) return; // não levou choque agora
+    if (skillLevel(folk, 'handiness') > 0 || nextFloat(this.world) >= SHOCK_FIRE) return;
+    if (addFire(this.world, this.catalog, obj.x, obj.y)) this.log('log.shockFire', { name: folk.name, object: this.defOf(obj)?.name ?? '' });
+  }
+
+  /** Lareira: acender (por umas horas) e abafar. */
+  private hearthSpecial(folk: Folk, obj: WorldObject | undefined, it: InteractionDef): void {
+    if (!obj) return;
+    if (it.special === 'kindle') {
+      obj.lit = true;
+      obj.blaze = this.world.tick + HEARTH_MINUTES;
+      this.log('log.kindled', { name: folk.name });
+    } else {
+      obj.lit = false;
+      delete obj.blaze;
+    }
+  }
+
+  /** Ligações de socorro (bombeiros e polícia). */
+  private callHelp(folk: Folk, what: 'fire' | 'police'): void {
+    const help = this.world.help;
+    if (what === 'fire') {
+      if (help.fire !== 0 || this.world.fires.length === 0) return;
+      help.fire = this.world.tick + FIRE_RESPONSE;
+      this.log('log.calledFire', { name: folk.name });
+    } else {
+      if (help.police !== 0 || !this.burglar()) return;
+      help.police = this.world.tick + POLICE_RESPONSE;
+      this.log('log.calledPolice', { name: folk.name });
+    }
+  }
+
+  // ---------- bloco 14: bombeiros, gatuno e polícia ----------
+
+  private stepFirefighter(folk: Folk): void {
+    if (folk.queue.length > 0) {
+      this.processAction(folk);
+      return;
+    }
+    const world = this.world;
+    const fire = nearestFire(world, folk) ?? world.fires[0];
+    if (!fire) {
+      this.startLeaving(folk, true);
+      return;
+    }
+    folk.queue.push(this.makeAction({ kind: 'douse', target: { x: fire.x, y: fire.y }, armed: true }, 'auto'));
+  }
+
+  /** O gatuno vai até o objeto de mais valor, solta com calma e leva. */
+  private stepBurglar(folk: Folk): void {
+    const world = this.world;
+    const sv = folk.visit!.service!;
+    if (folk.queue.length > 0) {
+      this.processAction(folk);
+      return;
+    }
+    if (sv.target) {
+      const obj = this.findObject(sv.target);
+      const def = obj && this.defOf(obj);
+      if (!obj || !def || objectBusy(world, obj.id)) {
+        sv.target = 0;
+        sv.started = -1;
+        return;
+      }
+      if (sv.started < 0) sv.started = world.tick;
+      const t = nearestFootprintTile(obj, def, folk);
+      if (t.x !== folk.x || t.y !== folk.y) folk.facing = { x: Math.sign(t.x - folk.x), y: Math.sign(t.y - folk.y) };
+      if (world.tick - sv.started < STEAL_MINUTES) return;
+      sv.loot = JSON.parse(JSON.stringify(obj)) as WorldObject;
+      this.removeObject(obj.id, true);
+      sv.target = 0;
+      this.log('log.stolen', { object: def.name });
+      this.startLeaving(folk, true);
+      return;
+    }
+    const target = lootTarget(world, this.catalog, (o) => !!findPathToAny(this.nav, folk, besideTiles(world, this.catalog, this.nav, o)));
+    const path = target && findPathToAny(this.nav, folk, besideTiles(world, this.catalog, this.nav, target));
+    if (!target || !path) {
+      this.startLeaving(folk, true);
+      return;
+    }
+    sv.target = target.id;
+    sv.started = -1;
+    if (path.length > 0) folk.queue.push(this.makeAction({ kind: 'goto', target: path[path.length - 1] }, 'auto'));
+  }
+
+  /** Alarme dispara com o gatuno dentro de casa; quando vê a polícia, ele foge. */
+  private watchBurglar(): void {
+    const world = this.world;
+    const thief = this.burglar();
+    if (!thief) return;
+    const indoor = !this.catalog.floors[floorAt(world.grid, thief.x, thief.y)]?.outdoor;
+    if (indoor && world.help.police === 0 && !thief.visit?.leaving && safetyOf(world, this.catalog, 'burglar')) {
+      world.help.police = world.tick + POLICE_RESPONSE;
+      this.log('log.burglarAlarm');
+      this.wakeAll('burglar');
+    }
+    const cop = world.folks.find((f) => f.visit?.service?.kind === 'police' && !f.visit.leaving);
+    if (cop && !thief.visit!.leaving && reach(world, cop, thief) <= FLEE_RADIUS) {
+      thief.visit!.service!.fleeing = true;
+      thief.visit!.service!.target = 0;
+      this.startLeaving(thief, true);
+      this.log('log.burglarFlees');
+    }
+  }
+
+  /** A polícia corre atrás do gatuno (mais rápido que ele) e prende quando alcança. */
+  private stepPolice(folk: Folk): void {
+    const world = this.world;
+    const thief = this.burglar();
+    if (!thief) {
+      this.startLeaving(folk, true);
+      return;
+    }
+    for (let i = 0; i < CHASE_STEPS; i++) {
+      if (reach(world, folk, thief) <= 1) {
+        this.catchBurglar(folk, thief);
+        return;
+      }
+      const path = findPath(this.nav, folk, { x: thief.x, y: thief.y });
+      const next = path?.[0];
+      if (!next || !this.nav.canStep(folk.x, folk.y, next.x, next.y)) break;
+      let dy = next.y - folk.y;
+      if (Math.abs(dy) > 1) dy -= Math.sign(dy) * this.nav.stride;
+      folk.facing = { x: next.x - folk.x, y: dy };
+      folk.x = next.x;
+      folk.y = next.y;
+    }
+    if (reach(world, folk, thief) <= 1) this.catchBurglar(folk, thief);
+  }
+
+  private catchBurglar(cop: Folk, thief: Folk): void {
+    const world = this.world;
+    const sv = thief.visit!.service!;
+    if (sv.caught) return;
+    sv.caught = true;
+    if (sv.loot) {
+      this.restoreLoot(sv.loot);
+      sv.loot = null;
+    }
+    world.household.funds += BURGLAR_REWARD;
+    this.log('log.burglarCaught', { name: cop.name, reward: formatMoney(BURGLAR_REWARD) });
+    const r = this.residents()[0];
+    if (r) createNews(world, this.catalog, this.logger, 'caughtBurglar', r.id, 0);
+    if (!this.departed.includes(thief.id)) this.departed.push(thief.id);
+    this.startLeaving(cop, true);
+  }
+
+  /** O que o gatuno levava volta para o lote (no mesmo lugar, ou no mais perto que couber). */
+  private restoreLoot(loot: WorldObject): void {
+    const world = this.world;
+    const back = checkPlacement(world, this.catalog, loot.defId, loot.x, loot.y, loot.rot).ok
+      ? { x: loot.x, y: loot.y }
+      : freeSpotFor(world, this.catalog, loot.defId, { x: loot.x, y: loot.y });
+    if (!back) return;
+    world.objects.push({ ...loot, x: back.x, y: back.y });
+    this.objectStamp++;
+    this.replanAll();
+    this.log('log.lootBack', { object: this.catalog.objects[loot.defId]?.name ?? '' });
+  }
+
+  // ---------- bloco 14: morte, barganha e luto ----------
+
+  /** Caiu (fogo, fome, afogamento). Sem morte no jogo, escapa por pouco; com, o Seu Sereno vem. */
+  private fall(folk: Folk, cause: DeathCause): void {
+    const world = this.world;
+    folk.queue = [];
+    folk.path = [];
+    folk.collapsed = 0;
+    delete folk.scorch;
+    delete folk.starving;
+    if (cause === 'drown') delete folk.adrift;
+    const c = circleOfFolk(world, folk.id);
+    if (c) this.dropFromCircle(folk, c, true);
+    if (!world.rules.death) {
+      folk.collapsed = NEAR_MISS_REST;
+      if (cause === 'hunger') folk.needs.hunger = Math.max(folk.needs.hunger, 40);
+      if (cause === 'drown') folk.needs.energy = Math.max(folk.needs.energy, 25);
+      if (cause === 'fire') {
+        const f = fireAt(world, folk.x, folk.y);
+        if (f) douseFire(world, f, 1000);
+      }
+      folk.needs.comfort = Math.min(folk.needs.comfort, 15);
+      this.log(`log.nearMiss.${cause}`, { name: folk.name });
+      return;
+    }
+    folk.down = cause;
+    world.passings.push({ folkId: folk.id, cause, at: world.tick, stage: 'coming', deadline: 0 });
+    this.log(`log.fell.${cause}`, { name: folk.name });
+    for (const o of this.residents()) {
+      if (o === folk || o.away || o.down) continue;
+      setThought(o, 'fear', 'grave', world.tick, 90);
+      o.needs.fun = Math.max(0, o.needs.fun - 15);
+    }
+  }
+
+  /** O Seu Sereno anda até quem caiu, abre o livro e espera a barganha. */
+  private stepReaper(folk: Folk): void {
+    const world = this.world;
+    const p = world.passings[0];
+    if (!p) {
+      this.startLeaving(folk, true);
+      return;
+    }
+    const body = this.findFolk(p.folkId);
+    if (!body?.down) {
+      world.passings.shift();
+      return;
+    }
+    if (folk.queue.length > 0) {
+      this.processAction(folk);
+      return;
+    }
+    if (p.stage === 'coming') {
+      if (reach(world, folk, body) <= 1) {
+        p.stage = 'waiting';
+        p.deadline = world.tick + BARGAIN_MINUTES;
+        folk.facing = { x: Math.sign(body.x - folk.x), y: Math.sign(body.y - folk.y) };
+        this.log('log.reaperArrived', { name: body.name });
+        return;
+      }
+      const tiles = fireSideTiles(world, this.nav, body);
+      const path = findPathToAny(this.nav, folk, tiles);
+      if (!path || path.length === 0) {
+        // ele não precisa de caminho: quando não há, aparece do lado
+        const t = tiles[0] ?? { x: body.x, y: body.y };
+        folk.x = folk.px = t.x;
+        folk.y = folk.py = t.y;
+        return;
+      }
+      folk.queue.push(this.makeAction({ kind: 'goto', target: path[path.length - 1] }, 'auto'));
+      return;
+    }
+    if (world.tick >= p.deadline) this.takeAway(p);
+  }
+
+  /** Quem joga o par ou ímpar: o adulto da casa mais perto de quem caiu. */
+  bargainerFor(body: Folk | undefined): Folk | undefined {
+    if (!body) return undefined;
+    let best: Folk | undefined;
+    let bestD = Infinity;
+    for (const f of this.adults()) {
+      if (f === body || f.down || f.away || f.collapsed > 0 || f.adrift) continue;
+      const d = Math.abs(f.x - body.x) + Math.abs(f.y - body.y);
+      if (d < bestD) {
+        best = f;
+        bestD = d;
+      }
+    }
+    return best;
+  }
+
+  /** Par ou ímpar com o Seu Sereno: ganhou, ele fecha o livro; perdeu (ou deixou ir), ele leva. */
+  private bargain(pick: 'even' | 'odd' | null): boolean {
+    const world = this.world;
+    const p = world.passings[0];
+    if (!p || p.stage !== 'waiting') return this.fail('noBargain');
+    const body = this.findFolk(p.folkId);
+    if (pick === null || !body) {
+      this.takeAway(p);
+      return true;
+    }
+    const by = this.bargainerFor(body);
+    if (!by) return this.fail('noBargainer');
+    const [mine, his] = throwFingers(world);
+    const won = bargainWon(pick, mine, his);
+    world.lastBargain = { folkId: body.id, bargainer: by.id, pick, mine, his, won, tick: world.tick };
+    const params = { name: by.name, other: body.name, mine, his, sum: mine + his };
+    if (won) {
+      world.passings.shift();
+      this.revive(body, p.cause);
+      this.log('log.bargainWon', params);
+    } else {
+      this.log('log.bargainLost', params);
+      this.takeAway(p);
+    }
+    return true;
+  }
+
+  /** De volta: levanta devagar, com a necessidade que matava um pouco mais cheia. */
+  private revive(folk: Folk, cause: DeathCause): void {
+    delete folk.down;
+    folk.collapsed = NEAR_MISS_REST;
+    if (cause === 'hunger') folk.needs.hunger = Math.max(folk.needs.hunger, 40);
+    if (cause === 'drown') folk.needs.energy = Math.max(folk.needs.energy, 30);
+    if (cause === 'fire') {
+      const f = fireAt(this.world, folk.x, folk.y);
+      if (f) douseFire(this.world, f, 1000);
+    }
+  }
+
+  private takeAway(p: Passing): void {
+    const world = this.world;
+    world.passings = world.passings.filter((x) => x !== p);
+    const body = this.findFolk(p.folkId);
+    if (body) this.die(body, p.cause);
+  }
+
+  /** Morreu: sai do lote, vira lápide ou urna, e quem conhecia fica de luto. */
+  private die(folk: Folk, cause: DeathCause): void {
+    const world = this.world;
+    const at = { x: folk.x, y: folk.y };
+    world.departed.push({ id: folk.id, name: folk.name, look: { ...folk.look }, age: folk.age, cause, died: world.tick });
+    this.removeFolk(folk);
+    let kind = memorialKind(world, this.catalog, at, cause);
+    let spot = freeSpotFor(world, this.catalog, kind, at);
+    if (!spot && kind === 'urn') {
+      kind = 'grave';
+      spot = freeSpotFor(world, this.catalog, kind, at);
+    }
+    if (spot && this.catalog.objects[kind]) {
+      world.objects.push({
+        id: world.nextId++,
+        defId: kind,
+        x: spot.x,
+        y: spot.y,
+        rot: 0,
+        paid: 0,
+        state: freshState(),
+        memorial: { personId: folk.id, unrest: 100, honored: -1 },
+      });
+      this.objectStamp++;
+      this.replanAll();
+    }
+    this.log(`log.died.${cause}`, { name: folk.name });
+    this.mourn(folk);
+    const anyone = this.residents()[0];
+    if (anyone) createNews(world, this.catalog, this.logger, 'passedAway', folk.id, 0);
+    // sem adulto na casa, as crianças vão morar com parentes
+    if (this.adults().length === 0) {
+      const kids = this.household();
+      for (const k of kids) this.sendAway(k, 'fostered');
+      if (kids.length > 0) this.log('log.kidsToRelatives');
+    }
+    if (this.household().length === 0) this.log('log.houseEmpty');
+  }
+
+  /** Tira o folk do mundo (conversas, rodas, festa, telefone, namoros e casamentos). */
+  private removeFolk(folk: Folk): void {
+    const world = this.world;
+    const id = folk.id;
+    world.folks = world.folks.filter((f) => f.id !== id);
+    for (const c of world.circles) c.members = c.members.filter((m) => m.id !== id);
+    for (const f of world.folks) {
+      const idx = f.queue.findIndex((a) => a.otherId === id);
+      if (idx < 0) continue;
+      f.queue = f.queue.filter((a) => a.otherId !== id);
+      if (idx === 0) f.path = [];
+    }
+    for (const [key, rel] of Object.entries(world.relations)) {
+      const [a, b] = key.split('>').map(Number);
+      if (a !== id && b !== id) continue;
+      rel.dating = false;
+      delete rel.bond;
+    }
+    if (world.party?.host === id) world.party = null;
+    if (world.call?.answeredBy === id) world.call = null;
+    for (const obj of world.objects) if (obj.baby === id) delete obj.baby;
+  }
+
+  /** Luto: quem morava junto e quem era amigo guarda a lembrança; os da casa sofrem uns dias. */
+  private mourn(dead: Folk): void {
+    const world = this.world;
+    for (const f of this.household()) {
+      if (f.age === 'baby') continue;
+      addMemory(world, this.catalog, f.id, dead.id, 'mourned');
+      f.mourning = world.tick + MOURN_DAYS * MINUTES_PER_DAY;
+      f.needs.fun = Math.max(0, f.needs.fun - 30);
+      f.needs.social = Math.max(0, f.needs.social - 15);
+      setThought(f, 'miss', 'grave', world.tick, 240);
+    }
+    for (const [key, rel] of Object.entries(world.relations)) {
+      const [from, to] = key.split('>').map(Number);
+      if (to !== dead.id || rel.friendship < MOURN_FRIENDSHIP) continue;
+      if (this.findFolk(from) && !this.findFolk(from)!.visit) continue;
+      addMemory(world, this.catalog, from, dead.id, 'mourned');
+    }
+  }
+
+  /** Homenagem na lápide: acalma o fantasma (uma vez por dia) e alivia o luto. */
+  private honor(folk: Folk, action: Action): void {
+    const world = this.world;
+    const obj = action.objectId !== undefined ? this.findObject(action.objectId) : undefined;
+    const m = obj?.memorial;
+    if (!m) return;
+    const name = world.departed.find((d) => d.id === m.personId)?.name ?? '';
+    const today = Math.floor(world.tick / MINUTES_PER_DAY);
+    if (folk.mourning) folk.mourning = Math.max(world.tick, folk.mourning - MINUTES_PER_DAY);
+    if (m.honored === today || m.unrest <= 0) {
+      this.log('log.honoredAgain', { name: folk.name, other: name });
+      return;
+    }
+    m.honored = today;
+    m.unrest = Math.max(0, m.unrest - HONOR_REST);
+    folk.needs.fun = Math.min(NEED_MAX, folk.needs.fun + 10);
+    this.log(m.unrest > 0 ? 'log.honored' : 'log.restInPeace', { name: folk.name, other: name });
+  }
+
+  // ---------- bloco 14: fantasmas ----------
+
+  private stepSpirits(minute: number): void {
+    const world = this.world;
+    if (minute === SPIRIT_FROM * 60) {
+      for (const obj of world.objects) {
+        const m = obj.memorial;
+        const def = this.defOf(obj);
+        if (!m || !def || m.unrest <= 0 || world.spirits.some((s) => s.objectId === obj.id)) continue;
+        if (nextFloat(world) >= SPIRIT_CHANCE) continue;
+        const tiles = spiritTiles(world, this.nav, obj, def);
+        if (tiles.length === 0) continue;
+        const t = tiles[nextInt(world, tiles.length)];
+        world.spirits.push({ personId: m.personId, objectId: obj.id, x: t.x, y: t.y, px: t.x, py: t.y, until: world.tick + (24 - SPIRIT_FROM + SPIRIT_TO) * 60 });
+        this.log('log.spiritRises', { name: this.departedName(m.personId) });
+      }
+    }
+    for (const s of [...world.spirits]) {
+      s.px = s.x;
+      s.py = s.y;
+      const obj = this.findObject(s.objectId);
+      if (!obj?.memorial || world.tick >= s.until) {
+        world.spirits = world.spirits.filter((x) => x !== s);
+        if (obj?.memorial && obj.memorial.unrest > 0) {
+          obj.memorial.unrest = Math.max(0, obj.memorial.unrest - SPIRIT_REST_PER_NIGHT);
+          if (obj.memorial.unrest === 0) this.log('log.restInPeaceAlone', { other: this.departedName(s.personId) });
+        }
+        continue;
+      }
+      if (world.tick % SPIRIT_STEP === 0) {
+        const n = spiritStep(world, this.nav, s, obj);
+        s.x = n.x;
+        s.y = n.y;
+      }
+      for (const f of world.folks) {
+        if (f.visit?.service || f.away || f.down || f.age === 'baby') continue;
+        if (reach(world, f, s) > SCARE_RADIUS) continue;
+        if ((f.frightened ?? -Infinity) > world.tick - SCARE_GAP) continue;
+        const sleeping = asleep(f, this.catalog, world);
+        if (sleeping && nextFloat(world) > 0.1) continue;
+        this.scare(f, s);
+      }
+    }
+  }
+
+  private departedName(id: number): string {
+    return this.world.departed.find((d) => d.id === id)?.name ?? '';
+  }
+
+  /** Susto: acorda, perde conforto e diversão; visita vai embora correndo. */
+  private scare(folk: Folk, s: Spirit): void {
+    const world = this.world;
+    folk.frightened = world.tick;
+    this.wake(folk, 'ghost');
+    folk.needs.comfort = Math.max(0, folk.needs.comfort - 20);
+    folk.needs.fun = Math.max(0, folk.needs.fun - 15);
+    folk.needs.energy = Math.max(0, folk.needs.energy - 5);
+    addMemory(world, this.catalog, folk.id, s.personId, 'hauntedMe');
+    if (folk.visit) {
+      this.startLeaving(folk);
+      this.log('log.guestScared', { name: folk.name, other: this.departedName(s.personId) });
+    } else {
+      this.log('log.scared', { name: folk.name, other: this.departedName(s.personId) });
+    }
   }
 
   private faceObject(folk: Folk, action: Action): void {

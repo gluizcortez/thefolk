@@ -38,7 +38,11 @@ export type FolkAnim =
   | 'cradle'
   // bloco 13: nadando (de peito, cabeça fora d'água) e o pulo do trampolim
   | 'swim'
-  | 'dive';
+  | 'dive'
+  // bloco 14: pânico (braços sacudindo por cima da cabeça), apagando fogo e o Seu Sereno de lanterna erguida
+  | 'panic'
+  | 'spray'
+  | 'lantern';
 
 export type FolkLook = Look;
 
@@ -419,6 +423,48 @@ function poseFor(anim: FolkAnim, t: number, mood: number, energy = 100): Pose {
       p.headX = -0.2;
       break;
     }
+    case 'panic': {
+      // braços sacudindo no alto, pulinhos sem sair do lugar, cabeça olhando para os lados
+      const s = Math.sin(t * 14);
+      const hop = Math.max(0, Math.sin(t * 7));
+      p.armLX = -2.6 + 0.35 * s;
+      p.armRX = -2.6 - 0.35 * s;
+      p.armLOut = 0.5 + 0.25 * s;
+      p.armROut = 0.5 - 0.25 * s;
+      p.elbowL = -0.5 - 0.3 * Math.max(0, s);
+      p.elbowR = -0.5 - 0.3 * Math.max(0, -s);
+      p.hipsY = HIPS_Y + 0.04 * hop;
+      p.headY = 0.5 * Math.sin(t * 5);
+      p.headX = -0.3;
+      break;
+    }
+    case 'spray': {
+      // extintor apontado para a frente, com o corpo inclinado e um balanço curto
+      const s = Math.sin(t * 6);
+      p.armRX = -1.25 + 0.08 * s;
+      p.armLX = -1.05 + 0.08 * s;
+      p.armROut = -0.15;
+      p.armLOut = -0.3;
+      p.elbowR = -0.25;
+      p.elbowL = -0.9;
+      p.torsoX += 0.1;
+      p.torsoY = 0.12 * s;
+      p.legLX = -0.25;
+      p.legRX = 0.2;
+      break;
+    }
+    case 'lantern': {
+      // lanterna erguida na direita, livro aberto na esquerda, de pé, sem pressa
+      p.armRX = -1.7;
+      p.armROut = 0.15;
+      p.elbowR = -0.3;
+      p.armLX = -0.7;
+      p.elbowL = -1.2;
+      p.armLOut = -0.2;
+      p.headX = -0.05 + 0.05 * Math.sin(t * 0.6);
+      p.torsoZ = 0.02 * Math.sin(t * 0.5);
+      break;
+    }
     default: {
       // parado: respira e troca o peso de perna de vez em quando
       p.torsoZ = 0.025 * Math.sin(t * 0.7);
@@ -454,6 +500,9 @@ export class FolkModel {
   private bag = new THREE.Group();
   /** bloco 11: mamadeira na mão de quem alimenta o bebê */
   private bottle = new THREE.Group();
+  /** bloco 14: extintor (morador e bombeiro) e a lanterna do Seu Sereno */
+  private extinguisher = new THREE.Group();
+  private lantern = new THREE.Group();
   private ring = new THREE.Group();
   private faceMat: THREE.MeshPhongMaterial;
   private faceKey = '';
@@ -713,7 +762,24 @@ export class FolkModel {
         );
         this.bottle.rotation.x = 0.6;
         this.bottle.visible = false;
-        fore.add(this.rag, this.cup, this.bag, this.bottle);
+        // bloco 14: extintor vermelho com mangueirinha preta; lanterna de vidro do Seu Sereno
+        this.extinguisher.add(
+          cyl(0.055, 0.055, 0.32, 10, colorMat(0xc8261e, { gloss: 0.8 }), 0, -FOREARM - 0.34, 0.07),
+          ball(0.055, 0.03, 0.055, colorMat(0xc8261e, { gloss: 0.8 }), 0, -FOREARM - 0.02, 0.07, 10),
+          cyl(0.02, 0.02, 0.05, 6, colorMat(0x2a2a2e, { gloss: 0.5 }), 0, -FOREARM + 0.02, 0.07),
+          rod([0, -FOREARM + 0.02, 0.07], [0, -FOREARM - 0.08, 0.2], 0.012, colorMat(0x18181a), 6),
+          box(0.12, 0.03, 0.02, colorMat(0xe9e4d6), 0, -FOREARM - 0.3, 0.125),
+        );
+        this.extinguisher.visible = false;
+        const glass = colorMat(0xffe7a0, { emissive: 0xffc860, emissiveIntensity: 0.9 });
+        this.lantern.add(
+          rod([0, -FOREARM - 0.04, 0.05], [0, -FOREARM - 0.12, 0.05], 0.006, colorMat(0x2a2a30), 6),
+          cyl(0.045, 0.045, 0.012, 8, colorMat(0x2a2a30, { gloss: 0.6 }), 0, -FOREARM - 0.13, 0.05),
+          cyl(0.038, 0.038, 0.11, 8, glass, 0, -FOREARM - 0.25, 0.05),
+          cyl(0.05, 0.05, 0.014, 8, colorMat(0x2a2a30, { gloss: 0.6 }), 0, -FOREARM - 0.26, 0.05),
+        );
+        this.lantern.visible = false;
+        fore.add(this.rag, this.cup, this.bag, this.bottle, this.extinguisher, this.lantern);
       } else {
         // bloco 10: aliança dourada no anelar da mão esquerda
         const band = new THREE.Mesh(new THREE.TorusGeometry(0.013, 0.005, 5, 10), colorMat(PAL.brass, { gloss: 1 }));
@@ -885,6 +951,8 @@ export class FolkModel {
     this.cup.visible = hold === 'cup';
     this.bag.visible = hold === 'suitcase';
     this.bottle.visible = hold === 'bottle';
+    this.extinguisher.visible = hold === 'extinguisher';
+    this.lantern.visible = hold === 'lantern' || f.anim === 'lantern';
     this.ring.visible = !!f.ring;
     const lying = f.anim === 'sleep' || f.anim === 'collapsed';
     this.blob.visible = f.anim !== 'sleep' && f.anim !== 'sit';

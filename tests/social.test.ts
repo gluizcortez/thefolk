@@ -265,9 +265,10 @@ describe('visitas', () => {
       const last = sim.world.log[sim.world.log.length - 1];
       if (last?.tick === sim.world.tick && last.key === 'log.dropIn') arrived++;
       if (last?.tick === sim.world.tick && last.key === 'log.left') left++;
-      // à noite não tem visita
+      // à noite não tem visita (bloco 14: gatuno, polícia, bombeiros e o Seu Sereno não contam)
       const hour = Math.floor((sim.world.tick % 1440) / 60);
-      if (hour >= 0 && hour < 6) expect(sim.world.folks.some((f) => f.visit)).toBe(false);
+      const night = ['burglar', 'police', 'firefighter', 'reaper'];
+      if (hour >= 0 && hour < 6) expect(sim.world.folks.some((f) => f.visit && !night.includes(f.visit.service?.kind ?? ''))).toBe(false);
     }
     expect(arrived).toBeGreaterThan(0);
     expect(left).toBeGreaterThan(0);

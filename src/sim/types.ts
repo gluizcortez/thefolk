@@ -53,7 +53,26 @@ export interface InteractionDef {
    * 'services' = liga para um serviço (`serviceId` da ação); 'payBills' =
    * paga as contas da caixa de correio; 'fair' = compra na feira da rua.
    */
-  special?: 'invite' | 'services' | 'payBills' | 'fair' | 'call' | 'answer' | 'party' | 'buffet' | 'unpack' | 'adopt';
+  special?:
+    | 'invite'
+    | 'services'
+    | 'payBills'
+    | 'fair'
+    | 'call'
+    | 'answer'
+    | 'party'
+    | 'buffet'
+    | 'unpack'
+    | 'adopt'
+    // bloco 14: extintor, ligar para os bombeiros e a polícia, homenagem, lareira
+    | 'douse'
+    | 'callFire'
+    | 'callPolice'
+    | 'honor'
+    | 'kindle'
+    | 'smother';
+  /** bloco 14: só com a lareira acesa */
+  blaze?: boolean;
   /**
    * bloco 11: cuidado com o bebê do berço ('feed' = mamadeira, 'change' =
    * fralda, 'hold' = colo, 'lull' = ninar). Só adulto, só com bebê no berço.
@@ -128,7 +147,7 @@ export type Outfit = 'day' | 'formal' | 'sleep' | 'swim' | 'work';
 /** O que o folk pode estar vestindo: a roupa de sempre ou o roupão do banho. */
 export type Wear = Outfit | 'bath';
 /** Coisa que aparece na mão do folk. */
-export type HeldProp = 'plate' | 'book' | 'phone' | 'rag' | 'cup' | 'suitcase' | 'bottle';
+export type HeldProp = 'plate' | 'book' | 'phone' | 'rag' | 'cup' | 'suitcase' | 'bottle' | 'extinguisher' | 'lantern';
 
 // ---------- Bloco 11: bebês, crianças e escola ----------
 
@@ -198,7 +217,7 @@ export interface MonthDef {
  * sujeira; 'miss' = saudade de alguém (`other`); 'chat' = o que acha da
  * conversa; 'wish' = cumpriu um desejo; 'alarm' = o despertador tocou.
  */
-export type ThoughtKind = 'want' | 'refuse' | 'mess' | 'miss' | 'chat' | 'wish' | 'alarm' | 'topic';
+export type ThoughtKind = 'want' | 'refuse' | 'mess' | 'miss' | 'chat' | 'wish' | 'alarm' | 'topic' | 'fear';
 
 export interface Thought {
   kind: ThoughtKind;
@@ -274,7 +293,7 @@ export interface DuoDef {
 export type CareKind = 'clean' | 'repair' | 'service' | 'empty' | 'dishes' | 'dump' | 'water' | 'harvest' | 'replant';
 
 /** Bagunça solta: prato sujo, poça, lixo no chão. */
-export type MessKind = 'plate' | 'puddle' | 'trash' | 'paper';
+export type MessKind = 'plate' | 'puddle' | 'trash' | 'paper' | 'ash';
 
 /** Como um objeto se suja e se gasta com o uso (por minuto de uso). */
 export interface UpkeepDef {
@@ -378,6 +397,14 @@ export interface ObjectDef {
    * (trampolim).
    */
   pool?: 'in' | 'edge';
+  /** bloco 14: pega fogo (sem campo: pela categoria; veja sim/peril.ts) */
+  flammable?: boolean;
+  /** bloco 14: equipamento de segurança (extintor, detector de fumaça, alarme) */
+  safety?: 'extinguisher' | 'smoke' | 'burglar';
+  /** bloco 14: lareira (acende e aquece; perto de coisa que queima, é perigo) */
+  hearth?: boolean;
+  /** bloco 14: lápide ou urna (não se compra; nasce quando alguém morre) */
+  memorial?: boolean;
 }
 
 /** Bloco 13: tipo de planta (muda o desenho e o jeito de crescer). */
@@ -792,7 +819,7 @@ export interface Visit {
 // ---------- Bloco 2: despensa, correio e serviços ----------
 
 /** Quem trabalha para a casa: entregador, faxineira, técnico, oficial de penhora. */
-export type ServiceKind = 'courier' | 'maid' | 'repair' | 'bailiff' | 'social' | 'gardener';
+export type ServiceKind = 'courier' | 'maid' | 'repair' | 'bailiff' | 'social' | 'gardener' | 'firefighter' | 'police' | 'burglar' | 'reaper';
 
 /** O que dá para pedir pelo telefone. */
 export type ServiceOrder = 'groceries' | 'takeout' | 'maid' | 'repair' | 'gardener';
@@ -811,6 +838,12 @@ export interface ServiceVisit {
   target: number;
   /** quem mais deixou bagunça (para a fofoca da faxineira) */
   blame: number;
+  /** bloco 14: o que o gatuno já pegou (volta para a casa se ele for pego) */
+  loot?: WorldObject | null;
+  /** bloco 14: gatuno fugindo da polícia */
+  fleeing?: boolean;
+  /** bloco 14: gatuno pego pela polícia */
+  caught?: boolean;
 }
 
 /** Pedido feito por telefone, a caminho. */
@@ -1041,6 +1074,84 @@ export interface WorldObject {
   baby?: number;
   /** bloco 13: planta viva */
   plant?: PlantState;
+  /** bloco 14: lareira acesa até tal tick */
+  blaze?: number;
+  /** bloco 14: lápide ou urna de alguém */
+  memorial?: Memorial;
+}
+
+/** Bloco 14: de que se morre (e quase se morre). */
+export type DeathCause = 'fire' | 'drown' | 'hunger';
+
+/** Bloco 14: a lápide ou a urna guarda quem se foi e o quanto ainda não descansou. */
+export interface Memorial {
+  personId: number;
+  /** 0 a 100: com mais de 0, o fantasma aparece de noite */
+  unrest: number;
+  /** último dia (índice) em que alguém prestou homenagem (-1 = nunca) */
+  honored: number;
+}
+
+/** Bloco 14: fogo num tile. */
+export interface Fire {
+  id: number;
+  x: number;
+  y: number;
+  /** 0 a 100: força das chamas */
+  heat: number;
+  /** o que ainda há para queimar (com 0, as chamas morrem sozinhas) */
+  fuel: number;
+  at: number;
+}
+
+/** Bloco 14: alguém caiu e o Seu Sereno vem buscar. */
+export interface Passing {
+  folkId: number;
+  cause: DeathCause;
+  at: number;
+  /** 'coming' = a caminho; 'waiting' = de livro aberto, esperando a barganha */
+  stage: 'coming' | 'waiting';
+  /** tick em que ele fecha o livro e leva, se ninguém jogar */
+  deadline: number;
+}
+
+/** Bloco 14: resultado do par ou ímpar com o Seu Sereno. */
+export interface Bargain {
+  folkId: number;
+  bargainer: number;
+  pick: 'even' | 'odd';
+  /** dedos de quem barganhou e do Seu Sereno */
+  mine: number;
+  his: number;
+  won: boolean;
+  tick: number;
+}
+
+/** Bloco 14: quem morreu (fica para a lápide, o fantasma e o luto). */
+export interface Departed {
+  id: number;
+  name: string;
+  look: Look;
+  age?: Age;
+  cause: DeathCause;
+  died: number;
+}
+
+/** Bloco 14: fantasma andando de noite perto da lápide. */
+export interface Spirit {
+  personId: number;
+  objectId: number;
+  x: number;
+  y: number;
+  px: number;
+  py: number;
+  until: number;
+}
+
+/** Bloco 14: socorro chamado. 0 = ninguém chamou; >0 = tick em que chega; -1 = já está no lote. */
+export interface HelpCalls {
+  fire: number;
+  police: number;
 }
 
 export interface ObjectState {
@@ -1075,7 +1186,7 @@ export type ActionPhase = 'queued' | 'walking' | 'using';
  * 'social' = puxar conversa com `otherId`; 'listen' = dar atenção a quem puxou;
  * 'leave' = visita indo embora.
  */
-export type ActionKind = 'use' | 'goto' | 'work' | 'social' | 'listen' | 'leave' | 'tidy' | 'door' | 'circle' | 'school';
+export type ActionKind = 'use' | 'goto' | 'work' | 'social' | 'listen' | 'leave' | 'tidy' | 'door' | 'circle' | 'school' | 'douse' | 'panic';
 
 export interface Action {
   id: number;
@@ -1109,6 +1220,8 @@ export interface Action {
   topic?: string;
   /** bloco 9: convidados chamados para a festa (use com 'party') */
   guests?: number[];
+  /** bloco 14: já pegou o extintor (apagar fogo) */
+  armed?: boolean;
   /** bloco 10: a festa marcada é casamento com este par */
   wedding?: { partner: number; surname: SurnameChoice };
   phase: ActionPhase;
@@ -1174,6 +1287,20 @@ export interface Folk {
   /** bloco 11: bebê ou criança (sem campo = adulto) */
   age?: Age;
   kid?: Kid;
+  /** bloco 14: minutos no meio das chamas */
+  scorch?: number;
+  /** bloco 14: minutos com a fome no zero */
+  starving?: number;
+  /** bloco 14: preso na piscina sem escadinha (um tile de água da piscina) */
+  adrift?: Vec;
+  /** bloco 14: caído, esperando o Seu Sereno */
+  down?: DeathCause;
+  /** bloco 14: de luto até tal tick */
+  mourning?: number;
+  /** bloco 14: último susto com fantasma (tick) */
+  frightened?: number;
+  /** bloco 14: chamuscado do choque até tal tick (cabelo em pé) */
+  sooty?: number;
 }
 
 /** Aparência: índices nas paletas da arte. */
@@ -1359,6 +1486,22 @@ export interface World {
   call: PhoneCall | null;
   /** bloco 13: chuva marcada para hoje (de tal tick a tal tick), ou nenhuma */
   rain: Rain | null;
+  /** bloco 14: fogo no lote */
+  fires: Fire[];
+  /** bloco 14: socorro chamado (bombeiros e polícia) */
+  help: HelpCalls;
+  /** bloco 14: quem caiu e espera o Seu Sereno (um de cada vez) */
+  passings: Passing[];
+  /** bloco 14: última barganha (para a tela mostrar como foi) */
+  lastBargain: Bargain | null;
+  /** bloco 14: quem já morreu */
+  departed: Departed[];
+  /** bloco 14: fantasmas andando agora */
+  spirits: Spirit[];
+  /** bloco 14: regras do jogo novo (sem morte: quem cairia escapa por pouco) */
+  rules: { death: boolean };
+  /** bloco 14: tick do último gatuno */
+  lastBurglary: number;
 }
 
 // ---------- Bloco 9: assuntos, rodas, telefone e festas ----------
@@ -1499,6 +1642,8 @@ export type Command =
   | { type: 'answerPhone'; folkId: number }
   // bloco 10
   | { type: 'planWedding'; folkId: number; partnerId: number; guestIds: number[]; surname: SurnameChoice }
+  // bloco 14: par ou ímpar com o Seu Sereno (ou deixar ir)
+  | { type: 'bargain'; pick: 'even' | 'odd' | null }
   // modo construção: linhas de paredes vão de vértice a vértice do grid
   | { type: 'buildWalls'; x0: number; y0: number; x1: number; y1: number }
   | { type: 'eraseWalls'; x0: number; y0: number; x1: number; y1: number }

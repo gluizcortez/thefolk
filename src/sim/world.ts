@@ -110,6 +110,8 @@ export interface WorldSeed {
   relations?: RelationSeed[];
   /** porções na despensa no começo (padrão START_PANTRY) */
   pantry?: number;
+  /** bloco 14: com morte (padrão) ou sem morte */
+  death?: boolean;
 }
 
 /** De quanto em quanto tempo as contas chegam, em minutos. */
@@ -271,6 +273,14 @@ export function createWorld(seed: WorldSeed): World {
     lastParty: null,
     call: null,
     rain: null,
+    fires: [],
+    help: { fire: 0, police: 0 },
+    passings: [],
+    lastBargain: null,
+    departed: [],
+    spirits: [],
+    rules: { death: seed.death ?? true },
+    lastBurglary: seed.startTick,
   };
   seedRelations(world, seed.relations ?? []);
   seedWorkplaceTies(world);

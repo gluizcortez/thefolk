@@ -2304,3 +2304,71 @@ button {
   font-size: 12px;
   white-space: nowrap;
 }
+
+/* ---------- bloco 14: barganha com o Seu Sereno e casa vazia ---------- */
+
+.bargain {
+  bottom: auto;
+  top: 90px;
+  z-index: 6;
+  background: #e3e1ef;
+  border-color: #3a3f66;
+}
+
+.bargain .wev-title {
+  color: #2c3058;
+}
+
+.over {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: auto;
+  background: rgba(24, 22, 34, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.over[hidden] {
+  display: none;
+}
+
+.over-card {
+  position: relative;
+  width: min(420px, calc(100vw - 32px));
+  padding: 18px 20px;
+  display: grid;
+  gap: 12px;
+  text-align: center;
+}
+
+.over-title {
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.over-text {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.over-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.creator-death {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.creator-death small {
+  opacity: 0.7;
+}

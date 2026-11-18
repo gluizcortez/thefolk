@@ -113,6 +113,10 @@ export function interactionOpen(obj: WorldObject, it: InteractionDef): boolean {
   if (it.tune === 'off') return !!obj.tune;
   // bloco 13: cheirar as flores só com a planta adulta e viçosa
   if (it.bloom) return !!obj.plant && obj.plant.growth >= 100 && obj.plant.health >= 70 && obj.plant.water >= 25;
+  // bloco 14: lareira: acender só apagada; aquecer-se e abafar só acesa
+  if (it.special === 'kindle') return !obj.lit && !stateOf(obj).broken;
+  if (it.blaze) return !!obj.lit;
+  if (it.special === 'honor') return !!obj.memorial;
   // bloco 9: só dá para beliscar com petisco na mesa
   if (it.snacks === 'eat') return (obj.snacks ?? 0) > 0 && !stateOf(obj).broken;
   return !stateOf(obj).broken;
@@ -301,11 +305,16 @@ function finishRepair(world: World, log: Logger, folk: Folk, s: ObjectState, def
   s.wear = s.patched ? 30 : 5;
   log(s.patched ? 'log.patched' : 'log.repaired', { name: folk.name, object: def.name });
   // gambiarra às vezes dá choque (leve: o perigo de verdade vem com o fogo)
-  if (jeito < SHOCK_BELOW && nextFloat(world) < 0.3 - 0.07 * jeito) shock(folk, log);
+  if (jeito < SHOCK_BELOW && nextFloat(world) < 0.3 - 0.07 * jeito) shock(folk, log, world.tick);
 }
 
+/** bloco 14: minutos de cabelo em pé depois do choque (igual a SOOTY_MINUTES em peril.ts) */
+export const SOOTY_SHOCK = 3 * 60;
+
 /** Choque leve de quem mexeu no que não sabia. */
-export function shock(folk: Folk, log: Logger): void {
+export function shock(folk: Folk, log: Logger, tick?: number): void {
+  // bloco 14: fica chamuscado (cabelo em pé) por umas horas; com Jeito zero, a faísca pode virar fogo (Sim)
+  if (tick !== undefined) folk.sooty = tick + SOOTY_SHOCK;
   folk.needs.comfort = Math.max(0, folk.needs.comfort - 25);
   folk.needs.energy = Math.max(0, folk.needs.energy - 10);
   folk.needs.hygiene = Math.max(0, folk.needs.hygiene - 10);
@@ -325,7 +334,7 @@ export function afterCare(obj: WorldObject, it: InteractionDef): Chain {
 
 /** Minutos para recolher cada tipo de bagunça, pelo Capricho. */
 export function tidyMinutes(kind: MessKind, folk: Folk): number {
-  const base = kind === 'plate' ? 2 : kind === 'puddle' ? 8 : kind === 'paper' ? 3 : 5;
+  const base = kind === 'plate' ? 2 : kind === 'puddle' ? 8 : kind === 'paper' ? 3 : kind === 'ash' ? 10 : 5;
   return Math.max(1, Math.round(base * (1 - 0.06 * skillLevel(folk, TIDINESS))));
 }
 
@@ -383,7 +392,7 @@ export function finishTidy(world: World, catalog: Catalog, log: Logger, folk: Fo
 // ---------- ambiente ----------
 
 /** Quanto a bagunça de cada tipo pesa no ambiente em volta. */
-export const MESS_AMBIENCE: Record<MessKind, number> = { plate: -5, puddle: -6, trash: -9, paper: -2 };
+export const MESS_AMBIENCE: Record<MessKind, number> = { plate: -5, puddle: -6, trash: -9, paper: -2, ash: -8 };
 
 /** Quanto o estado do objeto tira do ambiente (sujeira, quebrado, lixo fedendo). */
 export function stateAmbience(obj: WorldObject, def: ObjectDef): number {

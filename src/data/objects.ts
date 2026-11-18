@@ -1,3 +1,4 @@
+import { PERIL_OBJECTS } from './peril';
 import type { ObjectDef } from '../sim/types';
 
 import { admire, clean, dishes, lightOff, lightOn, repair, service, tuning } from './interactions';
@@ -325,6 +326,26 @@ const list: ObjectDef[] = [
         autonomous: false,
         residentOnly: true,
         special: 'adopt',
+        hold: 'phone',
+      },
+      {
+        // bloco 14: fogo na casa: chamar os bombeiros (só aparece com fogo e ninguém chamou)
+        id: 'callFire',
+        label: 'act.callFire',
+        duration: 4,
+        effects: {},
+        autonomous: false,
+        special: 'callFire',
+        hold: 'phone',
+      },
+      {
+        // bloco 14: gatuno no lote: chamar a polícia
+        id: 'callPolice',
+        label: 'act.callPolice',
+        duration: 4,
+        effects: {},
+        autonomous: false,
+        special: 'callPolice',
         hold: 'phone',
       },
     ],
@@ -913,4 +934,4 @@ const list: ObjectDef[] = [
   },
 ];
 
-export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries([...list, ...FURNITURE, ...REWARDS, ...KID_OBJECTS, ...YARD_OBJECTS].map((o) => [o.id, o]));
+export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries([...list, ...FURNITURE, ...REWARDS, ...KID_OBJECTS, ...YARD_OBJECTS, ...PERIL_OBJECTS].map((o) => [o.id, o]));

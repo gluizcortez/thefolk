@@ -13,7 +13,7 @@ import { seedInterests } from './topics';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 17;
+export const SAVE_VERSION = 18;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -249,6 +249,22 @@ const migrations: Record<number, Migration> = {
       const def = ctx.catalog?.objects[o.defId];
       return def?.plant && !o.plant ? { ...o, plant: freshPlant(def.plant, true) } : o;
     });
+    addMissingNeighbors(world, ctx);
+    return { ...save, world: world as unknown as Obj };
+  },
+  // bloco 14: perigos. Nada pegando fogo, ninguém caído nem assombrando; o
+  // jogo antigo segue com morte ligada (como no jogo novo padrão) e o bairro
+  // ganha os bombeiros, o policial, o gatuno e o Seu Sereno.
+  17: (save, ctx) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    world.fires = world.fires ?? [];
+    world.help = world.help ?? { fire: 0, police: 0 };
+    world.passings = world.passings ?? [];
+    world.lastBargain = world.lastBargain ?? null;
+    world.departed = world.departed ?? [];
+    world.spirits = world.spirits ?? [];
+    world.rules = world.rules ?? { death: true };
+    world.lastBurglary = world.lastBurglary ?? world.tick;
     addMissingNeighbors(world, ctx);
     return { ...save, world: world as unknown as Obj };
   },

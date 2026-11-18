@@ -213,6 +213,49 @@ const RAW: NeighborSeed[] = [
     career: null,
     service: 'gardener',
   },
+  // bloco 14: quem vem quando a coisa aperta. Bombeiros e polícia são do
+  // bairro (dá para conhecer); o gatuno vem de longe; o Seu Sereno, de mais
+  // longe ainda: terno cor de anoitecer, cartola, livro de registro e lanterna.
+  {
+    name: 'Bia Hidrante',
+    traits: ['agitado', 'gentil'],
+    look: { skin: 1, hair: 1, shirt: 0, pants: 0 },
+    skills: { fitness: 1260, handiness: 600 },
+    career: null,
+    service: 'firefighter',
+  },
+  {
+    name: 'Juca Mangote',
+    traits: ['reservado', 'caprichoso'],
+    look: { skin: 3, hair: 0, shirt: 0, pants: 0 },
+    skills: { fitness: 1260, logic: 180 },
+    career: null,
+    service: 'firefighter',
+  },
+  {
+    name: 'Dorival Guarita',
+    traits: ['ambicioso', 'reservado'],
+    look: { skin: 2, hair: 4, shirt: 3, pants: 0 },
+    skills: { fitness: 900, logic: 360 },
+    career: null,
+    service: 'police',
+  },
+  {
+    name: 'Lalau Ferrolho',
+    traits: ['agitado', 'reservado'],
+    look: { skin: 1, hair: 0, shirt: 3, pants: 0 },
+    skills: { handiness: 900, fitness: 600 },
+    career: null,
+    service: 'burglar',
+  },
+  {
+    name: 'Seu Sereno',
+    traits: ['reservado', 'gentil'],
+    look: { skin: 0, hair: 4, shirt: 3, pants: 0 },
+    skills: { logic: 1680, charisma: 900 },
+    career: null,
+    service: 'reaper',
+  },
 ];
 
 /**

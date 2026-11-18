@@ -5,6 +5,7 @@ import { FURNITURE4 } from './furniture4';
 import { REWARD_ART } from './rewards';
 import { KID_ART } from './kids';
 import { YARD_ART, livingPot } from './yard';
+import { PERIL_ART } from './peril';
 import type { PlantState } from '../../sim';
 import { getTexture } from './textures';
 
@@ -35,6 +36,8 @@ export interface TickInfo {
   stock?: number;
   /** bloco 13: estado da planta viva */
   plant?: PlantState;
+  /** bloco 14: alarme disparado (fumaça ou gatuno) */
+  alarm?: boolean;
 }
 
 export interface FurnitureModel {
@@ -1354,7 +1357,7 @@ const SPECS: Record<string, FurnitureSpec> = {
 };
 
 export function furnitureSpec(art: string): FurnitureSpec {
-  return SPECS[art] ?? FURNITURE4[art] ?? REWARD_ART[art] ?? KID_ART[art] ?? YARD_ART[art] ?? fallback;
+  return SPECS[art] ?? FURNITURE4[art] ?? REWARD_ART[art] ?? KID_ART[art] ?? YARD_ART[art] ?? PERIL_ART[art] ?? fallback;
 }
 
 export function buildFurniture(art: string, seed: number, paint?: number): FurnitureModel {

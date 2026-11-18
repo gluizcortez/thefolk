@@ -85,6 +85,8 @@ describe('frilas', () => {
     expect(sim.dispatch({ type: 'takeGig', folkId: folk.id, offerId: 1 })).toBe(false);
     expect(sim.lastProblem).toBe('hasGig');
     folk.autonomy = false;
+    // bloco 14: dois dias sem comer matariam; aqui só interessa o prazo
+    sim.world.rules.death = false;
     run(sim, 2 * MINUTES_PER_DAY + 1);
     expect(folk.gig).toBeNull();
     expect(sim.world.log.some((l) => l.key === 'log.gigLate')).toBe(true);
@@ -117,6 +119,7 @@ describe('negócio próprio', () => {
     const sim = workshop({ cooking: xpForLevel(3) });
     const folk = sim.world.folks[0];
     folk.autonomy = false;
+    sim.world.rules.death = false; // bloco 14: sem autonomia por dois dias, a fome mataria
     sim.dispatch({ type: 'openBusiness', folkId: folk.id, businessId: 'bakery' });
     const stove = objOf(sim, 'stove');
     expect(sim.dispatch({ type: 'queueUse', folkId: folk.id, objectId: stove.id, interactionId: 'business' })).toBe(true);

@@ -95,7 +95,7 @@ describe('piscina (bloco 13)', () => {
     expect(CATALOG.objects.poolladder.interactions[0].wear).toBe('swim');
   });
 
-  it('trampolim precisa de água atrás; sem escadinha, sair da piscina cansa', () => {
+  it('trampolim precisa de água atrás; sem escadinha, morador fica preso na água (bloco 14)', () => {
     const sim = poolField([], { x: 4, y: 6 });
     expect(checkPlacement(sim.world, CATALOG, 'diveboard', 7, 6, 0).problem).toBe('needsPool');
     // rot 0: usa pelo sul, a água fica ao norte
@@ -108,8 +108,12 @@ describe('piscina (bloco 13)', () => {
     const logs = sim.world.log.length;
     ok(sim, { type: 'queueUse', folkId: folk.id, objectId: objOf(sim, 'diveboard').id, interactionId: 'dive' });
     run(sim, 60);
-    expect(sim.world.log.slice(logs).some((l) => l.key === 'log.noLadder')).toBe(true);
-    expect(folk.needs.comfort).toBeLessThan(70);
+    expect(sim.world.log.slice(logs).some((l) => l.key === 'log.adrift')).toBe(true);
+    expect(folk.adrift).toBeTruthy();
+    // com a escadinha posta, sai da água
+    ok(sim, { type: 'buy', defId: 'poolladder', x: 5, y: 3, rot: 0 });
+    run(sim, 2);
+    expect(folk.adrift).toBeUndefined();
   });
 });
 
@@ -232,6 +236,7 @@ describe('jardim vivo (bloco 13)', () => {
     const sim = householdSim(3);
     const pot = objOf(sim, 'plant');
     for (const f of sim.world.folks) f.autonomy = false;
+    sim.world.rules.death = false; // bloco 14: um dia sem comer não pode esvaziar a casa
     sim.world.household.gardener = true;
     // até as 7h59 do dia seguinte
     run(sim, MINUTES_PER_DAY - 1 + GARDENER.hour * 60 - sim.world.tick);
@@ -273,7 +278,7 @@ describe('save v17 (bloco 13)', () => {
     old.world.neighbors = old.world.neighbors.filter((n: { service?: string }) => n.service !== 'gardener');
     const file = deserialize(old, { neighbors: NEIGHBORS, catalog: CATALOG });
     expect(file.version).toBe(SAVE_VERSION);
-    expect(SAVE_VERSION).toBe(17);
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(17);
     const world = file.world;
     expect(world.household.gardener).toBe(false);
     expect(world.rain).toBeNull();

@@ -126,6 +126,20 @@ export function buildMess(kind: MessKind, seed: number, top: number): THREE.Grou
     paper.add(roll, print, band);
     paper.rotation.y = rnd() * Math.PI;
     g.add(paper);
+  } else if (kind === 'ash') {
+    // bloco 14: monte de cinza e tição do que pegou fogo
+    g.add(flat(stainTex(), 0.9, 0.9, 0.006));
+    for (let i = 0; i < 7; i++) {
+      const s = 0.06 + rnd() * 0.08;
+      const lump = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 0), colorMat(i % 3 === 0 ? 0x2a2522 : 0x6d6862));
+      lump.position.set((rnd() - 0.5) * 0.5, s * 0.4, (rnd() - 0.5) * 0.5);
+      lump.scale.y = 0.5;
+      lump.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
+      g.add(lump);
+    }
+    const brand = box(0.32, 0.05, 0.06, colorMat(0x1e1a18), 0, 0.03, 0);
+    brand.rotation.y = rnd() * 3;
+    g.add(brand);
   } else if (kind === 'puddle') {
     const p = flat(puddleTex(), 0.8, 0.62, 0.012);
     p.rotation.z = rnd() * Math.PI;

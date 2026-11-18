@@ -15,7 +15,13 @@ export type ThoughtIcon =
   | 'coin'
   | 'skill'
   | 'spark'
-  | 'alarm';
+  | 'alarm'
+  // bloco 14
+  | 'fire'
+  | 'ghost'
+  | 'burglar'
+  | 'grave'
+  | 'swim';
 
 export type IconId = NeedId | 'sleep' | ThoughtIcon;
 
@@ -46,10 +52,16 @@ export const ICON_PATHS: Record<IconId, string> = {
   skill: 'M4 20V10M10 20V6M16 20v-8M22 20H2M20 3l-4 4-3-2-5 5',
   spark: 'M12 2l2.600 7.400L22 12l-7.400 2.600L12 22l-2.600-7.400L2 12l7.400-2.600z',
   alarm: 'M12 6a7 7 0 1 0 0.010 0zM12 9v4l2.500 2M4 5l3-2.500M20 5l-3-2.500',
+  // bloco 14: chama, fantasma, gatuno de máscara, lápide e alguém se debatendo na água
+  fire: 'M12 2c0.800 3.500 5.500 5.800 5.500 11a5.500 5.500 0 0 1-11 0c0-2.800 1.600-4.200 2.200-6.500 0.900 1 1.600 2.200 1.700 3.800 1-2 1.600-4.800 1.600-8.300z',
+  ghost: 'M5 21V10a7 7 0 0 1 14 0v11l-2.300-2-2.300 2-2.400-2-2.300 2-2.300-2zM9.500 8.700a1.300 1.500 0 1 0 0.010 0zM14.500 8.700a1.300 1.500 0 1 0 0.010 0z',
+  burglar: 'M12 3.500a8 8 0 1 0 0.010 0zM4.300 10h15.400M4.300 14h15.400M8.500 12h1.200M14.300 12h1.200',
+  grave: 'M7 20V9a5 5 0 0 1 10 0v11zM4 20h16M12 10.500v5M10 12.500h4',
+  swim: 'M12 4a2 2 0 1 0 0.010 0zM8 11l4-2.500 4 2.500M3 14.500c2-2 4-2 6 0s4 2 6 0 4-2 6 0M3 19c2-2 4-2 6 0s4 2 6 0 4-2 6 0',
 };
 
 /** Ícones desenhados só com traço (sem preenchimento). */
-export const STROKED = new Set<IconId>(['sleep', 'yes', 'no', 'mood', 'mess', 'miss', 'broom', 'coin', 'skill', 'alarm', 'book']);
+export const STROKED = new Set<IconId>(['sleep', 'yes', 'no', 'mood', 'mess', 'miss', 'broom', 'coin', 'skill', 'alarm', 'book', 'burglar', 'grave', 'swim']);
 
 export function iconSvg(id: IconId, size = 18): string {
   const stroked = STROKED.has(id);

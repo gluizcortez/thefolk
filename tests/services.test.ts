@@ -379,7 +379,8 @@ describe('save v7', () => {
     expect(world.household.bills).toEqual([]);
     expect(world.objects.some((o) => o.defId === 'mailbox')).toBe(true);
     // bloco 11: a visitadora social é a quinta; bloco 13: o jardineiro, o sexto
-    expect(world.neighbors.filter((n) => n.service).length).toBe(6);
+    // bloco 2 a 13 (6) e, no bloco 14, bombeiros (2), policial, gatuno e o Seu Sereno
+    expect(world.neighbors.filter((n) => n.service).length).toBe(11);
     // e o jogo segue rodando
     const again = householdSim(30);
     const tick = world.tick;

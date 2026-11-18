@@ -483,6 +483,26 @@ npm run preview  # serve o dist/ localmente
   não). Plantas bonitas somam ao ambiente do cômodo. O jardineiro Tião
   Mangueira (telefone, serviços, 30 ⟡ por visita) passa às 8h, rega e colhe.
   Churrasqueira, mesa de jardim para três e rede completam o quintal.
+- **Perigos (bloco 14)**: cozinhar no fogão com pouca Culinária, a lareira
+  acesa colada em móvel de madeira ou tecido e o choque de quem conserta sem
+  Jeito podem começar um fogo. O fogo esquenta, pula para o vizinho que
+  queima (parede segura), vira cinza e assusta quem está perto. Extintor de
+  parede (120 ⟡): o morador corre, pega e apaga. Detector de fumaça (60 ⟡)
+  chama Bia Hidrante e Juca Mangote, que chegam com a mangueira; sem ele,
+  alguém liga do telefone. De madrugada, Lalau Ferrolho pode entrar para
+  levar o objeto mais caro: o alarme (250 ⟡) chama Dorival Guarita na hora,
+  que corre atrás, devolve o que foi levado e deixa 250 ⟡ de recompensa;
+  sem alarme, só se alguém acordar e ligar. Lareira (900 ⟡) aquece e junta a
+  família em volta.
+- **Morte (bloco 14)**: fogo, fome extrema e cair na piscina sem escadinha
+  derrubam o folk. Seu Sereno (terno cor de anoitecer, cartola, lanterna e
+  livro de registro) vem buscar; o jogo pausa e quem está na casa pode
+  desafiá-lo no par ou ímpar: ganhando, ele fecha o livro e o folk se
+  levanta. Quem se vai deixa lápide no quintal (ou urna dentro de casa), luto
+  de três dias em quem gostava dele e, à noite, um vulto azulado que vaga e
+  assusta. Homenagear na lápide acalma até ele descansar. A opção "Perigos
+  podem matar" no criador desliga a morte (quem cairia escapa por um triz);
+  casa vazia mostra o fim e oferece família nova ou carregar.
 
 ## Deploy na Vercel
 
@@ -720,6 +740,18 @@ Decisões principais do núcleo:
   como a faxineira (`household.gardener`, `services.ts`). Na tela,
   `game/art/yard.ts` desenha a planta pelo estado e `updateRain` faz os riscos
   de chuva (fora do `worldRoot`, que é limpo a cada novo jogo).
+- **Perigos (bloco 14)** moram em `sim/peril.ts` (regras puras: `addFire`,
+  `fireMinute` que esquenta, espalha e queima, `douseFire`, `fireSideTiles`,
+  `smokeSeen`, `lootTarget`, `burglarNight`, `throwFingers`/`bargainWon`,
+  `spiritStep`) e no bloco "perigos" de `Sim` (`stepPerils`, equipes
+  `firefighter`, `police`, `burglar` e `reaper` como prestadores sem
+  campainha, `fall`, `bargain`, `die`, `mourn`, `stepSpirits`). `World`
+  ganhou `fires`, `help`, `passings`, `departed`, `spirits`, `rules.death` e
+  `lastBurglary`; `Folk`, `down`, `adrift`, `starving`, `mourning`,
+  `frightened`; `WorldObject`, `blaze` e `memorial`. Objetos em
+  `data/peril.ts`, arte em `game/art/peril.ts` (`flames` serve à lareira e ao
+  fogo solto); `GameView.updatePerils` desenha fogo, fumaça, jato e fantasma.
+  `Sim.objectStamp` avisa a tela quando a simulação tira ou põe objeto.
 - **Bebês e crianças (bloco 11)** moram em `sim/kids.ts` (regras puras:
   necessidades do bebê, herança, horário da escola, nota). `Folk` ganhou
   `age` ('baby' | 'child'; adulto não tem) e `kid` (nascimento, quando cresce,
@@ -922,7 +954,19 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
   caminho, caminho de pedra e deck, jardim vivo que cresce, floresce, murcha
   e dá frutos para a despensa, chuva, jardineiro, churrasqueira, mesa de
   jardim e rede (save v17).
-- Próximo: bloco 13, quintal: piscina, cercas e jardim vivo.
+- **Bloco 14 (feito)**: fogo que começa, espalha e é apagado (extintor ou
+  bombeiros), detector de fumaça, choque que pega fogo, gatuno com alarme e
+  polícia, afogamento, fome e fogo que matam, Seu Sereno e a barganha no par
+  ou ímpar, lápide e urna, fantasma, luto, lareira e a opção "sem morte"
+  (save v18).
+- Próximo: bloco 15, bairro: vários lotes e famílias.
+
+## Limitações conhecidas do bloco 14
+
+- Fumaça não passa de cômodo para cômodo; o detector vê pela distância.
+- Fantasma não atravessa parede nem vai a outro andar; não há possessão de
+  objetos.
+- O gatuno escolhe o objeto pelo valor de revenda e não leva dinheiro.
 
 ## Limitações conhecidas do bloco 12
 

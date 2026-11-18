@@ -516,7 +516,7 @@ de quintal; as plantas (e o vaso antigo) têm água, crescimento, saúde e
 frutos, com chuva sorteada de madrugada e o jardineiro como prestador. Ficou
 de fora o desnível de terreno.
 
-## Bloco 14 — Perigos e morte: fogo, gatuno, fantasmas (save v18)
+## Bloco 14 — Perigos e morte: fogo, gatuno, fantasmas (save v18) — feito em 18/11/2026
 
 **Escopo**
 - **Fogo**: fogão com Culinária baixa, lareira, objetos que pegam fogo

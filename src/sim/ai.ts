@@ -144,12 +144,16 @@ function socialMood(catalog: Catalog, world: World, folk: Folk, other: Folk, def
 }
 
 /** Conversas autônomas possíveis com quem está em casa. */
+const CREW = new Set(['firefighter', 'police', 'burglar', 'reaper']);
+
 export function scoreSocialOptions(world: World, catalog: Catalog, folk: Folk, nav: Nav): Option[] {
   const options: Option[] = [];
   for (const other of world.folks) {
     if (other === folk || !onLot(other)) continue;
     // quem ainda está na porta, esperando alguém atender, não conversa
     if (other.visit && !other.visit.admitted) continue;
+    // bloco 14: bombeiro, polícia, gatuno e Seu Sereno não estão ali para prosear; nem quem caiu
+    if (other.down || (other.visit?.service && CREW.has(other.visit.service.kind))) continue;
     const busyWith = talkingWith(other);
     if (busyWith !== 0 && busyWith !== folk.id) continue;
     const it = other.queue[0];

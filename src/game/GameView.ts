@@ -47,7 +47,7 @@ import { buildFurniture, furnitureSpec } from './art/furniture';
 import type { Anchor, FurnitureModel, FurnitureSpec } from './art/furniture';
 import { COVER_ART, FLOOR_ART, HALF_H, House, LEVEL_H, LOW_H, POOL_SURFACE, TH, WALL_H, sceneZ } from './art/house';
 import { CHILD_SCALE } from './art/folk';
-import { poolOf } from '../sim/yard';
+import { poolOf, poolTiles } from '../sim/yard';
 import { raining } from '../sim/garden';
 import { isLineTool, isOpeningTool } from './controller';
 import { texMat } from './art/build';
@@ -64,6 +64,9 @@ import { buildVehicle, vehicleLength } from './art/vehicles';
 import type { VehicleModel } from './art/vehicles';
 import { buildScenery } from './art/scenery';
 import { getTexture } from './art/textures';
+import { flames } from './art/peril';
+import { fireAt } from '../sim/peril';
+import type { Fire, Spirit } from '../sim/types';
 import { WearFx, buildMess } from './art/upkeep';
 import type { GameController } from './controller';
 
@@ -79,6 +82,14 @@ const MAX_STEPS_PER_FRAME = 60;
 const CLICK_SLOP = 6;
 
 /** Animação do folk para interações que não são só "sentar/deitar/dançar". */
+/** Bloco 14: bombeiro (capa vermelha e capacete), policial, gatuno (de preto e gorro) e o Seu Sereno (terno cor de anoitecer e cartola). */
+const CREW_UNIFORMS: Partial<Record<string, UniformDef>> = {
+  firefighter: { style: 'coat', top: 0xb8261e, bottom: 0x2a2a30, accent: 0xf2c94c, hat: 'helmet' },
+  police: { style: 'jacket', top: 0x2c3e66, bottom: 0x1e2433, accent: 0xd9b13a, hat: 'cap' },
+  burglar: { style: 'track', top: 0x26262c, bottom: 0x1c1c22, accent: 0x5a5a66, hat: 'band' },
+  reaper: { style: 'coat', top: 0x3a3f66, bottom: 0x23263f, accent: 0xc8b88a, hat: 'top' },
+};
+
 const ANIMS: Record<string, FolkAnim> = {
   'phone:call': 'phone',
   'bookshelf:read': 'read',
@@ -265,6 +276,11 @@ export class GameView {
   private followKey = '';
   /** bloco 12: degrau de cada tile de escada (índice do tile → degrau) */
   private stairSteps = new Map<number, number>();
+  /** bloco 14: chamas, fumaça, fantasmas e o jato do extintor */
+  private perilRoot = new THREE.Group();
+  private fireViews = new Map<number, { group: THREE.Group; tick(time: number, heat: number): void; smoke: THREE.Sprite[]; light: THREE.PointLight | null }>();
+  private spiritViews = new Map<string, { model: FolkModel; mats: THREE.MeshPhongMaterial[] }>();
+  private sprays = new Map<number, THREE.Mesh>();
 
   constructor(
     private readonly container: HTMLElement,
@@ -314,7 +330,7 @@ export class GameView {
     this.ghostPad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), flat(0x6fd06a, 0.45));
     this.ghostPad.rotation.x = -Math.PI / 2;
     this.ghostPad.visible = false;
-    this.scene.add(this.ring, this.hoverTile, this.hoverPad, this.ghostPad, this.buildPreview);
+    this.scene.add(this.ring, this.hoverTile, this.hoverPad, this.ghostPad, this.buildPreview, this.perilRoot);
 
     this.post.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), retroPass(this.frameBuffer.texture)));
 
@@ -348,6 +364,13 @@ export class GameView {
     this.pings = [];
     this.rideRoot.clear();
     this.rides.clear();
+    this.perilRoot.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.geometry.dispose();
+    });
+    this.perilRoot.clear();
+    this.fireViews.clear();
+    this.spiritViews.clear();
+    this.sprays.clear();
     this.wasAway = new Set(this.ctrl.world.folks.filter((f) => f.away).map((f) => f.id));
 
     const world = this.ctrl.world;
@@ -927,10 +950,11 @@ export class GameView {
         time: this.animTime,
         using: using.get(entry.obj.id),
         night,
-        lit: !!entry.obj.lit && !entry.obj.state?.broken,
+        lit: (!!entry.obj.lit && !entry.obj.state?.broken) || (entry.obj.blaze ?? 0) > world.tick,
         ringing: !!world.call && !world.call.answeredBy,
         stock: entry.obj.snacks,
         plant: entry.obj.plant,
+        alarm: this.alarmFor(entry.def.safety),
       });
       if (entry.obj.state) entry.fx.update(entry.obj.state, !!entry.def.upkeep?.bin && entry.obj.state.fill >= 100, this.animTime);
       this.updateNotes(entry);
@@ -941,6 +965,7 @@ export class GameView {
     this.syncFolks();
     for (const folk of world.folks) this.updateFolk(folk, alpha, dt);
     this.updateRides(dt);
+    this.updatePerils(alpha, dt);
     this.showOutcomes();
     this.updateMarkers(dt);
     this.updateGhost();
@@ -995,8 +1020,191 @@ export class GameView {
     return { place: this.anchorToWorld(entry, anchor) };
   }
 
+  // ---------- bloco 14: fogo, fantasmas e o jato do extintor ----------
+
+  /** O alarme deste tipo está disparado agora? */
+  private alarmFor(kind: 'extinguisher' | 'smoke' | 'burglar' | undefined): boolean {
+    const world = this.ctrl.world;
+    if (kind === 'smoke') return (world.fires ?? []).length > 0;
+    if (kind === 'burglar') return (world.help?.police ?? 0) !== 0 && world.folks.some((f) => f.visit?.service?.kind === 'burglar');
+    return false;
+  }
+
+  /** Onde nada quem ficou preso na piscina sem escadinha. */
+  private adriftPlace(folk: Folk): { x: number; y: number; z: number; heading: number } | null {
+    const sim = this.ctrl.sim;
+    const at = folk.adrift;
+    if (!at) return null;
+    const pool = poolTiles(sim.world.grid, sim.catalog, at.x, at.y);
+    if (pool.length === 0) return null;
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let z0 = Infinity;
+    let z1 = -Infinity;
+    for (const t of pool) {
+      x0 = Math.min(x0, t.x);
+      x1 = Math.max(x1, t.x + 1);
+      z0 = Math.min(z0, t.y);
+      z1 = Math.max(z1, t.y + 1);
+    }
+    const base = sceneZ(sim.world.grid, at.y);
+    const rx = Math.max(0.15, (x1 - x0) / 2 - 0.45);
+    const rz = Math.max(0.15, (z1 - z0) / 2 - 0.45);
+    // devagar e cansado, em volta da beira
+    const a = this.animTime * (0.3 / Math.max(rx, rz, 0.5)) + folk.id;
+    const cx = (x0 + x1) / 2;
+    const cz = base.z - at.y + (z0 + z1) / 2;
+    return {
+      x: cx + Math.cos(a) * rx,
+      y: base.base - POOL_SURFACE - 1.32 + Math.sin(this.animTime * 2) * 0.05,
+      z: cz + Math.sin(a) * rz,
+      heading: Math.atan2(-Math.sin(a) * rx, Math.cos(a) * rz),
+    };
+  }
+
+  private updatePerils(alpha: number, dt: number): void {
+    const world = this.ctrl.world;
+    const grid = world.grid;
+    const view = this.ctrl.viewLevel;
+    // chamas
+    const fires: Fire[] = world.fires ?? [];
+    for (const f of fires) {
+      let v = this.fireViews.get(f.id);
+      if (!v) {
+        const fl = flames(1, f.id % 7);
+        const smoke: THREE.Sprite[] = [];
+        for (let i = 0; i < 3; i++) {
+          const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: getTexture('blob'), color: 0x3a3634, transparent: true, opacity: 0.5, depthWrite: false }));
+          sp.userData.phase = i / 3 + (f.id % 5) * 0.13;
+          smoke.push(sp);
+          fl.group.add(sp);
+        }
+        // uma luz só para cada grupinho de fogo (luz demais pesa)
+        const light = fires.indexOf(f) % 3 === 0 ? new THREE.PointLight(0xff8a30, 0, 6, 1.6) : null;
+        if (light) {
+          light.position.y = 0.8;
+          fl.group.add(light);
+        }
+        const at = sceneZ(grid, f.y);
+        fl.group.position.set(f.x + 0.5, at.base, at.z + 0.5);
+        fl.group.userData.level = at.level;
+        this.perilRoot.add(fl.group);
+        v = { group: fl.group, tick: fl.tick, smoke, light };
+        this.fireViews.set(f.id, v);
+      }
+      v.group.visible = (v.group.userData.level ?? 0) <= view;
+      v.tick(this.animTime, f.heat);
+      if (v.light) v.light.intensity = 2 + 2 * (f.heat / 100) + Math.sin(this.animTime * 13 + f.id) * 0.6;
+      for (const sp of v.smoke) {
+        const k = (this.animTime * 0.35 + (sp.userData.phase as number)) % 1;
+        sp.position.set(Math.sin(k * 6 + f.id) * 0.15, 0.8 + k * 1.8, Math.cos(k * 5) * 0.1);
+        sp.scale.setScalar(0.35 + k * 0.9);
+        sp.material.opacity = 0.55 * (1 - k) * Math.min(1, f.heat / 40);
+      }
+    }
+    for (const [id, v] of this.fireViews) {
+      if (fires.some((f) => f.id === id)) continue;
+      this.perilRoot.remove(v.group);
+      v.group.traverse((o) => {
+        if (o instanceof THREE.Mesh) o.geometry.dispose();
+      });
+      this.fireViews.delete(id);
+    }
+    // jato do extintor (ou da mangueira) de quem está apagando
+    for (const folk of world.folks) {
+      const a = folk.queue[0];
+      const target = a?.kind === 'douse' && a.phase === 'using' && a.target ? a.target : null;
+      let jet = this.sprays.get(folk.id);
+      if (!target || !fireAt(world, target.x, target.y)) {
+        if (jet) jet.visible = false;
+        continue;
+      }
+      if (!jet) {
+        jet = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.03, 0.22, 1, 8, 1, true),
+          new THREE.MeshBasicMaterial({ color: 0xf2f4f6, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }),
+        );
+        this.perilRoot.add(jet);
+        this.sprays.set(folk.id, jet);
+      }
+      const from = this.footAt(folk.x, folk.y);
+      const to = this.footAt(target.x, target.y);
+      const a0 = new THREE.Vector3(from.x + (to.x - from.x) * 0.25, from.y + 0.95, from.z + (to.z - from.z) * 0.25);
+      const b0 = new THREE.Vector3(to.x, to.y + 0.3, to.z);
+      const len = a0.distanceTo(b0);
+      jet.position.copy(a0).lerp(b0, 0.5);
+      jet.scale.set(1 + Math.sin(this.animTime * 30) * 0.08, len, 1);
+      jet.lookAt(b0);
+      jet.rotateX(Math.PI / 2);
+      jet.visible = true;
+    }
+    for (const [id, jet] of this.sprays) {
+      if (world.folks.some((f) => f.id === id)) continue;
+      this.perilRoot.remove(jet);
+      jet.geometry.dispose();
+      this.sprays.delete(id);
+    }
+    // fantasmas: a pessoa como era, azulada e meio transparente, flutuando
+    const spirits: Spirit[] = world.spirits ?? [];
+    for (const s of spirits) {
+      const key = `${s.personId}:${s.objectId}`;
+      let v = this.spiritViews.get(key);
+      if (!v) {
+        const who = (world.departed ?? []).find((d) => d.id === s.personId);
+        if (!who) continue;
+        const model = new FolkModel(who.look, 'day', undefined, who.age);
+        const mats: THREE.MeshPhongMaterial[] = [];
+        model.group.traverse((o) => {
+          if (!(o instanceof THREE.Mesh)) return;
+          const src = Array.isArray(o.material) ? o.material : [o.material];
+          const next = src.map((m) => {
+            const c = (m as THREE.MeshPhongMaterial).clone();
+            c.transparent = true;
+            c.opacity = 0.45;
+            c.depthWrite = false;
+            c.color = new THREE.Color(0x9fc4ff).lerp(c.color ?? new THREE.Color(0xffffff), 0.35);
+            // só material com brilho próprio tem emissive (o básico, do rosto e dos olhos, não)
+            if ((c as THREE.MeshPhongMaterial).emissive) {
+              c.emissive = new THREE.Color(0x3a5a9a);
+              c.emissiveIntensity = 0.8;
+            }
+            mats.push(c);
+            return c;
+          });
+          o.material = Array.isArray(o.material) ? next : next[0];
+          o.castShadow = false;
+        });
+        this.perilRoot.add(model.group);
+        v = { model, mats };
+        this.spiritViews.set(key, v);
+      }
+      const from = this.footAt(s.px, s.py);
+      const to = this.footAt(s.x, s.y);
+      const moving = s.px !== s.x || s.py !== s.y;
+      const x = from.x + (to.x - from.x) * alpha;
+      const z = from.z + (to.z - from.z) * alpha;
+      const y = from.y + 0.25 + Math.sin(this.animTime * 2 + s.personId) * 0.08;
+      const heading = moving ? Math.atan2(to.x - from.x, to.z - from.z) : v.model.group.rotation.y;
+      v.model.update({ anim: 'idle', x, y, z, heading, mood: 30, time: this.animTime, dt, expr: 'sad' });
+      v.model.group.visible = levelOfRow(grid, s.y) <= view;
+      const flicker = 0.38 + 0.12 * Math.sin(this.animTime * 3 + s.personId);
+      for (const m of v.mats) m.opacity = flicker;
+    }
+    for (const [key, v] of this.spiritViews) {
+      if (spirits.some((s) => `${s.personId}:${s.objectId}` === key)) continue;
+      this.perilRoot.remove(v.model.group);
+      v.model.group.traverse((o) => {
+        if (o instanceof THREE.Mesh) o.geometry.dispose();
+      });
+      this.spiritViews.delete(key);
+    }
+  }
+
   /** Bloco 8: uniforme de quem está de roupa de trabalho (e tem emprego). */
   private uniformFor(folk: Folk): UniformDef | undefined {
+    // bloco 14: bombeiro, policial, gatuno e o Seu Sereno
+    const crew = folk.visit?.service?.kind;
+    if (crew && CREW_UNIFORMS[crew]) return CREW_UNIFORMS[crew];
     return folk.outfit === 'work' && folk.job ? uniformOf(this.ctrl.sim.catalog, folk.job) : undefined;
   }
 
@@ -1289,9 +1497,28 @@ export class GameView {
       }
       anim = 'sleep';
       expr = folk.thought?.kind === 'want' ? 'sad' : folk.kid?.asleep ? undefined : 'happy';
-    } else if (folk.collapsed > 0) {
+    } else if (folk.collapsed > 0 || folk.down) {
       anim = 'collapsed';
       place = { x: fx, y: fy + 0.12, z: fz + 0.8, heading: 0 };
+    } else if (folk.adrift) {
+      // bloco 14: preso na piscina sem escadinha, nadando em volta sem conseguir sair
+      const swim = this.adriftPlace(folk);
+      if (swim) {
+        anim = 'swim';
+        place = swim;
+        onObject = true;
+        expr = 'sad';
+      }
+    } else if (action?.kind === 'douse' && action.phase === 'using') {
+      anim = 'spray';
+      expr = 'angry';
+    } else if (action?.kind === 'panic' && action.phase === 'using') {
+      anim = 'panic';
+      expr = 'sad';
+    } else if (folk.visit?.service?.kind === 'reaper' && folk.px === folk.x && folk.py === folk.y) {
+      anim = 'lantern';
+    } else if (folk.visit?.service?.kind === 'burglar' && folk.visit.service.target && folk.visit.service.started >= 0 && folk.queue.length === 0) {
+      anim = 'reach';
     } else if (it && entry) {
       anim =
         (seatId !== undefined ? 'sit' : undefined) ??
@@ -1372,7 +1599,13 @@ export class GameView {
     const station = anim === 'dance' && entry ? stationDef(entry.obj.tune) : undefined;
     const time = station ? this.animTime * (station.bpm / 110) : this.animTime;
     // bloco 10: quem se muda sai com a mala; noivos e casados usam aliança
-    const hold = folk.visit?.moving ? 'suitcase' : it?.hold;
+    const hold = folk.visit?.moving
+      ? 'suitcase'
+      : action?.kind === 'douse' && action.phase === 'using'
+        ? 'extinguisher'
+        : folk.visit?.service?.kind === 'reaper'
+          ? 'lantern'
+          : it?.hold;
     view.model.update({ anim, ...place, mood, time, dt, expr, hold, energy: folk.needs.energy, ring: wearsRing(sim.world, folk.id) });
 
     const iconKey = social?.icon ?? (thought ? `th:${thought.kind}:${thought.icon}` : undefined);

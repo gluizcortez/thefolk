@@ -296,6 +296,11 @@ export class Hud {
   private panelSig = '';
   private jobTab: JobTab = 'job';
   private wevEl = el('div', 'card wev');
+  /** bloco 14: o par ou ímpar com o Seu Sereno e o aviso de casa vazia */
+  private bargainEl = el('div', 'card wev bargain');
+  private bargainSig = '';
+  private overEl = el('div', 'over');
+  private overShown = false;
   private wevSig = '';
   private panelButtons = new Map<Exclude<Panel, null>, HTMLButtonElement>();
   private faceEl = el('div', 'folk-face');
@@ -353,8 +358,10 @@ export class Hud {
     this.buildPanel();
     this.buildCatalog();
     this.buildBuildPanel();
-    this.root.append(this.wevEl, this.floatsEl, this.noticesEl, this.toastsEl, this.menuEl, this.bubbleEl, this.tooltipEl);
+    this.root.append(this.wevEl, this.bargainEl, this.overEl, this.floatsEl, this.noticesEl, this.toastsEl, this.menuEl, this.bubbleEl, this.tooltipEl);
     this.wevEl.hidden = true;
+    this.bargainEl.hidden = true;
+    this.overEl.hidden = true;
     this.tooltipEl.hidden = true;
     this.menuEl.hidden = true;
     this.bubbleEl.hidden = true;
@@ -706,6 +713,8 @@ export class Hud {
 
   update(): void {
     const world = this.ctrl.world;
+    // bloco 14: casa vazia: só o aviso (não há a quem mostrar)
+    if (this.renderOver()) return;
     const folk = this.ctrl.folk;
     const clock = clockOf(world.tick);
     const levelText = t(`hud.level.${this.ctrl.viewLevel}`);
@@ -778,6 +787,7 @@ export class Hud {
     this.renderWishes(folk);
     this.renderQueue();
     this.renderWorkEvent();
+    this.renderBargain();
     this.renderPanel();
     this.renderCatalog();
     this.renderBuild();
@@ -797,6 +807,9 @@ export class Hud {
     }
     if (action.serviceId) return t(`act.call.${action.serviceId}`);
     if (action.kind === 'circle') return t('act.circle');
+    // bloco 14
+    if (action.kind === 'douse') return t('act.douse');
+    if (action.kind === 'panic') return t('act.panic');
     if (action.wedding && action.guests) return t('act.weddingFor', { n: action.guests.length });
     if (action.guests) return t('act.partyFor', { n: action.guests.length });
     if ((action.interactionId === 'call' || action.interactionId === 'answer') && action.otherId !== undefined) {
@@ -1015,6 +1028,12 @@ export class Hud {
     if (s.dirt >= DIRTY_AT) parts.push(t('state.dirty'));
     else if (s.dirt >= 25) parts.push(t('state.grimy'));
     if (def.upkeep?.bin) parts.push(s.fill >= 100 ? t('state.binFull') : t('state.binFill', { pct: Math.round(s.fill) }));
+    // bloco 14: lápide e urna dizem de quem são; lareira acesa
+    if (obj.memorial) {
+      const who = this.ctrl.world.departed?.find((d) => d.id === obj.memorial!.personId);
+      if (who) parts.push(t('memorial.of', { name: who.name }));
+      parts.push(obj.memorial.unrest > 0 ? t('memorial.unrest', { n: Math.round(obj.memorial.unrest) }) : t('memorial.rest'));
+    }
     // bloco 2: o que tem na geladeira e na caixa de correio
     const house = this.ctrl.world.household;
     if (def.pantry) {
@@ -1371,6 +1390,12 @@ export class Hud {
     );
     title.append(face, names);
     this.menuEl.replaceChildren(title);
+    // bloco 14: equipes de perigo e quem caiu só mostram o nome
+    const crew = other.visit?.service && ['firefighter', 'police', 'burglar', 'reaper'].includes(other.visit.service.kind);
+    if (crew || other.down) {
+      this.showMenuAt(x, y);
+      return;
+    }
     if (!other.visit) {
       const b = el('button', 'menu-item');
       b.append(el('span', '', t('social.control', { name: first(other.name) })));
@@ -1758,6 +1783,71 @@ export class Hud {
     });
     this.wevEl.append(choices, el('div', 'panel-note', t('wevCard.hint', { name: first(folk.name) })));
     this.wevEl.hidden = false;
+  }
+
+  // ---------- bloco 14: barganha e casa vazia ----------
+
+  /** Cartão do par ou ímpar: aparece quando o Seu Sereno abre o livro. */
+  private renderBargain(): void {
+    const world = this.ctrl.world;
+    const p = world.passings?.[0];
+    const body = p && this.ctrl.sim.findFolk(p.folkId);
+    if (!p || p.stage !== 'waiting' || !body) {
+      this.bargainEl.hidden = true;
+      this.bargainSig = '';
+      return;
+    }
+    const by = this.ctrl.sim.bargainerFor(body);
+    const sig = `${p.folkId}|${p.deadline}|${by?.id ?? 0}`;
+    if (sig === this.bargainSig) return;
+    this.bargainSig = sig;
+    this.bargainEl.replaceChildren();
+    const head = el('div', 'wev-head');
+    const face = el('span', 'wev-face');
+    face.innerHTML = faceSvg(body.look, 40, 10);
+    head.append(face, el('div', 'wev-title', t('bargain.title', { name: body.name })));
+    this.bargainEl.append(head, el('div', 'wev-text', t('bargain.text')));
+    this.bargainEl.append(el('div', 'panel-note', by ? t('bargain.who', { name: by.name }) : t('bargain.nobody')));
+    const choices = el('div', 'wev-choices');
+    const pick = (choice: 'even' | 'odd' | null) => {
+      this.ctrl.chooseBargain(choice);
+      this.update();
+    };
+    if (by) {
+      for (const c of ['even', 'odd'] as const) {
+        const b = el('button', 'btn wev-choice', t(`bargain.${c}`));
+        b.addEventListener('click', () => pick(c));
+        choices.append(b);
+      }
+    }
+    const go = el('button', 'btn btn-quiet wev-choice', t('bargain.letGo'));
+    go.addEventListener('click', () => pick(null));
+    choices.append(go);
+    this.bargainEl.append(choices, el('div', 'panel-note', t('bargain.left', { time: formatClock(p.deadline) })));
+    this.bargainEl.hidden = false;
+  }
+
+  /** Casa vazia: um aviso por cima de tudo com família nova e jogos salvos. Devolve true se está aberto. */
+  private renderOver(): boolean {
+    const empty = this.ctrl.houseEmpty;
+    const creatorOpen = !!document.querySelector('.creator:not([hidden])');
+    const show = empty && !creatorOpen;
+    if (show === this.overShown) return empty;
+    this.overShown = show;
+    this.overEl.hidden = !show;
+    if (!show) return empty;
+    this.closeMenu();
+    const card = el('div', 'card over-card');
+    card.append(el('div', 'over-title', t('over.title')), el('div', 'over-text', t('over.text')));
+    const row = el('div', 'over-buttons');
+    const fam = el('button', 'btn btn-go', t('over.family'));
+    fam.addEventListener('click', () => this.openCreator?.());
+    const load = el('button', 'btn', t('over.load'));
+    load.addEventListener('click', () => this.system.toggle('saves'));
+    row.append(load, fam);
+    card.append(row);
+    this.overEl.replaceChildren(card);
+    return empty;
   }
 
   /** Barra de -100 a 100 com o zero no meio. */

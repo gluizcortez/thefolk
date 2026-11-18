@@ -33,6 +33,10 @@ const list: NewsDef[] = [
   { id: 'newBaby', label: 'news.newBaby', reputation: 2, opinion: { friendship: 2 }, juicy: 0.6, days: 6 },
   { id: 'kidTaken', label: 'news.kidTaken', reputation: -5, opinion: { friendship: -3, respect: -4 }, juicy: 0.95, days: 9 },
   { id: 'boarding', label: 'news.boarding', reputation: -1, opinion: { respect: -1 }, juicy: 0.7, days: 5 },
+  // bloco 14: perigos
+  { id: 'caughtBurglar', label: 'news.caughtBurglar', reputation: 3, opinion: { respect: 3 }, juicy: 0.7, days: 6 },
+  { id: 'houseFire', label: 'news.houseFire', reputation: -1, juicy: 0.8, days: 5 },
+  { id: 'passedAway', label: 'news.passedAway', reputation: 0, opinion: { friendship: 2 }, juicy: 0.6, days: 7 },
   { id: 'partyBrawl', label: 'news.partyBrawl', reputation: -3, opinion: { friendship: -2, respect: -1 }, juicy: 0.9, days: 6 },
 ];
 

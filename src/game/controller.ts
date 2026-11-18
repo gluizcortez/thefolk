@@ -102,6 +102,31 @@ const NOTICES: [string, string][] = [
   ['log.socialComing', 'house'],
   ['log.socialWarned', 'no'],
   ['log.socialTook', 'no'],
+  // bloco 14: perigos
+  ['log.fireStarted', 'fire'],
+  ['log.cookFire', 'fire'],
+  ['log.hearthFire', 'fire'],
+  ['log.shockFire', 'fire'],
+  ['log.smokeAlarm', 'alarm'],
+  ['log.fireOut', 'yes'],
+  ['log.firefightersDone', 'yes'],
+  ['log.burglarAlarm', 'burglar'],
+  ['log.stolen', 'burglar'],
+  ['log.burglarCaught', 'coin'],
+  ['log.burglarEscaped', 'burglar'],
+  ['log.starving', 'hunger'],
+  ['log.starvingLast', 'hunger'],
+  ['log.adrift', 'swim'],
+  ['log.nearMiss', 'heart'],
+  ['log.fell', 'grave'],
+  ['log.reaperArrived', 'grave'],
+  ['log.bargainWon', 'heart'],
+  ['log.bargainLost', 'grave'],
+  ['log.died', 'grave'],
+  ['log.kidsToRelatives', 'house'],
+  ['log.spiritRises', 'ghost'],
+  ['log.restInPeace', 'heart'],
+  ['log.restInPeaceAlone', 'heart'],
 ];
 
 /** Ícone do cartão de aviso para esta linha do log (null = aviso passageiro). */
@@ -140,6 +165,12 @@ export class GameController {
   /** velocidade de antes da pausa automática por evento do expediente (0 = não pausou) */
   private pausedForEvent: Speed = 0;
   private hadEvent = false;
+  /** bloco 14: pausa enquanto o Seu Sereno espera a barganha */
+  private pausedForBargain: Speed = 0;
+  private hadBargain = false;
+  /** bloco 14: último morador visto (a tela segue de pé quando a casa fica vazia) */
+  private lastFolk: Folk;
+  private seenStamp = 0;
   private toastListeners: ((text: string) => void)[] = [];
   private noticeListeners: ((text: string, icon: string) => void)[] = [];
   private seenLog = 0;
@@ -154,6 +185,12 @@ export class GameController {
   constructor() {
     this.sim = new Sim(CATALOG, createWorld(starterHouse(freshSeed())));
     this.selectedFolkId = this.sim.world.folks[0].id;
+    this.lastFolk = this.sim.world.folks[0];
+  }
+
+  /** Bloco 14: não sobrou ninguém morando na casa. */
+  get houseEmpty(): boolean {
+    return this.sim.household().length === 0;
   }
 
   get world(): World {
@@ -163,9 +200,15 @@ export class GameController {
   /** O morador selecionado (visitas nunca são selecionadas). */
   get folk(): Folk {
     const f = this.sim.findFolk(this.selectedFolkId);
-    if (f && !f.visit) return f;
-    const first = this.sim.residents()[0] ?? this.world.folks[0];
+    if (f && !f.visit) {
+      this.lastFolk = f;
+      return f;
+    }
+    // bloco 14: quem estava selecionado morreu: passa para outro da casa (ou fica no último, com a casa vazia)
+    const first = this.sim.residents()[0] ?? this.sim.household()[0];
+    if (!first) return this.lastFolk;
     this.selectedFolkId = first.id;
+    this.lastFolk = first;
     return first;
   }
 
@@ -309,9 +352,33 @@ export class GameController {
     return ok;
   }
 
+  /** Bloco 14: par ou ímpar com o Seu Sereno (null = deixar ir); o jogo volta a andar. */
+  chooseBargain(pick: 'even' | 'odd' | null): boolean {
+    const ok = this.commandOrExplain({ type: 'bargain', pick });
+    if (ok && this.pausedForBargain && this.mode === 'live' && this.world.passings[0]?.stage !== 'waiting') {
+      this.command({ type: 'setSpeed', speed: this.pausedForBargain });
+      this.pausedForBargain = 0;
+    }
+    return ok;
+  }
+
   /** Avança um tick e transforma eventos novos do log em avisos. */
   step(): void {
     this.sim.step();
+    // bloco 14: a simulação tirou ou pôs objetos (fogo, gatuno, lápide): a tela redesenha
+    if (this.sim.objectStamp !== this.seenStamp) {
+      this.seenStamp = this.sim.objectStamp;
+      this.objectsVersion++;
+    }
+    // bloco 14: Seu Sereno abriu o livro: pausa para o jogador decidir
+    const bargaining = this.world.passings[0]?.stage === 'waiting';
+    if (bargaining && !this.hadBargain && this.world.speed !== 0) {
+      this.pausedForBargain = this.world.speed;
+      this.command({ type: 'setSpeed', speed: 0 });
+    }
+    this.hadBargain = bargaining;
+    // casa vazia: o tempo para
+    if (this.houseEmpty && this.world.speed !== 0) this.command({ type: 'setSpeed', speed: 0 });
     // evento novo no trabalho: pausa para o jogador escolher
     const pending = this.world.folks.some((f) => !f.visit && f.away?.event);
     if (pending && !this.hadEvent && this.world.speed !== 0) {
@@ -361,7 +428,14 @@ export class GameController {
     this.mode = 'live';
     this.placing = null;
     this.sim.load(world);
-    this.selectedFolkId = world.folks[0].id;
+    const first = world.folks.find((f) => !f.visit) ?? world.folks[0];
+    if (first) {
+      this.selectedFolkId = first.id;
+      this.lastFolk = first;
+    }
+    this.seenStamp = this.sim.objectStamp;
+    this.pausedForBargain = 0;
+    this.hadBargain = false;
     this.seenLog = world.tick;
     this.viewLevel = 0;
     this.worldVersion++;
@@ -490,16 +564,16 @@ export class GameController {
     await this.save(true, slot ?? this.slot);
   }
 
-  newGame(): void {
-    this.replaceWorld(createWorld(starterHouse(freshSeed())));
+  newGame(death = true): void {
+    this.replaceWorld(createWorld({ ...starterHouse(freshSeed()), death }));
     this.toast(t('toast.newGame'));
     void this.freshSlot();
   }
 
   /** Bloco 5: começa de novo com a família criada na tela de criação. */
-  newFamily(draft: FamilyDraft): boolean {
+  newFamily(draft: FamilyDraft, death = true): boolean {
     if (familyProblem(this.sim.catalog, draft)) return false;
-    this.replaceWorld(createWorld(familySeed(draft, freshSeed())));
+    this.replaceWorld(createWorld({ ...familySeed(draft, freshSeed()), death }));
     this.toast(t('toast.newFamily', { name: cleanName(draft.surname) }));
     void this.freshSlot();
     return true;

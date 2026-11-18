@@ -64,6 +64,8 @@ export class FamilyCreator {
   private portraits = new Map<string, string>();
   private rnd: Rnd = Math.random;
   private speedBefore: Speed = 1;
+  /** bloco 14: perigos podem matar (desligado: quem cairia escapa por um triz) */
+  private death = true;
 
   constructor(
     private readonly host: HTMLElement,
@@ -358,9 +360,17 @@ export class FamilyCreator {
     const note = el('div', 'creator-problem');
     const ready = el('button', 'btn btn-quiet', t('create.ready'));
     ready.addEventListener('click', () => {
-      this.ctrl.newGame();
+      this.ctrl.newGame(this.death);
       this.hide();
     });
+    // bloco 14: morte ligada ou não no jogo novo
+    const death = el('label', 'creator-death');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.checked = this.death;
+    box.addEventListener('change', () => (this.death = box.checked));
+    death.title = t('create.deathHint');
+    death.append(box, el('span', '', t('create.death')));
     const buttons = el('div', 'creator-buttons');
     if (this.cancellable) {
       const cancel = el('button', 'btn btn-quiet', t('create.cancel'));
@@ -370,11 +380,11 @@ export class FamilyCreator {
     const start = el('button', 'btn btn-go creator-start', t('create.start'));
     start.addEventListener('click', () => {
       if (familyProblem(this.ctrl.sim.catalog, this.draft)) return;
-      this.ctrl.newFamily(this.draft);
+      this.ctrl.newFamily(this.draft, this.death);
       this.hide();
     });
     buttons.append(ready, start);
-    foot.append(el('div', 'creator-note', t('create.note')), note, buttons);
+    foot.append(el('div', 'creator-note', t('create.note')), death, note, buttons);
     queueMicrotask(() => this.refreshFoot());
     return foot;
   }

@@ -6,6 +6,9 @@ import type { MemoryDef } from '../sim/types';
 // papo amigável e pode partir para a briga; com carinho, procura mais.
 const list: MemoryDef[] = [
   { id: 'met', label: 'mem.met', weight: 0, once: true },
+  // bloco 14: luto por quem se foi (e o susto com o fantasma dessa pessoa)
+  { id: 'mourned', label: 'mem.mourned', weight: 0, once: true },
+  { id: 'hauntedMe', label: 'mem.hauntedMe', weight: -1 },
   // bloco 4: jogaram, tocaram ou relaxaram juntos
   { id: 'playedTogether', label: 'mem.playedTogether', weight: 1, once: true },
   { id: 'confided', label: 'mem.confided', weight: 2 },

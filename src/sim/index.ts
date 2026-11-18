@@ -35,3 +35,4 @@ export * from './kids';
 export * from './roof';
 export * from './garden';
 export * from './yard';
+export * from './peril';

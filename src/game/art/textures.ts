@@ -1210,9 +1210,9 @@ function thoughtIcon(kind: string, raw: string): Painter {
     const top = 3;
     const bottom = h - 11;
     const paper =
-      kind === 'wish' ? 0xf6e3a4 : kind === 'refuse' ? 0xf4d6cc : kind === 'miss' ? 0xf3dbe0 : (kind === 'chat' || kind === 'topic') && icon === 'yes' ? 0xdcefd2 : kind === 'topic' && icon === 'no' ? 0xf4d6cc : 0xf4ead8;
+      kind === 'fear' ? 0xf7d9a8 : kind === 'wish' ? 0xf6e3a4 : kind === 'refuse' ? 0xf4d6cc : kind === 'miss' ? 0xf3dbe0 : (kind === 'chat' || kind === 'topic') && icon === 'yes' ? 0xdcefd2 : kind === 'topic' && icon === 'no' ? 0xf4d6cc : 0xf4ead8;
     const ink =
-      kind === 'refuse' || icon === 'no' ? 0xb23a2e : icon === 'yes' ? 0x2f7a3a : kind === 'wish' ? 0x8a5a12 : kind === 'miss' ? 0xb04a66 : kind === 'mess' ? 0x6e5326 : 0x2a2320;
+      kind === 'fear' ? (icon === 'ghost' ? 0x4a5a8a : icon === 'swim' ? 0x2c6aa6 : 0xb8401e) : kind === 'refuse' || icon === 'no' ? 0xb23a2e : icon === 'yes' ? 0x2f7a3a : kind === 'wish' ? 0x8a5a12 : kind === 'miss' ? 0xb04a66 : kind === 'mess' ? 0x6e5326 : 0x2a2320;
     c.beginPath();
     c.moveTo(3 + r, top);
     c.arcTo(w - 3, top, w - 3, bottom, r);

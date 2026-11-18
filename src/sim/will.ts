@@ -127,7 +127,7 @@ export function refusal(catalog: Catalog, folk: Folk, it: InteractionDef, tick: 
 // ---------- balões ----------
 
 /** Quanto cada tipo de balão pesa: um mais importante não é coberto por outro. */
-const THOUGHT_RANK: Record<ThoughtKind, number> = { refuse: 5, alarm: 4, wish: 4, chat: 3, topic: 3, want: 2, mess: 1, miss: 1 };
+const THOUGHT_RANK: Record<ThoughtKind, number> = { fear: 6, refuse: 5, alarm: 4, wish: 4, chat: 3, topic: 3, want: 2, mess: 1, miss: 1 };
 
 /** O balão de agora (null se não há ou já passou). */
 export function thoughtOf(folk: Folk, tick: number): Thought | null {

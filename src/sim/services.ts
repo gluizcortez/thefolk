@@ -60,6 +60,11 @@ export const RING_WAIT: Record<ServiceKind | 'guest', number> = {
   bailiff: 0,
   social: 0,
   gardener: 15,
+  // bloco 14: bombeiros, polícia, gatuno e o Seu Sereno não tocam a campainha
+  firefighter: 0,
+  police: 0,
+  burglar: 0,
+  reaper: 0,
 };
 /** jornais velhos acumulados na calçada, no máximo */
 const MAX_PAPERS = 4;
@@ -108,6 +113,12 @@ export function interactionReady(world: World, it: InteractionDef): boolean {
   if (it.takeout && house.takeout <= 0) return false;
   if (it.special === 'payBills') return unpaidBills(world).length > 0;
   if (it.special === 'fair') return fairOpen(world.tick);
+  // bloco 14: extintor e ligações de socorro só quando há o que fazer
+  if (it.special === 'douse') return (world.fires ?? []).length > 0;
+  if (it.special === 'callFire') return (world.fires ?? []).length > 0 && (world.help?.fire ?? 0) === 0;
+  if (it.special === 'callPolice') {
+    return (world.help?.police ?? 0) === 0 && world.folks.some((f) => f.visit?.service?.kind === 'burglar' && !f.visit.leaving);
+  }
   // bloco 4: luneta só com o céu escuro
   if (it.night) return nightAmount((world.tick % MINUTES_PER_DAY) / MINUTES_PER_DAY) >= NIGHT_SKY;
   return true;
