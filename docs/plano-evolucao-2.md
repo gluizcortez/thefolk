@@ -261,6 +261,20 @@ Pronto: testes de escolha de lugar (melhor assento na área de visão,
 assento ocupado, sem assento), de cancelamento passando pela saída e de
 combinação de ações por postura. Tira animada de "sentar no sofá e assistir".
 
+**Feito em 18/11/2026** (save v24; a numeração anda uma casa a menos que o
+plano). Lugares gerados para todo assento (um por vaga ao longo do lado de
+uso; mesa com cadeiras, uma em cada ponta; tabuleiro, um por lado) e
+`ObjectDef.spots` para os feitos à mão. Sentado é postura que fica entre as
+ações; sentar leva 1 min, levantar 1 min, deitar e levantar da cama 2 min
+cada, e cancelar o sono passa pela saída. TV com quatro canais (novela,
+esporte, culinária que ensina a cozinhar, desenho) e reações; som com "Ouvir
+música" sentado no cômodo; lareira com "Olhar o fogo" na frente. O prato que
+estava na mão vai junto quando a ordem nova é de fazer sentado. Clicar no
+próprio folk sentado dá Levantar, Ler e Ligar dali. O sofá da casa pronta
+virou para a TV. Ficou para depois: olhar pela janela (janela é peça da
+parede, entra com as atividades a fundo) e variações de laço por objeto
+(o campo `loops` existe, as animações chegam no bloco 5).
+
 ## Bloco 5 — Corpo e rosto novos dos folks (save v26)
 
 - **Esqueleto mais rico** (continua por juntas, sem esqueleto pesado):

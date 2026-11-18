@@ -16,6 +16,7 @@ import {
   familyById,
   foundTown,
   hasHouse,
+  leaveProblem,
   lotPrice,
   lotStatus,
   makeFolk,
@@ -278,9 +279,12 @@ describe('bloco 15: bairro', () => {
     const sim = townSim(11);
     const w = sim.world;
     play(sim, 3 * 1440);
+    for (let i = 0; i < 480 && leaveProblem(w); i++) play(sim, 1);
     const other = lotOfFamily(w, 'Telhado').fam;
     expect(sim.dispatch({ type: 'playFamily', familyId: other.id })).toBe(true);
     play(sim, 2 * 1440);
+    // com fogo, festa ou alguém caído, a troca espera o lote acalmar (como na tela)
+    for (let i = 0; i < 480 && leaveProblem(w); i++) play(sim, 1);
     expect(sim.dispatch({ type: 'playFamily', familyId: 1 })).toBe(true);
     play(sim, 2 * 1440);
     const home = w.folks.filter((f) => !f.visit);

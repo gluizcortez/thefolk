@@ -183,6 +183,8 @@ export function duoPartners(world: World, folk: Folk, objectId: number, it: Inte
   return world.folks.filter((f) => {
     if (f === folk || f.away) return false;
     const a = f.queue[0];
-    return a?.kind === 'use' && a.phase === 'using' && a.objectId === objectId && a.interactionId === it.id;
+    // plano 2, bloco 4: na TV, qualquer canal conta como assistir junto
+    const same = a?.interactionId === it.id || (!!it.watch && !!a?.interactionId?.startsWith('watch'));
+    return a?.kind === 'use' && a.phase === 'using' && a.stage === undefined && a.objectId === objectId && same;
   });
 }

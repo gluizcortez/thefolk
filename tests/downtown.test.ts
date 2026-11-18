@@ -272,7 +272,8 @@ describe('bloco 16: compras do centro', () => {
     expect(a.look.shirt).not.toBe(shirt);
     const friend = relationOf(w, b.id, a.id)?.friendship ?? 0;
     expect(sim.dispatch({ type: 'queueSocial', folkId: a.id, otherId: b.id, socialId: 'giveGift' })).toBe(true);
-    play(sim, 30);
+    // plano 2, bloco 4: quem estava sentado no bistrô levanta antes de ir
+    play(sim, 45);
     expect(a.gifts).toEqual([]);
     expect(relationOf(w, b.id, a.id)!.friendship).toBeGreaterThan(friend);
     expect(sim.dispatch({ type: 'goHome' })).toBe(true);

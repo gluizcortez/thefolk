@@ -4,6 +4,7 @@ import type { ObjectDef } from '../sim/types';
 
 import { admire, clean, dishes, lightOff, lightOn, repair, service, tuning } from './interactions';
 import { FURNITURE } from './furniture';
+import { withActivities } from './activities';
 import { REWARDS } from './rewards';
 import { KID_OBJECTS, homework } from './kids';
 import { YARD_OBJECTS, replantPlant, waterPlant } from './yard';
@@ -935,4 +936,4 @@ const list: ObjectDef[] = [
   },
 ];
 
-export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries([...list, ...FURNITURE, ...REWARDS, ...KID_OBJECTS, ...YARD_OBJECTS, ...PERIL_OBJECTS, ...DOWNTOWN_OBJECTS].map((o) => [o.id, o]));
+export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries([...list, ...FURNITURE, ...REWARDS, ...KID_OBJECTS, ...YARD_OBJECTS, ...PERIL_OBJECTS, ...DOWNTOWN_OBJECTS].map((o) => [o.id, withActivities(o)]));

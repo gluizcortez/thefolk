@@ -1,5 +1,6 @@
 import { relKey } from './relations';
-import type { Catalog, Grid, Neighbor, Vec, World, WorldObject } from './types';
+import type { Catalog, Folk, Grid, Neighbor, Vec, World, WorldObject } from './types';
+import { favoriteChannel } from './activity';
 import { checkPlacement } from './economy';
 import { savingsOf } from './marriage';
 import { footprint, objectSize, roofed, storied } from './grid';
@@ -15,7 +16,7 @@ import type { TownPlan } from './town';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 23;
+export const SAVE_VERSION = 24;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -350,6 +351,30 @@ const migrations: Record<number, Migration> = {
     if (world.town) {
       world.town = { ...world.town, lots: world.town.lots.map((lot) => (lot.home ? { ...lot, home: { ...lot.home, grid: roofed(lot.home.grid) } } : lot)) };
     }
+    return { ...save, world: world as unknown as Obj };
+  },
+  // plano 2, bloco 4: motor de atividades. Os lugares dos objetos saem das
+  // definições (nada a gravar); a TV que alguém está assistindo fica ligada
+  // num canal, e ninguém começa sentado (a postura nasce ao sentar de novo).
+  23: (save) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    const TVS = new Set(['tv', 'tvcheap', 'tvbig']);
+    const watching = new Map<number, Folk>();
+    for (const f of world.folks ?? []) {
+      const a = f.queue?.[0];
+      if (a?.kind === 'use' && a.interactionId === 'watch' && a.phase === 'using' && a.objectId !== undefined) watching.set(a.objectId, f);
+    }
+    world.objects = (world.objects ?? []).map((o) => {
+      const f = watching.get(o.id);
+      return f && TVS.has(o.defId) && !o.channel ? { ...o, channel: favoriteChannel(f) } : o;
+    });
+    world.folks = (world.folks ?? []).map((f) => {
+      const out = { ...f };
+      delete out.posture;
+      delete out.carry;
+      delete out.react;
+      return out;
+    });
     return { ...save, world: world as unknown as Obj };
   },
 };

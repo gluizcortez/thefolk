@@ -50,7 +50,14 @@ export type FolkAnim =
   | 'g_scratch'
   | 'g_belly'
   | 'g_yawn'
-  | 'g_fidget';
+  | 'g_fidget'
+  // plano 2, bloco 4: meio sentado (sentando, levantando), comendo no colo,
+  // chorando com a novela, susto e o controle remoto
+  | 'perch'
+  | 'eat'
+  | 'cry'
+  | 'gasp'
+  | 'remote';
 
 export type FolkLook = Look;
 
@@ -77,6 +84,8 @@ export interface FolkFrame {
   energy?: number;
   /** bloco 10: aliança no dedo (noivo ou casado) */
   ring?: boolean;
+  /** plano 2, bloco 4: sentado (as pernas dobram; o resto do corpo segue a animação) */
+  seated?: boolean;
 }
 
 export const FOLK_HEIGHT = 1.8;
@@ -141,7 +150,7 @@ function rest(): Pose {
 }
 
 /** Pose-alvo de cada animação. Ângulos em radianos; frente do corpo = +z. */
-function poseFor(anim: FolkAnim, t: number, mood: number, energy = 100): Pose {
+function poseFor(anim: FolkAnim, t: number, mood: number, energy = 100, seated = false): Pose {
   const p = rest();
   const breathe = Math.sin(t * 1.8);
   // bloco 6: cansado, a cabeça pesa e os braços caem
@@ -562,6 +571,69 @@ function poseFor(anim: FolkAnim, t: number, mood: number, energy = 100): Pose {
       p.torsoZ = 0.02 * Math.sin(t * 0.5);
       break;
     }
+    case 'perch': {
+      // a meio caminho entre de pé e sentado, mãos nos joelhos
+      p.hipsY = 0.52;
+      p.legLX = -0.85;
+      p.legRX = -0.85;
+      p.kneeL = 0.95;
+      p.kneeR = 0.95;
+      p.legOut = 0.05;
+      p.torsoX += 0.32;
+      p.armLX = -0.55;
+      p.armRX = -0.55;
+      p.elbowL = -0.5;
+      p.elbowR = -0.5;
+      p.headX -= 0.1;
+      break;
+    }
+    case 'eat': {
+      // prato na mão esquerda, garfo da direita até a boca
+      const k = Math.max(0, Math.sin(t * 2.2));
+      p.armLX = -0.6;
+      p.armLOut = -0.1;
+      p.elbowL = -1.25;
+      p.armRX = -0.75 - 0.5 * k;
+      p.armROut = -0.12;
+      p.elbowR = -1.4 - 0.75 * k;
+      p.headX += 0.12 - 0.12 * k;
+      break;
+    }
+    case 'cry': {
+      // mãos no rosto, ombros sacudindo
+      p.armLX = -0.95;
+      p.armRX = -0.95;
+      p.armLOut = -0.22;
+      p.armROut = -0.22;
+      p.elbowL = -2.25;
+      p.elbowR = -2.25;
+      p.headX += 0.28;
+      p.torsoZ = 0.04 * Math.sin(t * 15);
+      p.torsoX += 0.1;
+      break;
+    }
+    case 'gasp': {
+      // susto: mãos nas bochechas, corpo para trás
+      p.armLX = -0.7;
+      p.armRX = -0.7;
+      p.armLOut = 0.28;
+      p.armROut = 0.28;
+      p.elbowL = -2.05;
+      p.elbowR = -2.05;
+      p.torsoX -= 0.14;
+      p.headX = -0.22;
+      break;
+    }
+    case 'remote': {
+      // braço esticado apontando o controle para a TV
+      p.armRX = -1.35;
+      p.armROut = 0.05;
+      p.elbowR = -0.12;
+      p.armLX = -0.3;
+      p.elbowL = -0.7;
+      p.headX += 0.02;
+      break;
+    }
     default: {
       // parado: respira e troca o peso de perna de vez em quando
       p.torsoZ = 0.025 * Math.sin(t * 0.7);
@@ -569,6 +641,17 @@ function poseFor(anim: FolkAnim, t: number, mood: number, energy = 100): Pose {
       p.armLX = 0.03 * breathe;
       p.armRX = -0.03 * breathe;
     }
+  }
+  // plano 2, bloco 4: sentado, as pernas dobram e o quadril desce; o tronco
+  // segue a animação (assistir, conversar, ler, comer, rir, torcer)
+  if (seated && anim !== 'sit' && anim !== 'perch' && anim !== 'sleep' && anim !== 'collapsed') {
+    p.hipsY = 0.1;
+    p.legLX = -1.5;
+    p.legRX = -1.5;
+    p.kneeL = 1.45;
+    p.kneeR = 1.45;
+    p.legOut = 0.06;
+    p.torsoX -= 0.12;
   }
   return p;
 }
@@ -1016,7 +1099,7 @@ export class FolkModel {
   update(f: FolkFrame): void {
     this.clock += f.dt;
     const k = 1 - Math.exp(-f.dt * 12);
-    const target = poseFor(f.anim, f.time, f.mood, f.energy);
+    const target = poseFor(f.anim, f.time, f.mood, f.energy, f.seated);
     const p = this.pose;
     for (const key of Object.keys(p) as (keyof Pose)[]) p[key] += (target[key] - p[key]) * k;
 
@@ -1049,7 +1132,7 @@ export class FolkModel {
     this.shinR.rotation.x = p.kneeR;
 
     // bloco 5: o que está na mão vem da interação (ou da animação)
-    const hold = f.hold ?? (f.anim === 'read' ? 'book' : f.anim === 'phone' ? 'phone' : f.anim === 'scrub' ? 'rag' : undefined);
+    const hold = f.hold ?? (f.anim === 'read' ? 'book' : f.anim === 'phone' ? 'phone' : f.anim === 'scrub' ? 'rag' : f.anim === 'eat' ? 'plate' : undefined);
     this.book.visible = hold === 'book';
     this.handset.visible = hold === 'phone';
     this.plate.visible = hold === 'plate';
@@ -1061,7 +1144,7 @@ export class FolkModel {
     this.lantern.visible = hold === 'lantern' || f.anim === 'lantern';
     this.ring.visible = !!f.ring;
     const lying = f.anim === 'sleep' || f.anim === 'collapsed';
-    this.blob.visible = f.anim !== 'sleep' && f.anim !== 'sit';
+    this.blob.visible = f.anim !== 'sleep' && f.anim !== 'sit' && !f.seated && f.anim !== 'perch';
     this.blob.scale.setScalar(f.anim === 'collapsed' ? 1.9 : 1);
     this.blob.position.z = f.anim === 'collapsed' ? -0.85 : 0;
 

@@ -488,6 +488,16 @@ npm run preview  # serve o dist/ localmente
   aproximar a câmera de um cômodo, e volta ao afastar; o alfinete (P) fixa o
   modo. A ferramenta de telhado e a de laje sempre mostram o telhado. O modo
   escolhido fica guardado no navegador.
+- **Sentar e assistir (plano 2, bloco 4)**: todo assento tem lugares; o
+  folk escolhe um livre, senta (1 min) e fica sentado depois que a ação
+  acaba, até a próxima ordem que não se faça dali (aí levanta, 1 min). "Assistir"
+  leva ao melhor assento livre virado para a TV dentro da área de visão (de pé
+  na frente, se não houver). A TV tem canais (novela, esporte, culinária, que
+  ensina a cozinhar, e desenho), fica ligada até alguém desligar e quem está
+  sentado em frente segue vendo enquanto conversa com quem está ao lado ou
+  come o prato que trouxe. "Chamar para ver junto" no menu de outra pessoa.
+  Clicar no próprio folk sentado: Levantar, Ler um livro aqui, Ligar daqui.
+  Som ("Ouvir música") e lareira ("Olhar o fogo") seguem a mesma lógica.
 - **Peças novas (bloco 12)**: meia parede (fecha o passo sem dividir o
   cômodo), coluna nos cantos, porta de vidro, porta dupla, arco (passagem sem
   folha), janela alta (+6 de ambiente) e basculante (+2).
@@ -597,6 +607,7 @@ src/
     grid.ts         paredes nas bordas, navegação, tiles de uso
     clock.ts        relógio e velocidades
     pace.ts         plano 2: quando dá para pular e os gestos de quem espera ordem
+    activity.ts     plano 2: lugares nos objetos, área de visão, postura, etapas e canais da TV
     rng.ts          RNG com seed (mulberry32)
     world.ts        criação do mundo a partir de um mapa em texto
     save.ts         formato de save versionado e migrações
@@ -644,6 +655,15 @@ Decisões principais do núcleo:
   menos que o comando venha com `append: true`. `sim/pace.ts` diz quando dá
   para pular (`canSkip`, `skipBlocker`) e qual gesto de espera mostrar
   (`idleGesture`).
+- **Motor de atividades** (plano 2, bloco 4): `sim/activity.ts` é puro
+  (`spotsOf`, `spotPlaces`, `viewArea`, `bestSeat`, `keepsPosture`,
+  `stagesOf`); o Sim guarda `Folk.posture` (sentado, com `rising` na saída),
+  `Folk.carry` (prato no colo) e, na ação, `seatAt`, `slot` (lugar), `stage`
+  e `stageLeft`. `stepPosture` roda antes de `processAction`: levanta quando a
+  ação da vez não se faz sentado ali, e senão aplica o que a TV, o som e o
+  fogo rendem a quem está sentado em frente. `windDown` faz a ordem nova e o
+  cancelar passarem pela etapa de saída. As interações de assistir, os canais
+  e "Sentar" entram nos objetos por `data/activities.ts`.
 - **Jogador de teste** (`tests/helpers/player.ts`): as semanas inteiras dos
   testes rodam com um roteiro que manda como um jogador atento (atende porta
   e telefone, apaga fogo, cuida do bebê, manda dormir às 23h e comer com fome

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ball, box, colorMat, cyl, fronted, lathe, rbox, rod, texMat, tileUV } from './build';
 import type { FurnitureSpec } from './furniture';
-import { WALL_FACE, chair, chrome, enamelMat, feet, framed, fridge, group, porcelain, shower, stove, toilet } from './furniture';
+import { WALL_FACE, chair, chrome, tvPicture, enamelMat, feet, framed, fridge, group, porcelain, shower, stove, toilet } from './furniture';
 import { PAL, mix, seeded, shade } from './palette';
 import { getTexture } from './textures';
 
@@ -15,19 +15,18 @@ const tin = () => colorMat(0x9aa2a6, { gloss: 0.5 });
 const plastic = () => colorMat(PAL.plastic, { gloss: 0.5 });
 
 /** Tela de TV que liga quando alguém assiste (mesmas texturas da TV média). */
-function screen(): { mat: THREE.MeshPhongMaterial; tick(time: number, on: boolean): void } {
+function screen(): { mat: THREE.MeshPhongMaterial; tick(time: number, using: string | undefined, channel: string | undefined): void } {
   const off = getTexture('tvOff');
-  const channels = [getTexture('tvOn0'), getTexture('tvOn1'), getTexture('tvOn2')];
   const mat = new THREE.MeshPhongMaterial({ map: off, emissive: 0xffffff, emissiveMap: off, emissiveIntensity: 0, specular: 0x555555, shininess: 50 });
   return {
     mat,
-    tick(time, on) {
-      const map = on ? channels[Math.floor(time / 3) % channels.length] : off;
+    tick(time, using, channel) {
+      const map = tvPicture(time, using, channel) ?? off;
       if (mat.map !== map) {
         mat.map = map;
         mat.emissiveMap = map;
       }
-      mat.emissiveIntensity = on ? 0.75 + Math.sin(time * 23) * 0.06 : 0;
+      mat.emissiveIntensity = map !== off ? 0.75 + Math.sin(time * 23) * 0.06 : 0;
     },
   };
 }
@@ -746,7 +745,7 @@ const tvcheap: FurnitureSpec = {
       rod([0.16, 0.97, -0.02], [0.16, 0.92, -0.02], 0.012, m),
     );
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(rod([sx * 0.22, 0.6, sz * 0.17], [sx * 0.2, 0, sz * 0.15], 0.012, m));
-    return { group: g, tick: ({ time, using }) => scr.tick(time, !!using) };
+    return { group: g, tick: ({ time, using, channel }) => scr.tick(time, using, channel) };
   },
 };
 
@@ -762,7 +761,7 @@ const tvbig: FurnitureSpec = {
       box(1.8, 0.4, 0.02, texMat('speakerFront'), 0, 0.06, 0.205),
       rbox(1.9, 0.05, 0.62, 0.02, wood, 0, 1.6, -0.12),
     );
-    return { group: g, tick: ({ time, using }) => scr.tick(time, !!using) };
+    return { group: g, tick: ({ time, using, channel }) => scr.tick(time, using, channel) };
   },
 };
 
@@ -999,7 +998,7 @@ const videogame: FurnitureSpec = {
     );
     // pufes no chão, na frente
     for (const sx of [-1, 1]) g.add(ball(0.24, 0.16, 0.24, texMat('fabric', { color: sx < 0 ? 0xc23a32 : 0x2c55a6 }), sx * 0.24, 0.12, 0.78, 12));
-    return { group: g, tick: ({ time, using }) => scr.tick(time, !!using) };
+    return { group: g, tick: ({ time, using, channel }) => scr.tick(time, using, channel) };
   },
 };
 

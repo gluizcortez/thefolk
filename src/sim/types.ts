@@ -148,6 +148,86 @@ export interface InteractionDef {
   /** dicas só para a renderização */
   pose?: Pose;
   onObject?: boolean;
+  /**
+   * plano 2, bloco 4: assistir/ouvir/olhar. O folk procura o melhor assento
+   * livre dentro da área de visão do objeto (`ObjectDef.view`); sem assento,
+   * fica de pé na frente. 'off' desliga a TV.
+   */
+  watch?: boolean;
+  /** plano 2, bloco 4: canal escolhido ao começar (TV); 'off' desliga */
+  channel?: string;
+  /** plano 2, bloco 4: dá para fazer sentado onde está, sem levantar (ler, ligar, comer) */
+  seated?: boolean;
+  /** plano 2, bloco 4: etapas de entrada e saída (sem campo: tiradas da postura) */
+  stages?: StagesDef;
+  /** plano 2, bloco 4: variações sorteadas do laço (animações) */
+  loops?: string[];
+}
+
+/** Plano 2, bloco 4: uma etapa curta de uma atividade (entrar, sair). */
+export interface StageDef {
+  /** minutos de jogo */
+  minutes: number;
+  /** animação (nome em game/art/folk.ts) */
+  anim?: string;
+  /** o que fica na mão durante a etapa */
+  hold?: HeldProp;
+}
+
+export interface StagesDef {
+  enter?: StageDef;
+  exit?: StageDef;
+}
+
+/** Plano 2, bloco 4: o que se faz num lugar do objeto. */
+export type SpotKind = 'sit' | 'lie' | 'stand';
+
+/**
+ * Plano 2, bloco 4: um lugar de uso no objeto (assento do sofá, lado da
+ * cama). `cell` é a célula do objeto sem girar (0,0 = canto noroeste na
+ * rotação 0) e `side` o lado por onde se chega a ela.
+ */
+export interface SpotDef {
+  kind: SpotKind;
+  cell: Vec;
+  side: Side;
+  /** quem pode usar (padrão: todo mundo) */
+  who?: 'adult' | 'child';
+}
+
+/**
+ * Plano 2, bloco 4: área de visão (TV, lareira) ou de escuta (som). 'tv' e
+ * 'fire' são um leque na frente do objeto; 'music' é um raio no mesmo cômodo.
+ */
+export interface ViewDef {
+  kind: 'tv' | 'music' | 'fire';
+  depth: number;
+}
+
+/** Plano 2, bloco 4: postura que fica entre uma ação e outra. */
+export interface Posture {
+  kind: 'sit';
+  objectId: number;
+  /** índice do lugar em `spotsOf(def)` */
+  spot: number;
+  /** minutos que ainda faltam para terminar de levantar (etapa de saída) */
+  rising?: number;
+}
+
+/** Plano 2, bloco 4: prato que o folk trouxe e come sentado. */
+export interface Carry {
+  kind: 'plate';
+  /** objeto e interação de onde a comida saiu (os efeitos vêm dela) */
+  objectId: number;
+  interactionId: string;
+  /** minutos de comida que ainda restam */
+  left: number;
+}
+
+/** Plano 2, bloco 4: reação curta ao que passa na TV. */
+export interface Reaction2 {
+  kind: 'laugh' | 'cheer' | 'cry' | 'gasp';
+  until: number;
 }
 
 // ---------- Bloco 5: temperamento, nascimento, corpo e roupa ----------
@@ -442,6 +522,10 @@ export interface ObjectDef {
   pool?: 'in' | 'edge';
   /** bloco 14: pega fogo (sem campo: pela categoria; veja sim/peril.ts) */
   flammable?: boolean;
+  /** plano 2, bloco 4: lugares de uso feitos à mão (sem campo: gerados pelo tamanho e pelas interações) */
+  spots?: SpotDef[];
+  /** plano 2, bloco 4: área de visão ou de escuta */
+  view?: ViewDef;
   /** bloco 14: equipamento de segurança (extintor, detector de fumaça, alarme) */
   safety?: 'extinguisher' | 'smoke' | 'burglar';
   /** bloco 14: lareira (acende e aquece; perto de coisa que queima, é perigo) */
@@ -1166,6 +1250,8 @@ export interface WorldObject {
   baby?: number;
   /** bloco 13: planta viva */
   plant?: PlantState;
+  /** plano 2, bloco 4: canal ligado na TV (sem isso, desligada) */
+  channel?: string;
   /** bloco 14: lareira acesa até tal tick */
   blaze?: number;
   /** bloco 14: lápide ou urna de alguém */
@@ -1320,6 +1406,14 @@ export interface Action {
   armed?: boolean;
   /** bloco 10: a festa marcada é casamento com este par */
   wedding?: { partner: number; surname: SurnameChoice };
+  /** plano 2, bloco 4: assento escolhido para assistir (o lugar é `slot`) */
+  seatAt?: number;
+  /** plano 2, bloco 4: etapa dentro do uso (sem campo = laço) */
+  stage?: 'enter' | 'exit';
+  /** plano 2, bloco 4: minutos que faltam da etapa */
+  stageLeft?: number;
+  /** plano 2, bloco 4: tarefa encadeada que espera a saída terminar */
+  then?: string;
   phase: ActionPhase;
   elapsed: number;
 }
@@ -1405,6 +1499,12 @@ export interface Folk {
   /** bloco 17: aposentado: pensão por dia e de onde veio */
   pension?: number;
   retired?: { careerId: string; level: number };
+  /** plano 2, bloco 4: sentado (fica entre uma ação e outra) */
+  posture?: Posture;
+  /** plano 2, bloco 4: prato na mão, comido sentado */
+  carry?: Carry;
+  /** plano 2, bloco 4: reação ao que vê na TV (ri, torce, chora) */
+  react?: Reaction2;
 }
 
 /** Aparência: índices nas paletas da arte. */
@@ -1871,6 +1971,10 @@ export type Command =
   | { type: 'dismissService'; service: 'maid' | 'gardener' }
   | { type: 'answerDoor'; folkId: number; otherId: number; welcome: boolean; append?: boolean }
   | { type: 'cancel'; folkId: number; actionId: number }
+  /** plano 2, bloco 4: o que dá para fazer sentado onde está (ler, ligar, levantar) */
+  | { type: 'seated'; folkId: number; what: 'read' | 'call' | 'stand'; neighborId?: number; append?: boolean }
+  /** plano 2, bloco 4: chama `otherId` para assistir junto o que o folk está vendo */
+  | { type: 'watchTogether'; folkId: number; otherId: number; append?: boolean }
   /** plano 2, bloco 2: arrastar na fila; `to` é a nova posição (1 em diante, a atual não sai do lugar) */
   | { type: 'moveQueued'; folkId: number; actionId: number; to: number }
   | { type: 'setSpeed'; speed: Speed }

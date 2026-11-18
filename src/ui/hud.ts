@@ -145,6 +145,7 @@ import type {
 import { iconSvg, topicSvg } from './icons';
 import { interactionState, objectGroup, ringCenter, ringPoints, ringRadius, ringSlots, socialState } from './ring';
 import { GIFTS } from '../data/downtown';
+import { channelDef, favoriteChannel, viewOf } from '../sim/activity';
 import { SystemCards } from './system';
 import { cue } from '../audio/cues';
 import type { AudioEngine } from '../audio/engine';
@@ -1525,6 +1526,12 @@ export class Hud {
       if (on && !state.broken) notes.push({ text: `♪ ${t('menu.playing', { station: t(on.name) })}` });
       notes.push({ text: `${t(fav.name)}: ${t('menu.favStation', { name: first(folk.name) })}` });
     }
+    // plano 2, bloco 4: o que passa na TV e o canal preferido de quem foi selecionado
+    if (viewOf(def)?.kind === 'tv') {
+      const on = channelDef(obj.channel);
+      if (on && !state.broken) notes.push({ text: t('menu.onAir', { channel: t(on.name) }) });
+      notes.push({ text: t('menu.favChannel', { name: first(folk.name), channel: t(`channel.${favoriteChannel(folk)}`) }) });
+    }
     // bloco 2: cada conta da caixa de correio, detalhada
     if (def.interactions.some((i) => i.special === 'payBills')) {
       for (const bill of unpaidBills(world)) {
@@ -1994,6 +2001,53 @@ export class Hud {
     return bits.join(', ');
   }
 
+  /**
+   * Plano 2, bloco 4: clicar no próprio folk sentado mostra o que dá para
+   * fazer dali (ler, ligar, levantar).
+   */
+  openSelfMenu(x: number, y: number): void {
+    const folk = this.ctrl.folk;
+    const world = this.ctrl.world;
+    const p = folk.posture;
+    if (!p) return;
+    const seat = world.objects.find((o) => o.id === p.objectId);
+    const sdef = seat && this.ctrl.sim.defOf(seat);
+    const notes: { text: string; warn?: boolean }[] = [{ text: t('menu.seatedOn', { object: sdef ? t(sdef.name) : '?' }) }];
+    const shown = this.ctrl.sim.watchedBy(folk);
+    const shownDef = shown && this.ctrl.sim.defOf(shown);
+    if (shownDef) notes.push({ text: t('menu.watching', { object: t(shownDef.name) }) });
+    if (folk.carry) notes.push({ text: t('act.eatSeated') });
+    const items: RingItem[] = [
+      { label: t('act.standUp'), icon: 'walk', run: () => this.order({ type: 'seated', folkId: folk.id, what: 'stand' }) },
+      { label: t('act.seatRead'), icon: 'book', run: () => this.order({ type: 'seated', folkId: folk.id, what: 'read' }) },
+      { label: t('act.seatCall'), icon: 'phone', extra: '›', run: () => this.openSeatCallMenu(x, y) },
+    ];
+    this.showRing(x, y, this.ringHead(folk.name, notes, folk.look, t('menu.seated')), items);
+  }
+
+  /** Plano 2, bloco 4: para quem ligar sentado (como no telefone da parede). */
+  private openSeatCallMenu(x: number, y: number): void {
+    const folk = this.ctrl.folk;
+    const world = this.ctrl.world;
+    this.menuEl.replaceChildren(el('div', 'menu-title', t('phone.callTitle')));
+    const any = el('button', 'menu-item');
+    any.append(el('span', 'menu-dot'), el('span', '', t('phone.callAnyone')));
+    any.addEventListener('click', () => this.order({ type: 'seated', folkId: folk.id, what: 'call' }));
+    this.menuEl.append(any);
+    const known = world.neighbors
+      .filter((n) => !isServiceNeighbor(n) && relationOf(world, folk.id, n.id) && !this.ctrl.sim.findFolk(n.id))
+      .sort((a, b) => (relationOf(world, folk.id, b.id)?.friendship ?? 0) - (relationOf(world, folk.id, a.id)?.friendship ?? 0));
+    for (const n of known) {
+      const b = el('button', 'menu-item');
+      const face = el('span', 'menu-face');
+      face.innerHTML = faceSvg(n.look, 18);
+      b.append(face, el('span', '', n.name), el('span', 'menu-extra', t(friendshipLabel(relationOf(world, folk.id, n.id)))));
+      b.addEventListener('click', () => this.order({ type: 'seated', folkId: folk.id, what: 'call', neighborId: n.id }));
+      this.menuEl.append(b);
+    }
+    this.showMenuAt(x, y);
+  }
+
   /** Menu ao clicar em outra pessoa: conversas em anel, agrupadas por tipo. */
   openSocialMenu(x: number, y: number, other: Folk): void {
     if (other.visit && !other.visit.admitted && !other.visit.leaving) {
@@ -2043,6 +2097,12 @@ export class Hud {
         const group = [other, ...near];
         items.push({ label: t('circle.start'), icon: 'social', group: 'talk', extra: group.map((f) => first(f.name)).join(', '), run: () => this.order({ type: 'startCircle', folkId: folk.id, otherIds: group.map((f) => f.id) }) });
       }
+    }
+    // plano 2, bloco 4: chamar para ver junto o que está passando
+    const shown = this.ctrl.sim.watchedBy(folk);
+    if (shown && !other.visit?.service && other.age !== 'baby' && this.ctrl.sim.watchedBy(other) !== shown) {
+      const sd = this.ctrl.sim.defOf(shown);
+      items.push({ label: t('act.watchTogether'), icon: 'fun', group: 'friendly', extra: sd ? t(sd.name) : undefined, run: () => this.order({ type: 'watchTogether', folkId: folk.id, otherId: other.id }) });
     }
     // bloco 10: noivos marcam o casamento daqui
     if (!folk.visit && bondOf(world, folk.id, other.id) === 'engaged') {

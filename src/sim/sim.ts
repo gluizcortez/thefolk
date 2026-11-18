@@ -1,4 +1,29 @@
 import { chooseAutonomous } from './ai';
+import {
+  PASSIVE,
+  RISE,
+  SEATED,
+  SEAT_COMFORT,
+  SIT_DOWN,
+  bestSeat,
+  chance,
+  channelDef,
+  couchSeat,
+  favoriteChannel,
+  freeSeatSpot,
+  isSeat,
+  isWatch,
+  keepsPosture,
+  passiveShows,
+  seatSees,
+  seatedPlace,
+  sitFriendly,
+  sitsOn,
+  spotOwner,
+  stagesOf,
+  viewArea,
+  viewOf,
+} from './activity';
 import { SKIP_SPEED, canSkip } from './pace';
 import type { BuildCommand, BuildProblem, GridChange } from './build';
 import { applyChange, checkGrid, invertChange, isBuildCommand, planBuild, touchesNav } from './build';
@@ -205,6 +230,7 @@ import type {
   Folk,
   InteractionDef,
   NeedId,
+  Needs,
   Neighbor,
   ObjectDef,
   RelDelta,
@@ -376,6 +402,8 @@ export type CommandProblem =
   | 'queueFull'
   | 'cantSkip'
   | 'invalid'
+  | 'notSeated'
+  | 'noBook'
   | 'visitor'
   | 'socialNotNow'
   | 'noPhone'
@@ -514,7 +542,7 @@ const COLLAPSE_ENERGY_PER_MINUTE = 0.3;
 
 type ActionSeed = Pick<
   Action,
-  'kind' | 'objectId' | 'interactionId' | 'target' | 'otherId' | 'socialId' | 'messId' | 'serviceId' | 'welcome' | 'circleId' | 'topic' | 'guests' | 'wedding' | 'armed'
+  'kind' | 'objectId' | 'interactionId' | 'target' | 'otherId' | 'socialId' | 'messId' | 'serviceId' | 'welcome' | 'circleId' | 'topic' | 'guests' | 'wedding' | 'armed' | 'slot'
 >;
 
 /** minutos de conversa na porta antes de decidir */
@@ -548,6 +576,8 @@ export class Sim {
   lastRefusal: NeedId | 'mood' | null = null;
   /** plano 2, bloco 1: o comando em curso vai para o fim da fila (Shift) em vez de substituir */
   private appending = false;
+  /** plano 2, bloco 4: a ordem nova se faz sentado; o prato na mão vai junto */
+  private keepPlate = false;
   /** resultados de conversa ainda não lidos pela tela (não vai no save) */
   private outcomes: SocialOutcome[] = [];
   /** visitas que chegaram à calçada neste minuto e saem do lote */
@@ -625,6 +655,9 @@ export class Sim {
 
   interactionOf(action: Action): InteractionDef | undefined {
     if (action.kind !== 'use' || action.objectId === undefined) return undefined;
+    // plano 2, bloco 4: ler e ligar sentado (o objeto é o assento)
+    const seated = SEATED[action.interactionId ?? ''];
+    if (seated) return seated;
     const obj = this.findObject(action.objectId);
     const def = obj && this.defOf(obj);
     return def?.interactions.find((i) => i.id === action.interactionId);
@@ -660,9 +693,45 @@ export class Sim {
         if (!folk) return false;
         const idx = folk.queue.findIndex((a) => a.id === cmd.actionId);
         if (idx < 0) return false;
-        if (idx === 0) this.abandon(folk);
-        else folk.queue.splice(idx, 1);
+        // plano 2, bloco 4: cancelar no meio passa pela etapa de saída (levantar da cama)
+        if (idx === 0) {
+          if (!this.windDown(folk)) this.abandon(folk);
+        } else folk.queue.splice(idx, 1);
         return true;
+      }
+      case 'seated': {
+        const folk = this.findFolk(cmd.folkId);
+        if (!folk) return false;
+        const p = folk.posture;
+        if (!p || p.rising !== undefined) return this.fail('notSeated');
+        if (cmd.what === 'stand') return this.enqueuePlayer(folk, { kind: 'goto', target: { x: folk.x, y: folk.y } });
+        if (cmd.what === 'read') {
+          const books = this.world.objects.some((o) => this.defOf(o)?.interactions.some((i) => i.id === 'read'));
+          if (!books) return this.fail('noBook');
+          return this.enqueuePlayer(folk, { kind: 'use', objectId: p.objectId, interactionId: 'seatRead', slot: p.spot });
+        }
+        if (!this.nearestSpecial(folk, 'call')) return this.fail('noPhone');
+        if (cmd.neighborId !== undefined && !relationOf(this.world, folk.id, cmd.neighborId)) return this.fail('invalid');
+        return this.enqueuePlayer(folk, { kind: 'use', objectId: p.objectId, interactionId: 'seatCall', slot: p.spot, otherId: cmd.neighborId });
+      }
+      case 'watchTogether': {
+        const folk = this.findFolk(cmd.folkId);
+        const other = this.findFolk(cmd.otherId);
+        if (!folk || !other || other === folk || other.away || other.age === 'baby') return false;
+        const shown = this.watchedBy(folk);
+        if (!shown) return this.fail('nothingToDo');
+        const it = this.defOf(shown)?.interactions.find((i) => i.id === 'watch' || i.id === 'listenMusic' || i.id === 'gaze');
+        if (!it) return this.fail('nothingToDo');
+        if (other.visit) {
+          // visita só vem se gostar de quem chama (e não estiver no meio de algo seu)
+          const rel = relationOf(this.world, other.id, folk.id);
+          if ((rel?.friendship ?? 0) < 10 || other.visit.service) return this.fail('socialNotNow');
+          if (other.queue[0]) this.abandon(other);
+          other.queue = [this.makeAction({ kind: 'use', objectId: shown.id, interactionId: it.id }, 'auto')];
+          setThought(other, 'chat', 'yes', this.world.tick, 6);
+          return true;
+        }
+        return this.enqueuePlayer(other, { kind: 'use', objectId: shown.id, interactionId: it.id });
       }
       case 'moveQueued': {
         const folk = this.findFolk(cmd.folkId);
@@ -1195,7 +1264,16 @@ export class Sim {
     if (folk.adrift) return this.fail('adrift');
     if (!this.appending) {
       // plano 2, bloco 1: a ordem nova vira a ação atual; a fila inteira cai
-      while (folk.queue.length > 0) this.abandon(folk);
+      // plano 2, bloco 4: a atual sai pela etapa de saída (se tiver) e o prato
+      // na mão vai junto quando a ordem nova é de fazer sentado
+      while (folk.queue.length > 1) {
+        const tail = folk.queue.pop()!;
+        const c = tail.kind === 'circle' ? circleOfFolk(this.world, folk.id) : undefined;
+        if (c) this.dropFromCircle(folk, c, true);
+      }
+      this.keepPlate = sitFriendly(this.seedInteraction(partial));
+      if (!this.windDown(folk)) while (folk.queue.length > 0) this.abandon(folk);
+      this.keepPlate = false;
     } else if (folk.queue.some((a) => a.source === 'auto')) {
       // com Shift, os reflexos (ouvir, acender a luz) saem da frente da ordem
       if (folk.queue[0]?.source === 'auto') this.abandon(folk);
@@ -1218,7 +1296,11 @@ export class Sim {
     const world = this.world;
     // eatAt só existe depois de pegar a comida: o prato está na mão
     if (action.eatAt !== undefined) {
-      addMess(world, 'plate', folk.x, folk.y, folk.id);
+      const it = this.interactionOf(action);
+      if (this.keepPlate && it && action.objectId !== undefined) {
+        // plano 2, bloco 4: leva o prato e come sentado onde for
+        folk.carry = { kind: 'plate', objectId: action.objectId, interactionId: it.id, left: Math.max(5, it.duration - action.elapsed) };
+      } else addMess(world, 'plate', folk.x, folk.y, folk.id);
     }
     if ((action.kind === 'social' || action.kind === 'listen') && action.otherId !== undefined) {
       const other = this.findFolk(action.otherId);
@@ -1234,6 +1316,30 @@ export class Sim {
     }
     if (folk.outfit === 'work' && action.kind === 'work') folk.outfit = 'day';
     folk.idleTicks = 0;
+  }
+
+  /** Plano 2, bloco 4: a interação de uma ordem que ainda não virou ação. */
+  private seedInteraction(partial: ActionSeed): InteractionDef | undefined {
+    if (partial.kind !== 'use' || partial.objectId === undefined) return undefined;
+    return this.interactionOf({ ...partial, id: 0, source: 'player', phase: 'queued', elapsed: 0 } as Action);
+  }
+
+  /**
+   * Plano 2, bloco 4: em vez de largar de vez, a ação atual passa pela etapa
+   * de saída (levantar da cama, por exemplo). Devolve true se ela ficou na
+   * frente da fila saindo.
+   */
+  private windDown(folk: Folk): boolean {
+    const head = folk.queue[0];
+    if (!head || head.phase !== 'using') return false;
+    if (head.stage === 'exit') return true;
+    const it = this.interactionOf(head);
+    const exit = it && stagesOf(it).exit;
+    if (!exit) return false;
+    head.stage = 'exit';
+    head.stageLeft = exit.minutes;
+    folk.path = [];
+    return true;
   }
 
   private makeAction(partial: ActionSeed, source: Action['source']): Action {
@@ -1743,10 +1849,120 @@ export class Sim {
       folk.idleTicks = 0;
     }
 
-    this.processAction(folk);
+    // plano 2, bloco 4: sentado no sofá (TV em frente, prato no colo) ou levantando
+    if (!this.stepPosture(folk)) this.processAction(folk);
     // bloco 9: parado à toa no mesmo tile de outra pessoa? dá um passo para o lado
-    if (folk.queue.length === 0) this.spreadOut(folk);
+    if (folk.queue.length === 0 && !folk.posture) this.spreadOut(folk);
     if (folk.x !== folk.px || folk.y !== folk.py) this.leftRoom(folk);
+  }
+
+  // ---------- plano 2, bloco 4: postura ----------
+
+  /**
+   * Um minuto de quem está sentado: confere se o assento ainda existe, levanta
+   * (etapa de saída) quando a ação da vez não se faz sentado ali, e enquanto
+   * fica sentado aproveita a TV ligada em frente, o som e o fogo, e come o
+   * prato que trouxe. Devolve true quando o minuto foi gasto levantando.
+   */
+  private stepPosture(folk: Folk): boolean {
+    const head = folk.queue[0];
+    if (folk.carry && !folk.posture && !(head && sitFriendly(this.interactionOf(head)) || head?.eatAt !== undefined)) this.putPlateDown(folk);
+    const p = folk.posture;
+    if (!p) return false;
+    const at = seatedPlace(this.world, this.nav, this.catalog, folk);
+    if (!at || folk.away || folk.collapsed > 0 || folk.down || Math.abs(at.cell.x - folk.x) + Math.abs(at.cell.y - folk.y) > 1) {
+      this.standUp(folk);
+      return false;
+    }
+    if (p.rising !== undefined) {
+      p.rising--;
+      if (p.rising > 0) return true;
+      this.standUp(folk);
+      return false;
+    }
+    if (head && !keepsPosture(this.world, this.catalog, this.nav, folk, head, this.interactionOf(head))) {
+      // fogo, porta, trabalho e escola: levanta num pulo
+      if (head.kind === 'panic' || head.kind === 'douse' || head.kind === 'work' || head.kind === 'school' || head.kind === 'leave' || head.kind === 'door') {
+        this.standUp(folk);
+        return false;
+      }
+      p.rising = RISE;
+      folk.path = [];
+      return true;
+    }
+    this.seatedTick(folk, head);
+    return false;
+  }
+
+  /** Levanta de vez (sai da postura); o prato que estava no colo fica ali. */
+  private standUp(folk: Folk): void {
+    delete folk.posture;
+    delete folk.react;
+    if (folk.carry) this.putPlateDown(folk);
+  }
+
+  private putPlateDown(folk: Folk): void {
+    delete folk.carry;
+    addMess(this.world, 'plate', folk.x, folk.y, folk.id);
+  }
+
+  /**
+   * Sentado: o assento dá um pouco de conforto, a TV ligada em frente (o som,
+   * o fogo) segue rendendo mesmo conversando, e o prato no colo vai sendo
+   * comido.
+   */
+  private seatedTick(folk: Folk, head: Action | undefined): void {
+    const using = head?.phase === 'using' && head.stage === undefined ? this.interactionOf(head) : undefined;
+    const busySeat = !!using && (sitsOn(using) || head!.eatAt !== undefined);
+    if (!head) folk.needs.comfort = Math.min(100, folk.needs.comfort + SEAT_COMFORT);
+    if (!isWatch(using)) {
+      for (const obj of passiveShows(this.world, this.catalog, this.nav, folk)) {
+        const def = this.defOf(obj)!;
+        this.showTick(folk, obj, def, PASSIVE);
+      }
+    }
+    // prato no colo: come sentado, até encher ou acabar a comida
+    const c = folk.carry;
+    if (c && !busySeat) {
+      const src = this.findObject(c.objectId);
+      const it = src && this.defOf(src)?.interactions.find((i) => i.id === c.interactionId);
+      c.left--;
+      if (it) applyEffects(folk, { effects: { hunger: it.effects.hunger ?? 1 } } as InteractionDef);
+      if (!it || c.left <= 0 || folk.needs.hunger >= NEED_MAX) {
+        if (!folk.visit) this.log('log.ateSeated', { name: folk.name });
+        this.putPlateDown(folk);
+      }
+    }
+  }
+
+  /**
+   * Um minuto vendo (ou ouvindo) o que o objeto passa: o canal mexe na
+   * diversão, ensina (culinária) e arranca reações. `k` = 1 assistindo de
+   * propósito, menos só por estar ali.
+   */
+  private showTick(folk: Folk, obj: WorldObject, def: ObjectDef, k: number): void {
+    const view = viewOf(def);
+    if (!view) return;
+    const tick = this.world.tick;
+    if (view.kind === 'tv') {
+      const ch = channelDef(obj.channel);
+      if (!ch) return;
+      const watch = def.interactions.find((i) => i.id === 'watch');
+      const base = watch?.effects.fun ?? 1;
+      const kid = folk.age === 'child';
+      // assistindo de propósito, a diversão base já veio da interação; aqui só o que o canal muda
+      const fun = k >= 1 ? base * ((kid ? ch.kidFun : ch.fun) - 1) : base * (kid ? ch.kidFun : ch.fun) * k;
+      folk.needs.fun = Math.max(0, Math.min(NEED_MAX, folk.needs.fun + fun));
+      if (ch.effects) applyEffects(folk, { effects: scaled(ch.effects, k) } as InteractionDef);
+      if (ch.skill && !kid) this.trainCare(folk, { skill: { id: ch.skill.id, xpPerMinute: ch.skill.xpPerMinute * k } } as InteractionDef);
+      if ((!folk.react || folk.react.until <= tick) && chance(tick, folk.id, 9) === 0) {
+        folk.react = { kind: ch.reacts[chance(tick + 7, folk.id, ch.reacts.length)], until: tick + 2 };
+      }
+    } else if (k < 1) {
+      // som tocando no cômodo e fogo aceso na lareira, para quem está sentado perto
+      if (view.kind === 'music') folk.needs.fun = Math.min(NEED_MAX, folk.needs.fun + 0.5 * k);
+      else folk.needs.comfort = Math.min(NEED_MAX, folk.needs.comfort + 0.6 * k);
+    }
   }
 
   /** Bloco 9: quem está à toa em cima de outra pessoa sai para um tile livre do lado. */
@@ -2067,8 +2283,16 @@ export class Sim {
             return;
           }
         }
-        action.phase = 'using';
         const seat = action.eatAt >= 0 ? this.findObject(action.eatAt) : undefined;
+        const sd = seat && this.defOf(seat);
+        // plano 2, bloco 4: cadeira e sofá têm lugar certo; senta nele (ou espera vagar)
+        if (seat && sd && isSeat(sd) && action.slot !== undefined) {
+          if (!this.seatFree(folk, action, seat.id)) return;
+          action.phase = 'using';
+          this.sitDown(folk, action, seat.id, action.slot);
+          return;
+        }
+        action.phase = 'using';
         if (seat) {
           action.slot = this.freeSlot(seat.id, folk);
           const d = this.defOf(seat);
@@ -2081,7 +2305,12 @@ export class Sim {
       }
       const obj = action.objectId !== undefined ? this.findObject(action.objectId) : undefined;
       const odef = obj && this.defOf(obj);
-      if (obj && odef && this.usingCount(obj.id, folk) >= (odef.slots ?? 1)) {
+      // plano 2, bloco 4: o assento escolhido (sofá, assento para ver TV) ainda está livre?
+      const pre = this.interactionOf(action);
+      const seatId = action.seatAt ?? (obj && odef && sitsOn(pre) && isSeat(odef) ? obj.id : pre?.seated ? folk.posture?.objectId : undefined);
+      if (seatId !== undefined && !pre?.seated && !this.seatFree(folk, action, seatId)) return;
+      const shared = isWatch(pre) || pre?.channel === 'off' || !!pre?.seated || seatId !== undefined;
+      if (!shared && obj && odef && this.usingCount(obj.id, folk) >= (odef.slots ?? 1)) {
         // ocupado: espera um pouco e desiste
         action.waited = (action.waited ?? 0) + 1;
         if (action.waited > WAIT_LIMIT) {
@@ -2105,8 +2334,9 @@ export class Sim {
       }
       if (it && !it.light && !action.lightChecked) {
         // bloco 3: cômodo escuro? acende a luz primeiro (dormir dispensa)
+        // plano 2, bloco 4: TV no escuro é gostoso, e quem já está sentado não levanta para isso
         action.lightChecked = true;
-        if (!isSleep(it) && this.lightUp(folk)) {
+        if (!isSleep(it) && !isWatch(it) && !folk.posture && this.lightUp(folk)) {
           action.phase = 'queued';
           return;
         }
@@ -2144,7 +2374,10 @@ export class Sim {
       if (it?.special === 'call' && action.otherId === undefined) action.otherId = this.callTarget(folk);
       if (it?.atTable) {
         // bloco 4: com o prato pronto, procura um lugar à mesa
-        const spot = findSeat(this.world, this.catalog, this.nav, folk);
+        // plano 2, bloco 4: sem mesa por perto, come no sofá (ou na poltrona)
+        const table = findSeat(this.world, this.catalog, this.nav, folk);
+        const couch = table && table.steps > 0 && table.steps <= SEAT_REACH ? null : couchSeat(this.world, this.catalog, this.nav, folk, SEAT_REACH);
+        const spot = couch ? { seat: couch.seat, steps: Math.max(1, couch.path.length) } : table;
         if (spot && spot.steps > 0 && spot.steps <= SEAT_REACH) {
           action.eatAt = spot.seat.id;
           action.lightChecked = false;
@@ -2156,14 +2389,30 @@ export class Sim {
       if (obj && it?.light) this.switchLight(obj, it.light === 'on');
       // bloco 7: botão do som; dançar com o som desligado liga na estação preferida
       if (obj && it?.tune) pressTune(obj, it, folk);
-      if (obj && it?.pose === 'dance' && !obj.tune && isStereo(this.defOf(obj))) obj.tune = favoriteStation(folk).id;
+      if (obj && (it?.pose === 'dance' || it?.watch) && !obj.tune && isStereo(this.defOf(obj))) obj.tune = favoriteStation(folk).id;
       if (it && isSleep(it)) this.lightsOutForSleep(folk);
       if (action.eatAt === undefined) {
         action.phase = 'using';
-        if (obj) action.slot = this.freeSlot(obj.id, folk);
-        this.faceObject(folk, action);
+        if (seatId !== undefined && action.slot !== undefined) this.sitDown(folk, action, seatId, action.slot);
+        else {
+          if (obj) action.slot = this.freeSlot(obj.id, folk);
+          this.faceObject(folk, action);
+        }
+        // plano 2, bloco 4: etapa de entrada (deitar) e a TV ligando no canal
+        const enter = it && stagesOf(it).enter;
+        if (enter && action.stage === undefined) {
+          action.stage = 'enter';
+          action.stageLeft = enter.minutes;
+        }
+        if (obj && odef && it && viewOf(odef)?.kind === 'tv') {
+          if (it.channel === 'off') delete obj.channel;
+          else if (it.channel) obj.channel = it.channel;
+          else if (isWatch(it) && !obj.channel) obj.channel = favoriteChannel(folk);
+        }
         if (obj && it?.couple) this.callPartner(folk, obj, it);
       }
+      // plano 2, bloco 4: o minuto de sentar (deitar) é só isso; o laço começa no próximo
+      if (action.stage === 'enter') return;
     }
 
     if (action.phase === 'using') {
@@ -2172,9 +2421,40 @@ export class Sim {
         this.finish(folk);
         return;
       }
+      // plano 2, bloco 4: etapas de entrada (sentar, deitar) e de saída (levantar)
+      if (action.stage === 'enter') {
+        action.stageLeft = (action.stageLeft ?? 1) - 1;
+        if (action.stageLeft <= 0) {
+          delete action.stage;
+          delete action.stageLeft;
+        }
+        return;
+      }
+      if (action.stage === 'exit') {
+        action.stageLeft = (action.stageLeft ?? 1) - 1;
+        if (action.stageLeft <= 0) {
+          const then = (action.then ?? null) as Chain;
+          this.finish(folk);
+          this.chain(folk, then, action.source);
+        }
+        return;
+      }
       // bloco 16: no restaurante, só come depois que o prato chega
       if (it.special === 'dine' && this.dineWait(folk, action, it)) return;
       applyEffects(folk, it);
+      // plano 2, bloco 4: assistindo: o canal muda a diversão, ensina e faz reagir
+      if (isWatch(it)) {
+        const shown = this.findObject(action.objectId!);
+        const sd = shown && this.defOf(shown);
+        if (shown && sd && viewOf(sd)?.kind === 'tv') {
+          if (!shown.channel) {
+            this.finish(folk);
+            return;
+          }
+          this.showTick(folk, shown, sd, 1);
+        }
+        if (action.seatAt !== undefined) folk.needs.comfort = Math.min(NEED_MAX, folk.needs.comfort + SEAT_COMFORT);
+      }
       // bloco 11: cuidar do bebê do berço (termina quando o que ele pedia encheu)
       if (it.baby) {
         const crib = this.findObject(action.objectId!);
@@ -2238,6 +2518,14 @@ export class Sim {
           else if (it.care === 'replant') replant(used, usedDef);
           if (it.pose === 'dive') this.afterDive(folk, used, usedDef);
           next = it.care ? afterCare(used, it) : afterUse(this.world, this.catalog, this.logger, folk, used, usedDef, it);
+        }
+        // plano 2, bloco 4: com etapa de saída (levantar da cama), a tarefa seguinte espera
+        const exit = stagesOf(it).exit;
+        if (exit) {
+          action.stage = 'exit';
+          action.stageLeft = exit.minutes;
+          if (next) action.then = next;
+          return;
         }
         this.finish(folk);
         this.chain(folk, next, action.source);
@@ -2421,15 +2709,99 @@ export class Sim {
       const seat = action.eatAt >= 0 ? this.findObject(action.eatAt) : undefined;
       const sdef = seat && this.defOf(seat);
       if (!seat || !sdef) return [];
+      // plano 2, bloco 4: assento com lugares (cadeira, sofá): vai até um lugar livre
+      if (isSeat(sdef)) {
+        const fs = freeSeatSpot(this.world, this.nav, folk, seat, sdef);
+        if (fs) {
+          action.slot = fs.place.index;
+          return fs.path;
+        }
+      }
       return findPathToAny(this.nav, folk, useTiles(this.world, this.nav, seat, sdef)) ?? [];
     }
     const obj = action.objectId !== undefined ? this.findObject(action.objectId) : undefined;
     const def = obj && this.defOf(obj);
     if (!obj || !def) return null;
+    // plano 2, bloco 4: lugares, assentos e área de visão
+    const it = this.interactionOf(action);
+    if (it?.seated) return folk.posture ? [] : null;
+    if (isWatch(it) || it?.channel === 'off') {
+      if (folk.posture && seatSees(this.world, this.catalog, this.nav, folk, obj, def)) {
+        action.seatAt = folk.posture.objectId;
+        action.slot = folk.posture.spot;
+        return [];
+      }
+      if (it?.channel !== 'off' && viewOf(def)) {
+        const choice = bestSeat(this.world, this.catalog, this.nav, folk, obj, def);
+        if (choice) {
+          action.seatAt = choice.seat.id;
+          action.slot = choice.place.index;
+          return choice.path;
+        }
+      }
+      delete action.seatAt;
+      // sem assento: de pé na frente (o som se ouve de onde está, no mesmo cômodo)
+      if (viewOf(def)?.kind === 'music' && this.inEarshot(folk, obj, def)) return [];
+    }
+    if (sitsOn(it) && isSeat(def)) {
+      const fs = freeSeatSpot(this.world, this.nav, folk, obj, def);
+      if (!fs) {
+        // todos os lugares ocupados: chega perto e espera um lugar vagar
+        delete action.slot;
+        return findPathToAny(this.nav, folk, useTiles(this.world, this.nav, obj, def));
+      }
+      action.slot = fs.place.index;
+      return fs.path;
+    }
     const tiles = useTiles(this.world, this.nav, obj, def);
     // prefere um lado onde não tenha ninguém em pé
     const free = tiles.filter((t) => !this.world.folks.some((f) => f !== folk && !f.away && f.x === t.x && f.y === t.y));
     return findPathToAny(this.nav, folk, free.length ? free : tiles);
+  }
+
+  /**
+   * Plano 2, bloco 4: o lugar que a ação reservou continua livre? Se alguém
+   * sentou antes, procura outro (volta a planejar) e, depois de esperar
+   * demais, desiste.
+   */
+  private seatFree(folk: Folk, action: Action, seatId: number): boolean {
+    if (action.slot !== undefined && !spotOwner(this.world, seatId, action.slot, folk)) return true;
+    action.waited = (action.waited ?? 0) + 1;
+    if (action.waited > WAIT_LIMIT) {
+      const seat = this.findObject(seatId);
+      const name = (seat && this.defOf(seat)?.name) ?? 'obj.sofa';
+      this.log('log.objectBusy', { name: folk.name, object: name });
+      this.finish(folk);
+      return false;
+    }
+    action.phase = 'queued';
+    folk.path = [];
+    return false;
+  }
+
+  /** Plano 2, bloco 4: senta no lugar (etapa de entrada de um minuto, se ainda não estava sentado ali). */
+  private sitDown(folk: Folk, action: Action, seatId: number, spot: number): void {
+    const p = folk.posture;
+    if (p && p.objectId === seatId && p.spot === spot && p.rising === undefined) return;
+    folk.posture = { kind: 'sit', objectId: seatId, spot };
+    const at = seatedPlace(this.world, this.nav, this.catalog, folk);
+    if (at) folk.facing = { ...at.face };
+    action.stage = 'enter';
+    action.stageLeft = SIT_DOWN;
+  }
+
+  /** Plano 2, bloco 4: o que o folk está vendo (TV, lareira) ou ouvindo agora, de propósito ou sentado em frente. */
+  watchedBy(folk: Folk): WorldObject | undefined {
+    const head = folk.queue[0];
+    const it = head && this.interactionOf(head);
+    if (head && isWatch(it)) return this.findObject(head.objectId!);
+    return passiveShows(this.world, this.catalog, this.nav, folk)[0];
+  }
+
+  /** Plano 2, bloco 4: o folk já está onde dá para ouvir o som? */
+  private inEarshot(folk: Folk, obj: WorldObject, def: ObjectDef): boolean {
+    const area = viewArea(this.world, this.catalog, obj, def);
+    return area.has(`${folk.x},${folk.y}`);
   }
 
   // ---------- objetos de mais de um lugar ----------
@@ -4053,7 +4425,8 @@ export class Sim {
     }
     const spot = spotTile(c, m.spot);
     if (action.phase === 'queued') {
-      if (folk.x === spot.x && folk.y === spot.y) {
+      // plano 2, bloco 4: sentado perto da roda, participa dali mesmo
+      if ((folk.x === spot.x && folk.y === spot.y) || folk.posture) {
         action.phase = 'using';
         action.elapsed = 0;
       } else {
@@ -6006,6 +6379,13 @@ function avoiding(nav: Nav, busy: Set<number>): Nav {
     isFree,
     canStep: (ax, ay, bx, by) => nav.canStep(ax, ay, bx, by) && !busy.has(by * nav.w + bx),
   };
+}
+
+/** Plano 2, bloco 4: efeitos multiplicados (o que a TV rende a quem só está por perto). */
+function scaled(effects: Partial<Needs>, k: number): Partial<Needs> {
+  const out: Partial<Needs> = {};
+  for (const [id, v] of Object.entries(effects)) out[id as keyof Needs] = (v ?? 0) * k;
+  return out;
 }
 
 /** Bloco 9: treino de Lábia de quem está com a palavra na roda. */

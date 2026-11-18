@@ -37,7 +37,7 @@ export function interactionState(world: World, catalog: Catalog, folk: Folk, obj
     return grey('age');
   }
   // de contexto: só aparece quando muda alguma coisa
-  if (it.care || it.baby || it.tune || it.light || it.special === 'kindle') {
+  if (it.care || it.baby || it.tune || it.light || it.special === 'kindle' || it.channel === 'off') {
     if (!interactionOpen(obj, it)) return HIDE;
   }
   if (it.special === 'douse' || it.special === 'callFire' || it.special === 'callPolice') {
@@ -63,6 +63,8 @@ export function objectGroup(it: InteractionDef): string {
   if (it.special === 'call' || it.special === 'services' || it.special === 'invite' || it.special === 'party' || it.special === 'answer') return 'phone';
   if (it.special === 'buyGift' || it.special === 'buyClothes' || it.special === 'buyParcel' || it.special === 'fair' || it.special === 'dine') return 'shop';
   if (it.skill) return 'learn';
+  // plano 2, bloco 4: os canais da TV ficam juntos numa fatia
+  if (it.channel) return 'channel';
   return 'use';
 }
 

@@ -33,6 +33,8 @@ export interface TickInfo {
   lit?: boolean;
   /** bloco 9: telefone tocando */
   ringing?: boolean;
+  /** plano 2, bloco 4: canal ligado na TV (sem isso, desligada) */
+  channel?: string;
   /** bloco 9: porções na mesa de petiscos */
   stock?: number;
   /** bloco 13: estado da planta viva */
@@ -430,13 +432,29 @@ const sofa: FurnitureSpec = {
   },
 };
 
+/** Plano 2, bloco 4: quadros de cada canal (dois por canal, alternando). */
+const TV_FRAMES: Record<string, string[]> = {
+  drama: ['tvDrama0', 'tvDrama1'],
+  sport: ['tvSport0', 'tvSport1'],
+  cook: ['tvCook0', 'tvCook1'],
+  toon: ['tvToon0', 'tvToon1'],
+};
+
+/** O que aparece na tela: o canal ligado, ou a imagem antiga quando alguém usa sem canal; null = desligada. */
+export function tvPicture(time: number, using: string | undefined, channel: string | undefined): THREE.Texture | null {
+  const frames = channel ? TV_FRAMES[channel] : undefined;
+  if (frames) return getTexture(frames[Math.floor(time / 1.4) % frames.length]);
+  if (!using) return null;
+  const old = ['tvOn0', 'tvOn1', 'tvOn2'];
+  return getTexture(old[Math.floor(time / 3) % old.length]);
+}
+
 export const tv: FurnitureSpec = {
   facing: 'E',
   build() {
     const oak = texMat('oak', { gloss: 0.3 });
     const plastic = colorMat(PAL.plastic, { gloss: 0.5 });
     const off = getTexture('tvOff');
-    const channels = [getTexture('tvOn0'), getTexture('tvOn1'), getTexture('tvOn2')];
     const screen = new THREE.MeshPhongMaterial({
       map: off,
       emissive: 0xffffff,
@@ -458,13 +476,13 @@ export const tv: FurnitureSpec = {
     );
     return {
       group: g,
-      tick({ time, using }) {
-        const map = using ? channels[Math.floor(time / 3) % channels.length] : off;
+      tick({ time, using, channel }) {
+        const map = tvPicture(time, using, channel) ?? off;
         if (screen.map !== map) {
           screen.map = map;
           screen.emissiveMap = map;
         }
-        screen.emissiveIntensity = using ? 0.75 + Math.sin(time * 23) * 0.06 : 0;
+        screen.emissiveIntensity = map !== off ? 0.75 + Math.sin(time * 23) * 0.06 : 0;
       },
     };
   },

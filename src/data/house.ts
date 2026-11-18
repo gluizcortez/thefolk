@@ -67,7 +67,8 @@ export function starterHouse(seed = 20001): WorldSeed {
       { defId: 'stove', x: 12, y: 2 },
       { defId: 'fridge', x: 13, y: 2 },
       { defId: 'phone', x: 3, y: 6 },
-      { defId: 'sofa', x: 5, y: 6 },
+      // plano 2, bloco 4: o sofá vira para a TV (antes ficava de costas para a parede, sem vista para ela)
+      { defId: 'sofa', x: 6, y: 7, rot: 3 },
       { defId: 'lamp', x: 10, y: 6 },
       { defId: 'plant', x: 13, y: 6 },
       { defId: 'tv', x: 3, y: 8 },

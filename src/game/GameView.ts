@@ -58,6 +58,7 @@ import { wearOf } from '../sim/family';
 import { thoughtOf } from '../sim/will';
 import { reactionTo } from '../sim/topics';
 import { stationDef } from '../sim/music';
+import { isWatch, spotCell, spotFace, spotsOf } from '../sim/activity';
 import type { Age, Look, UniformDef, Wear } from '../sim/types';
 import { SCHOOL_BUS, ridesWaiting, uniformOf, vehicleOf } from '../sim/career';
 import { cribOf } from '../sim/kids';
@@ -971,6 +972,8 @@ export class GameView {
     if (hit.folk) {
       this.hud.setTooltip(0, 0, null);
       if (hit.folk.id !== folk.id) this.hud.openSocialMenu(clientX, clientY, hit.folk);
+      // plano 2, bloco 4: clicar em si mesmo sentado mostra o que dá para fazer dali
+      else if (folk.posture) this.hud.openSelfMenu(clientX, clientY);
       return;
     }
     if (hit.mess) {
@@ -1095,6 +1098,7 @@ export class GameView {
         night,
         lit: (!!entry.obj.lit && !entry.obj.state?.broken) || (entry.obj.blaze ?? 0) > world.tick,
         ringing: !!world.call && !world.call.answeredBy,
+        channel: entry.obj.state?.broken ? undefined : entry.obj.channel,
         stock: entry.obj.snacks,
         plant: entry.obj.plant,
         alarm: this.alarmFor(entry.def.safety),
@@ -1505,6 +1509,37 @@ export class GameView {
     pos.needsUpdate = true;
   }
 
+  /**
+   * Plano 2, bloco 4: onde o folk sentado aparece. O lugar do sim é uma célula
+   * do assento; aqui vira a âncora de sentar do desenho mais perto dela (um
+   * pouco para a frente, para o tabuleiro e a mesa acharem o lado certo).
+   */
+  private seatPlace(folk: Folk): { x: number; y: number; z: number; heading: number } | null {
+    const p = folk.posture;
+    const entry = p && this.objects.get(p.objectId);
+    if (!p || !entry) return null;
+    const spot = spotsOf(entry.def)[p.spot];
+    if (!spot) return null;
+    const cell = spotCell(entry.obj, entry.def, spot);
+    const face = spotFace(entry.obj, spot);
+    const foot = this.footAt(cell.x, cell.y);
+    const tx = foot.x + face.x * 0.3;
+    const tz = foot.z + face.y * 0.3;
+    const anchors = entry.spec.sit ?? [];
+    if (anchors.length === 0) return { x: foot.x, y: foot.y + 0.42, z: foot.z, heading: Math.atan2(face.x, face.y) };
+    let best = this.anchorToWorld(entry, anchors[0]);
+    let bestD = Infinity;
+    for (const a of anchors) {
+      const w = this.anchorToWorld(entry, a);
+      const d = Math.hypot(w.x - tx, w.z - tz);
+      if (d < bestD) {
+        bestD = d;
+        best = w;
+      }
+    }
+    return best;
+  }
+
   private anchorToWorld(entry: ObjectEntry, a: Anchor): { x: number; y: number; z: number; heading: number } {
     const cos = Math.cos(entry.turn);
     const sin = Math.sin(entry.turn);
@@ -1714,6 +1749,36 @@ export class GameView {
       }
     }
 
+    // plano 2, bloco 4: sentado fica no assento entre uma ação e outra; o tronco
+    // segue o que faz (assistir, conversar, ler, comer), as pernas ficam dobradas
+    let seated = false;
+    const seat = folk.collapsed === 0 && !folk.down && folk.age !== 'baby' ? this.seatPlace(folk) : null;
+    if (seat) {
+      place = seat;
+      onObject = true;
+      seated = true;
+      const tick = sim.world.tick;
+      const sitting = action?.stage === 'enter' && action.slot === folk.posture!.spot;
+      if (folk.posture!.rising !== undefined || sitting) anim = 'perch';
+      else {
+        if (anim === 'idle' || anim === 'walk' || anim === 'reach' || anim.startsWith('g_')) anim = 'sit';
+        const watching = isWatch(it) || (anim === 'sit' && !!sim.watchedBy(folk));
+        if (watching && (anim === 'sit' || anim === 'watch')) anim = 'watch';
+        if (it?.channel && action && action.elapsed === 0) anim = 'remote';
+        if (folk.carry && (anim === 'sit' || anim === 'watch') && Math.sin(this.animTime * 0.9 + folk.id) > -0.3) anim = 'eat';
+        const r = folk.react;
+        if (r && r.until > tick && (anim === 'watch' || anim === 'sit' || anim === 'eat')) {
+          anim = r.kind;
+          expr = r.kind === 'cry' ? 'sad' : r.kind === 'gasp' ? 'talk' : 'happy';
+        }
+      }
+    } else if (it?.pose === 'lie' && action?.stage) {
+      // deitando e levantando da cama: sentado na beirada, do lado de onde chegou
+      anim = 'perch';
+      place = { x: fx, y: fy, z: fz, heading: Math.atan2(folk.facing.x, folk.facing.y) };
+      onObject = false;
+    } else if (it?.channel && action && action.elapsed === 0) anim = 'remote';
+
     // bloco 6: o balão de agora pode pedir um gesto (recusa, comemoração) e mexe na cara
     const thought = folk.collapsed > 0 || anim === 'sleep' ? null : thoughtOf(folk, sim.world.tick);
     if (thought && thought.at !== view.gestureOf) {
@@ -1756,8 +1821,8 @@ export class GameView {
         ? 'extinguisher'
         : folk.visit?.service?.kind === 'reaper'
           ? 'lantern'
-          : it?.hold;
-    view.model.update({ anim, ...place, mood, time, dt, expr, hold, energy: folk.needs.energy, ring: wearsRing(sim.world, folk.id) });
+          : (it?.hold ?? (folk.carry ? 'plate' : undefined));
+    view.model.update({ anim, ...place, mood, time, dt, expr, hold, energy: folk.needs.energy, ring: wearsRing(sim.world, folk.id), seated });
 
     const iconKey = social?.icon ?? (thought ? `th:${thought.kind}:${thought.icon}` : undefined);
     view.icon.visible = !!iconKey;

@@ -33,6 +33,8 @@ function busyForLong(world: World, catalog: Catalog, folk: Folk): boolean {
   if (folk.age === 'baby') return !!folk.kid?.asleep;
   const a = folk.queue[0];
   if (!a || a.phase !== 'using' || a.kind !== 'use' || a.objectId === undefined) return false;
+  // plano 2, bloco 4: saindo (levantando da cama) já é acordado
+  if (a.stage === 'exit') return false;
   const it = interactionOf(world, catalog, a.objectId, a.interactionId);
   if (!it) return false;
   if (isSleep(it)) return true;

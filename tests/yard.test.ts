@@ -295,9 +295,14 @@ describe('save v17 (bloco 13)', () => {
     ok(sim, { type: 'buildFences', x0: 14, y0: 6, x1: 17, y1: 6, kind: 'fence' });
     ok(sim, { type: 'placeOpening', edge: '15,6,N', kind: 'gate' });
     sim.world.household.gardener = true;
-    play(sim, 7 * MINUTES_PER_DAY);
+    // o registro guarda só as últimas linhas: confere o jardineiro dia a dia
+    let gardened = false;
+    for (let d = 0; d < 7; d++) {
+      play(sim, MINUTES_PER_DAY);
+      gardened ||= sim.world.log.some((l) => l.key === 'log.gardenerDone');
+    }
     for (const f of sim.world.folks.filter((f) => !f.visit)) expect(f.collapsed).toBe(0);
     for (const o of sim.world.objects) if (o.plant) expect(o.plant.health).toBeGreaterThan(0);
-    expect(sim.world.log.some((l) => l.key === 'log.gardenerDone')).toBe(true);
+    expect(gardened).toBe(true);
   });
 });

@@ -778,6 +778,51 @@ function tvFront(channel: number): Painter {
       disc(c, 4 + sw * 0.5, 4 + sh * 0.42, 5, 0xe0ab7f);
       fill(c, 0x5a3a22, 4 + sw * 0.5 - 5, 4 + sh * 0.42 - 6, 10, 4);
       fill(c, 0xf3efe4, 4 + sw * 0.5 - 7, 4 + sh * 0.62, 14, 10);
+    } else if (channel >= 10) {
+      // plano 2, bloco 4: o que passa em cada canal (dois quadros cada)
+      const kind = Math.floor(channel / 10);
+      const k = channel % 2;
+      const X = (f: number) => 4 + sw * f;
+      const Y = (f: number) => 4 + sh * f;
+      if (kind === 1) {
+        // novela: dois rostos de perto, num cenário rosado
+        fill(c, 0xc9878f, 4, 4, sw, sh);
+        fill(c, 0x9c5a68, 4, Y(0.62), sw, sh * 0.38);
+        disc(c, X(k ? 0.36 : 0.32), Y(0.42), 6, 0xe2b08a);
+        fill(c, 0x3b2418, X(k ? 0.36 : 0.32) - 6, Y(0.42) - 7, 12, 4);
+        disc(c, X(0.68), Y(0.45), 6, 0xb07a55);
+        fill(c, 0x1d1410, X(0.68) - 6, Y(0.45) - 7, 12, 5);
+        if (k) disc(c, X(0.36) + 2, Y(0.48), 1, 0x9fd8ff);
+      } else if (kind === 2) {
+        // esporte: campo verde, linhas e a bola
+        fill(c, 0x3f9a46, 4, 4, sw, sh);
+        for (let i = 0; i < 4; i++) fill(c, 0x4caa52, X(i * 0.25), 4, sw * 0.125, sh);
+        fill(c, 0xf3efe4, X(0.5), 4, 1, sh);
+        oval(c, X(0.5), Y(0.5), 6, 5, 0xf3efe4);
+        oval(c, X(0.5), Y(0.5), 5, 4, 0x3f9a46);
+        disc(c, X(k ? 0.66 : 0.3), Y(k ? 0.36 : 0.62), 2.4, 0xffffff);
+        disc(c, X(k ? 0.6 : 0.36), Y(k ? 0.44 : 0.54), 3, 0xd9483f);
+      } else if (kind === 3) {
+        // culinária: azulejo, fogão e a panela soltando vapor
+        fill(c, 0xe7e1cf, 4, 4, sw, sh);
+        for (let y = 4; y < 4 + sh * 0.6; y += 5) for (let x = 4 + ((y / 5) % 2) * 2; x < 4 + sw; x += 5) fill(c, 0xcfc8b2, x, y, 1, 1);
+        fill(c, 0x6d6f74, 4, Y(0.66), sw, sh * 0.34);
+        fill(c, 0x2a2b2f, X(0.3), Y(0.48), sw * 0.4, sh * 0.2);
+        fill(c, 0x9aa2a8, X(0.26), Y(0.46), sw * 0.48, 2);
+        for (let i = 0; i < 3; i++) oval(c, X(0.38 + i * 0.12), Y(k ? 0.3 : 0.34) - i, 2, 3, 0xffffff, 0.7);
+        disc(c, X(0.85), Y(0.4), 4, 0xe2b08a);
+        fill(c, 0xffffff, X(0.85) - 4, Y(0.4) - 8, 8, 4);
+      } else {
+        // desenho: céu roxo e um bichinho amarelo pulando
+        fill(c, 0x7a4fc0, 4, 4, sw, sh);
+        oval(c, X(0.5), 4 + sh, sw * 0.6, sh * 0.3, 0x55c26a);
+        const jy = k ? 0.4 : 0.55;
+        disc(c, X(0.5), Y(jy), 7, 0xf2d43a);
+        disc(c, X(0.46), Y(jy) - 1.5, 1.2, 0x1b1c20);
+        disc(c, X(0.56), Y(jy) - 1.5, 1.2, 0x1b1c20);
+        fill(c, 0xd9483f, X(0.47), Y(jy) + 2, 4, 1);
+        disc(c, X(0.2), Y(0.22), 3, 0xffffff, 0.9);
+      }
     } else {
       const bars = [0xf3efe4, 0xf2c744, 0x4fc3c8, 0x4fa864, 0xc85fb0, 0xd9483f, 0x3f6fb5];
       bars.forEach((b, i) => fill(c, b, 4 + (i * sw) / bars.length, 4, sw / bars.length + 1, sh));
@@ -1932,6 +1977,14 @@ const SPECS: Record<string, Spec> = {
   tvOn0: { w: 96, h: 80, paint: scaled(tvFront(0), 2), grain: 6 },
   tvOn1: { w: 96, h: 80, paint: scaled(tvFront(1), 2), grain: 6 },
   tvOn2: { w: 96, h: 80, paint: scaled(tvFront(2), 2), grain: 6 },
+  tvDrama0: { w: 96, h: 80, paint: scaled(tvFront(10), 2), grain: 6 },
+  tvDrama1: { w: 96, h: 80, paint: scaled(tvFront(11), 2), grain: 6 },
+  tvSport0: { w: 96, h: 80, paint: scaled(tvFront(20), 2), grain: 6 },
+  tvSport1: { w: 96, h: 80, paint: scaled(tvFront(21), 2), grain: 6 },
+  tvCook0: { w: 96, h: 80, paint: scaled(tvFront(30), 2), grain: 6 },
+  tvCook1: { w: 96, h: 80, paint: scaled(tvFront(31), 2), grain: 6 },
+  tvToon0: { w: 96, h: 80, paint: scaled(tvFront(40), 2), grain: 6 },
+  tvToon1: { w: 96, h: 80, paint: scaled(tvFront(41), 2), grain: 6 },
   books: { w: 128, h: 128, paint: books, grain: 5 },
   speakerFront: { w: 64, h: 128, paint: scaled(speakerFront, 2), grain: 4 },
   deckFront: { w: 64, h: 24, paint: scaled(deckFront, 2), grain: 3 },

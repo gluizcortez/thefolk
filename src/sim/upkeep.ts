@@ -111,6 +111,8 @@ export function interactionOpen(obj: WorldObject, it: InteractionDef): boolean {
   if (it.tune === 'on') return !obj.tune && !stateOf(obj).broken;
   if (it.tune === 'next') return !!obj.tune && !stateOf(obj).broken;
   if (it.tune === 'off') return !!obj.tune;
+  // plano 2, bloco 4: desligar a TV só com ela ligada
+  if (it.channel === 'off') return !!obj.channel;
   // bloco 13: cheirar as flores só com a planta adulta e viçosa
   if (it.bloom) return !!obj.plant && obj.plant.growth >= 100 && obj.plant.health >= 70 && obj.plant.water >= 25;
   // bloco 14: lareira: acender só apagada; aquecer-se e abafar só acesa
