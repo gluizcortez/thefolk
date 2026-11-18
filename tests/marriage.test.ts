@@ -293,7 +293,7 @@ describe('cama de casal (bloco 10)', () => {
 
 describe('save v14 (bloco 10)', () => {
   it('save v13 ganha economias dos vizinhos; noivado vai e volta no save', () => {
-    expect(SAVE_VERSION).toBe(14);
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(14);
     const { sim, a, b } = couple(10);
     setBond(sim.world, a.id, b.id, 'engaged');
     const file = serialize(sim.world, 0);
@@ -303,7 +303,7 @@ describe('save v14 (bloco 10)', () => {
     old.version = 13;
     for (const n of old.world.neighbors) delete n.funds;
     const up = deserialize(old, { neighbors: NEIGHBORS, catalog: CATALOG });
-    expect(up.version).toBe(14);
+    expect(up.version).toBe(SAVE_VERSION);
     for (const n of up.world.neighbors) expect(typeof n.funds).toBe('number');
   });
 });

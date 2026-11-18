@@ -1,5 +1,6 @@
 import type { DuoDef, InteractionDef, Needs, ObjectDef, Outfit } from '../sim/types';
 import { clean, lightOff, lightOn, repair, service, tuning } from './interactions';
+import { homework } from './kids';
 
 // Bloco 4: catálogo em faixas de preço. Cada função de necessidade ganha uma
 // versão barata (tier 0) e uma cara (tier 2) ao lado do modelo médio que já
@@ -133,6 +134,7 @@ const stoveUses = (hunger: number, xp: number, fun: number): InteractionDef[] =>
   {
     id: 'cook',
     label: 'act.cook',
+    kids: 'no',
     duration: 45,
     effects: { hunger, fun },
     until: 'hunger',
@@ -173,6 +175,8 @@ const bookUses = (fun: number, xp: number, extra: boolean): InteractionDef[] => 
       { id: 'manual', label: 'act.manual', duration: 60, effects: { fun: 0.1 }, autonomous: false, skill: { id: 'handiness', xpPerMinute: xp * 0.8 } },
     );
   }
+  // bloco 11: o caderno fica na estante; a lição se faz sentado à mesa
+  out.push(homework({ atTable: true }));
   return out;
 };
 

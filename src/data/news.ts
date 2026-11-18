@@ -29,6 +29,10 @@ const list: NewsDef[] = [
   { id: 'wedding', label: 'news.wedding', reputation: 3, opinion: { friendship: 2 }, juicy: 0.65, days: 7 },
   { id: 'divorce', label: 'news.divorce', reputation: -1, juicy: 0.9, days: 8 },
   { id: 'movedOut', label: 'news.movedOut', reputation: 0, juicy: 0.6, days: 5 },
+  // bloco 11: bebês e crianças
+  { id: 'newBaby', label: 'news.newBaby', reputation: 2, opinion: { friendship: 2 }, juicy: 0.6, days: 6 },
+  { id: 'kidTaken', label: 'news.kidTaken', reputation: -5, opinion: { friendship: -3, respect: -4 }, juicy: 0.95, days: 9 },
+  { id: 'boarding', label: 'news.boarding', reputation: -1, opinion: { respect: -1 }, juicy: 0.7, days: 5 },
   { id: 'partyBrawl', label: 'news.partyBrawl', reputation: -3, opinion: { friendship: -2, respect: -1 }, juicy: 0.9, days: 6 },
 ];
 

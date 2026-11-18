@@ -53,7 +53,16 @@ export interface InteractionDef {
    * 'services' = liga para um serviço (`serviceId` da ação); 'payBills' =
    * paga as contas da caixa de correio; 'fair' = compra na feira da rua.
    */
-  special?: 'invite' | 'services' | 'payBills' | 'fair' | 'call' | 'answer' | 'party' | 'buffet' | 'unpack';
+  special?: 'invite' | 'services' | 'payBills' | 'fair' | 'call' | 'answer' | 'party' | 'buffet' | 'unpack' | 'adopt';
+  /**
+   * bloco 11: cuidado com o bebê do berço ('feed' = mamadeira, 'change' =
+   * fralda, 'hold' = colo, 'lull' = ninar). Só adulto, só com bebê no berço.
+   */
+  baby?: BabyCare;
+  /** bloco 11: 'only' = só criança (pião, cavalinho); 'no' = criança não faz (fogão) */
+  kids?: 'only' | 'no';
+  /** bloco 11: lição de casa (só criança com lição pendente) */
+  homework?: boolean;
   /** bloco 10: coisa de casal (cama): chama o par para junto, se ele puder vir */
   couple?: boolean;
   /** bloco 9: petisco da mesa de festa (só com petisco na mesa) */
@@ -117,7 +126,54 @@ export type Outfit = 'day' | 'formal' | 'sleep' | 'swim' | 'work';
 /** O que o folk pode estar vestindo: a roupa de sempre ou o roupão do banho. */
 export type Wear = Outfit | 'bath';
 /** Coisa que aparece na mão do folk. */
-export type HeldProp = 'plate' | 'book' | 'phone' | 'rag' | 'cup' | 'suitcase';
+export type HeldProp = 'plate' | 'book' | 'phone' | 'rag' | 'cup' | 'suitcase' | 'bottle';
+
+// ---------- Bloco 11: bebês, crianças e escola ----------
+
+/** Fase da vida (sem campo = adulto). */
+export type Age = 'baby' | 'child';
+
+export type BabyCare = 'feed' | 'change' | 'hold' | 'lull';
+
+/** Lição de casa: nenhuma, esperando para ser feita, feita. */
+export type Homework = 'none' | 'due' | 'done';
+
+/** O que só bebês e crianças têm. */
+export interface Kid {
+  /** tick em que nasceu (ou chegou) */
+  born: number;
+  /** tick em que o bebê vira criança */
+  grows: number;
+  /** pais (moradores ou vizinhos); vazio = adotado sem pais conhecidos */
+  parents: number[];
+  /** adotado pelo telefone */
+  adopted?: boolean;
+  /** bebê dormindo no berço */
+  asleep?: boolean;
+  /** boletim de 0 a 100 (a tela mostra de 0 a 10) */
+  grade: number;
+  homework: Homework;
+  /** dia em que o ônibus chamou e dia em que foi (ou faltou) */
+  calledDay: number;
+  schoolDay: number;
+  /** dias de aula seguidos com nota no vermelho */
+  lowDays: number;
+  /** minutos de cuidado de cada adulto (id → minutos), para aprender com quem cuida */
+  cares: Record<string, number>;
+  /** minutos de descaso grave acumulados */
+  neglect: number;
+  /** avisos da visitadora social */
+  warned: number;
+  /** a visitadora já foi chamada e está a caminho */
+  worker?: boolean;
+}
+
+/** Bebê a caminho: nasce (ou chega da adoção) no tick `due`. */
+export interface Expecting {
+  parents: number[];
+  due: number;
+  adopted: boolean;
+}
 
 /** Mês de nascimento: temperamento sugerido e com quem combina. */
 export interface MonthDef {
@@ -304,6 +360,8 @@ export interface ObjectDef {
   ring?: boolean;
   /** bloco 10: arco de flores (casamento debaixo dele vale mais) */
   arch?: boolean;
+  /** bloco 11: berço (bebê nasce ou chega só com um berço livre) */
+  crib?: boolean;
 }
 
 export type ObjectLayer = 'wall' | 'floor' | 'ceiling';
@@ -563,6 +621,14 @@ export interface SocialRequires {
   grudge?: boolean;
   /** bloco 10: estágio do namoro entre os dois ('none' = nem namoram) */
   bond?: (Bond | 'none')[];
+  /** bloco 11: quem puxa tem de ser adulto */
+  adult?: boolean;
+  /** bloco 11: o outro tem de ser criança */
+  child?: boolean;
+  /** bloco 11: um dos dois tem de ser criança */
+  kid?: boolean;
+  /** bloco 11: o outro tem lição de casa pendente */
+  homework?: boolean;
 }
 
 /** Bloco 10: estágio de um casal (namoro, noivado, casamento). */
@@ -593,7 +659,7 @@ export interface SocialDef {
   rejectMemory?: { self?: string; target?: string };
   /** a IA pode escolher sozinha (padrão: true) */
   autonomous?: boolean;
-  special?: 'date' | 'moveIn' | 'sendHome' | 'breakUp' | 'gossip' | 'engage' | 'wed' | 'divorce' | 'moveOut';
+  special?: 'date' | 'moveIn' | 'sendHome' | 'breakUp' | 'gossip' | 'engage' | 'wed' | 'divorce' | 'moveOut' | 'tryBaby' | 'helpHomework';
   /** bloco 10: não aparece no menu nem para a IA (votos, só na cerimônia) */
   hidden?: boolean;
   /** bloco 9: a conversa tem assunto (quem ouve reage ao gosto dele) */
@@ -653,6 +719,9 @@ export interface Neighbor {
   funds?: number;
   /** bloco 10: nome de solteiro, quando trocou de sobrenome no casamento */
   bornName?: string;
+  /** bloco 11: criança fora do bairro (colégio interno, levada pela visitadora) */
+  away?: 'boarding' | 'fostered';
+  age?: Age;
 }
 
 export interface Visit {
@@ -677,7 +746,7 @@ export interface Visit {
 // ---------- Bloco 2: despensa, correio e serviços ----------
 
 /** Quem trabalha para a casa: entregador, faxineira, técnico, oficial de penhora. */
-export type ServiceKind = 'courier' | 'maid' | 'repair' | 'bailiff';
+export type ServiceKind = 'courier' | 'maid' | 'repair' | 'bailiff' | 'social';
 
 /** O que dá para pedir pelo telefone. */
 export type ServiceOrder = 'groceries' | 'takeout' | 'maid' | 'repair';
@@ -854,6 +923,8 @@ export interface WorldObject {
   tune?: string;
   /** bloco 9: petiscos na mesa de festa */
   snacks?: number;
+  /** bloco 11: bebê que dorme neste berço */
+  baby?: number;
 }
 
 export interface ObjectState {
@@ -888,7 +959,7 @@ export type ActionPhase = 'queued' | 'walking' | 'using';
  * 'social' = puxar conversa com `otherId`; 'listen' = dar atenção a quem puxou;
  * 'leave' = visita indo embora.
  */
-export type ActionKind = 'use' | 'goto' | 'work' | 'social' | 'listen' | 'leave' | 'tidy' | 'door' | 'circle';
+export type ActionKind = 'use' | 'goto' | 'work' | 'social' | 'listen' | 'leave' | 'tidy' | 'door' | 'circle' | 'school';
 
 export interface Action {
   id: number;
@@ -984,6 +1055,9 @@ export interface Folk {
   blocked?: number;
   /** bloco 10: nome de solteiro, quando trocou de sobrenome no casamento */
   bornName?: string;
+  /** bloco 11: bebê ou criança (sem campo = adulto) */
+  age?: Age;
+  kid?: Kid;
 }
 
 /** Aparência: índices nas paletas da arte. */
@@ -1116,6 +1190,8 @@ export interface Household {
   lightMinutes: number;
   /** bloco 8: recompensas de carreira liberadas no catálogo (ids de objeto) */
   unlocked: string[];
+  /** bloco 11: bebê a caminho */
+  expecting?: Expecting | null;
 }
 
 export interface LogEntry {

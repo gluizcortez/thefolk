@@ -124,7 +124,7 @@ export function firstBillAfter(tick: number): number {
 
 /** Despensa, correio e serviços de uma casa nova (bloco 2). */
 export function freshHousehold(pantry: number): Omit<World['household'], 'funds' | 'nextBills'> {
-  return { lastBill: 0, pantry, takeout: 0, bills: [], orders: [], maid: false, paperDay: -1, readDay: -1, lightMinutes: 0, unlocked: [] };
+  return { lastBill: 0, pantry, takeout: 0, bills: [], orders: [], maid: false, paperDay: -1, readDay: -1, lightMinutes: 0, unlocked: [], expecting: null };
 }
 
 /** Vizinhos com ids novos a partir de `nextId`. */
@@ -145,7 +145,8 @@ export function seedNeighbors(seeds: NeighborSeed[], nextId: number): Neighbor[]
 
 /** Vizinhos que só prestam serviço não aparecem sem avisar nem viram colegas. */
 export function isServiceNeighbor(n: Neighbor): boolean {
-  return n.service !== undefined;
+  // bloco 11: criança no colégio interno (ou levada pela visitadora) também não aparece
+  return n.service !== undefined || n.away !== undefined;
 }
 
 /**

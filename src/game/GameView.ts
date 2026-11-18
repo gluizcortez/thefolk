@@ -46,8 +46,9 @@ import { wearOf } from '../sim/family';
 import { thoughtOf } from '../sim/will';
 import { reactionTo } from '../sim/topics';
 import { stationDef } from '../sim/music';
-import type { Look, UniformDef, Wear } from '../sim/types';
-import { ridesWaiting, uniformOf, vehicleOf } from '../sim/career';
+import type { Age, Look, UniformDef, Wear } from '../sim/types';
+import { SCHOOL_BUS, ridesWaiting, uniformOf, vehicleOf } from '../sim/career';
+import { cribOf } from '../sim/kids';
 import { buildVehicle, vehicleLength } from './art/vehicles';
 import type { VehicleModel } from './art/vehicles';
 import { buildScenery } from './art/scenery';
@@ -82,6 +83,13 @@ const ANIMS: Record<string, FolkAnim> = {
   'mirror:practice': 'talk',
   'telescope:stargaze': 'reach',
   'punchbag:punch': 'argue',
+  // bloco 11
+  'crib:feedBaby': 'reach',
+  'crib:changeBaby': 'scrub',
+  'crib:holdBaby': 'cradle',
+  'crib:lullBaby': 'cradle',
+  'dollhouse:playHouse': 'reach',
+  'spintop:spinTop': 'reach',
 };
 
 /** Cuidados com a casa: a mesma animação em qualquer objeto. */
@@ -140,8 +148,8 @@ interface Hover {
   folk?: Folk;
 }
 
-function lookKey(look: Look, wear: Wear, uniform?: UniformDef): string {
-  return `${JSON.stringify(look)}|${wear}|${uniform ? JSON.stringify(uniform) : ''}`;
+function lookKey(look: Look, wear: Wear, uniform?: UniformDef, age?: Age): string {
+  return `${JSON.stringify(look)}|${wear}|${uniform ? JSON.stringify(uniform) : ''}|${age ?? ''}`;
 }
 
 /** Bloco 8: uma carona na rua. */
@@ -378,7 +386,7 @@ export class GameView {
     const world = this.ctrl.world;
     for (const folk of world.folks) {
       if (this.folks.has(folk.id)) continue;
-      const model = new FolkModel(folk.look, wearOf(folk), this.uniformFor(folk));
+      const model = new FolkModel(folk.look, wearOf(folk), this.uniformFor(folk), folk.age);
       model.group.userData.folkId = folk.id;
       const zzz: THREE.Sprite[] = [];
       for (let i = 0; i < 3; i++) {
@@ -397,7 +405,7 @@ export class GameView {
         zzz,
         icon,
         iconKey: 'soc:friendly',
-        lookKey: lookKey(folk.look, wearOf(folk), this.uniformFor(folk)),
+        lookKey: lookKey(folk.look, wearOf(folk), this.uniformFor(folk), folk.age),
         gestureOf: -1,
         gestureT: 99,
       });
@@ -868,6 +876,40 @@ export class GameView {
     }
   }
 
+  /**
+   * Bloco 11: onde o bebê aparece. No colo de quem está pegando (na altura do
+   * peito, atravessado nos braços); senão, deitado no colchão do berço.
+   */
+  private babyPlace(baby: Folk): { place: { x: number; y: number; z: number; heading: number } } | null {
+    const world = this.ctrl.world;
+    const crib = cribOf(world, baby);
+    if (!crib) return null;
+    for (const f of world.folks) {
+      const a = f.queue[0];
+      if (a?.phase !== 'using' || a.objectId !== crib.id) continue;
+      const it = this.ctrl.sim.interactionOf(a);
+      if (it?.baby !== 'hold' && it?.baby !== 'lull') continue;
+      const holder = this.folks.get(f.id)?.model.group;
+      if (!holder) continue;
+      const h = holder.rotation.y;
+      const fwdX = Math.sin(h);
+      const fwdZ = Math.cos(h);
+      // os pés do bebê vão para um lado e a cabeça para o outro, nos braços
+      return {
+        place: {
+          x: holder.position.x + fwdX * 0.26 - fwdZ * 0.3,
+          y: 0.98 + Math.sin(this.animTime * (it.baby === 'lull' ? 2.4 : 1.2)) * 0.02,
+          z: holder.position.z + fwdZ * 0.26 + fwdX * 0.3,
+          heading: h - Math.PI / 2,
+        },
+      };
+    }
+    const entry = this.objects.get(crib.id);
+    const anchor = entry?.spec.lie;
+    if (!entry || !anchor) return null;
+    return { place: this.anchorToWorld(entry, anchor) };
+  }
+
   /** Bloco 8: uniforme de quem está de roupa de trabalho (e tem emprego). */
   private uniformFor(folk: Folk): UniformDef | undefined {
     return folk.outfit === 'work' && folk.job ? uniformOf(this.ctrl.sim.catalog, folk.job) : undefined;
@@ -900,7 +942,7 @@ export class GameView {
       if (f.away) this.wasAway.add(f.id);
       else if (this.wasAway.has(f.id)) {
         this.wasAway.delete(f.id);
-        const v = f.job && vehicleOf(catalog, f.job);
+        const v = f.age === 'child' ? SCHOOL_BUS : f.job && vehicleOf(catalog, f.job);
         if (v) this.spawnRide(`back:${f.id}:${world.tick}`, v, stopX, 'in', laneZ);
       }
     }
@@ -1020,10 +1062,10 @@ export class GameView {
     // bloco 5: trocou de roupa (pijama, roupão, guarda-roupa): monta o modelo de novo
     const wear = wearOf(folk, it);
     const uniform = wear === 'work' ? this.uniformFor(folk) : undefined;
-    const key = lookKey(folk.look, wear, uniform);
+    const key = lookKey(folk.look, wear, uniform, folk.age);
     if (key !== view.lookKey) {
       const old = view.model;
-      const fresh = new FolkModel(folk.look, wear, uniform);
+      const fresh = new FolkModel(folk.look, wear, uniform, folk.age);
       fresh.group.userData.folkId = folk.id;
       fresh.group.position.copy(old.group.position);
       fresh.group.rotation.copy(old.group.rotation);
@@ -1044,7 +1086,16 @@ export class GameView {
     let onObject = false;
     const social = it ? undefined : this.socialLook(folk);
 
-    if (folk.collapsed > 0) {
+    if (folk.age === 'baby') {
+      // bloco 11: o bebê fica deitado no berço, ou no colo de quem pegou
+      const baby = this.babyPlace(folk);
+      if (baby) {
+        place = baby.place;
+        onObject = true;
+      }
+      anim = 'sleep';
+      expr = folk.thought?.kind === 'want' ? 'sad' : folk.kid?.asleep ? undefined : 'happy';
+    } else if (folk.collapsed > 0) {
       anim = 'collapsed';
       place = { x: fx, y: 0.12, z: fz + 0.8, heading: 0 };
     } else if (it && entry) {
@@ -1147,7 +1198,8 @@ export class GameView {
 
     const head = view.model.headTop(this.tmp);
     // bloco 10: deitado abraçadinho não está dormindo (sem os Zs)
-    const asleep = (anim === 'sleep' && !it?.couple) || anim === 'collapsed';
+    // bloco 11: bebê deitado só ronca quando dorme de verdade
+    const asleep = folk.age === 'baby' ? !!folk.kid?.asleep : (anim === 'sleep' && !it?.couple) || anim === 'collapsed';
     view.zzz.forEach((s, i) => {
       s.visible = asleep;
       if (!asleep) return;

@@ -1,4 +1,5 @@
 import { MINUTES_PER_DAY } from './clock';
+import { SCHOOL_BUS_LEAVES, SCHOOL_CALL } from './kids';
 import { skillLevel } from './skills';
 import { relationOf } from './relations';
 import type { CareerDef, CareerLevel, Catalog, Folk, Job, Needs, UniformDef, VehicleDef, World } from './types';
@@ -123,6 +124,16 @@ export interface Ride {
  * embarca (o turno fica resolvido).
  */
 export function rideFor(catalog: Catalog, folk: Folk, tick: number): Ride | null {
+  // bloco 11: o ônibus da escola espera a criança chamada hoje
+  if (folk.age === 'child' && folk.kid && !folk.away && !folk.visit) {
+    const kid = folk.kid;
+    const day = Math.floor(tick / MINUTES_PER_DAY);
+    if (kid.calledDay !== day || kid.schoolDay === day) return null;
+    const arrived = day * MINUTES_PER_DAY + SCHOOL_CALL;
+    const leaves = day * MINUTES_PER_DAY + SCHOOL_BUS_LEAVES;
+    if (tick < arrived || tick > leaves) return null;
+    return { folkId: folk.id, careerId: 'school', vehicle: SCHOOL_BUS, arrived, leaves };
+  }
   const job = folk.job;
   const level = job && levelOfJob(catalog, job);
   if (!job || !level || folk.away || folk.visit) return null;
@@ -135,6 +146,9 @@ export function rideFor(catalog: Catalog, folk: Folk, tick: number): Ride | null
   if (tick < arrived || tick > leaves) return null;
   return { folkId: folk.id, careerId: job.careerId, vehicle, arrived, leaves };
 }
+
+/** Bloco 11: o ônibus escolar (amarelo com faixa preta e placa no teto). */
+export const SCHOOL_BUS: VehicleDef = { kind: 'minibus', color: 0xf2b632, stripe: 0x1f1f24, roof: 'sign' };
 
 /** Todas as caronas na calçada agora. */
 export function ridesWaiting(world: World, catalog: Catalog): Ride[] {

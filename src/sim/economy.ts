@@ -85,6 +85,9 @@ export function reachable(nav: Nav, from: Vec): Set<number> {
 
 /** Algum objeto está sendo usado ou é o destino da ação atual de alguém? */
 export function objectBusy(world: World, objectId: number): boolean {
+  // bloco 11: berço com bebê dentro não se vende, não se move e não se penhora
+  const obj = world.objects.find((o) => o.id === objectId);
+  if (obj?.baby !== undefined && world.folks.some((f) => f.id === obj.baby)) return true;
   return world.folks.some((f) => {
     const a = f.queue[0];
     return a?.phase === 'using' && (a.objectId === objectId || a.eatAt === objectId);

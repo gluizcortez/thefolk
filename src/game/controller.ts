@@ -71,6 +71,21 @@ const NOTICES: [string, string][] = [
   ['log.proposalRefused', 'no'],
   ['log.movedOut', 'house'],
   ['log.movedOutMoney', 'house'],
+  // bloco 11: bebês, crianças e escola
+  ['log.babyComing', 'heart'],
+  ['log.babyBorn', 'heart'],
+  ['log.babyAdopted', 'heart'],
+  ['log.babyWaiting', 'no'],
+  ['log.babyCries', 'social'],
+  ['log.grewUp', 'spark'],
+  ['log.missedSchool', 'alarm'],
+  ['log.reportCard', 'book'],
+  ['log.honorRoll', 'spark'],
+  ['log.gradeWarn', 'book'],
+  ['log.toBoarding', 'no'],
+  ['log.socialComing', 'house'],
+  ['log.socialWarned', 'no'],
+  ['log.socialTook', 'no'],
 ];
 
 /** Ícone do cartão de aviso para esta linha do log (null = aviso passageiro). */
@@ -143,7 +158,7 @@ export class GameController {
 
   /** Passa a seleção para o próximo morador (tecla Tab). */
   selectNext(): void {
-    const list = this.sim.residents();
+    const list = this.sim.household();
     if (list.length < 2) return;
     const i = list.findIndex((f) => f.id === this.selectedFolkId);
     this.selectedFolkId = list[(i + 1) % list.length].id;

@@ -43,7 +43,8 @@ export type SfxName =
   | 'punch'
   | 'yawn'
   | 'alarm'
-  | 'honk';
+  | 'honk'
+  | 'cry';
 
 /** Sons que duram enquanto a ação dura. */
 export type LoopName = 'water' | 'sizzle' | 'tv' | 'typing' | 'scrub' | 'clink' | 'pedal' | 'game' | 'bubbles' | 'saw';
@@ -413,6 +414,10 @@ export class AudioEngine {
           this.blip(t + at, 'square', 392, len, 0.05, d);
           this.blip(t + at, 'square', 494, len, 0.04, d);
         }
+        break;
+      case 'cry':
+        // bloco 11: choro de bebê, três "uêê" descendo
+        [0, 0.5, 1].forEach((at, i) => this.blip(t + at, 'triangle', 640 - i * 30, 0.4, 0.06, d, 420));
         break;
     }
   }

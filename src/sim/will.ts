@@ -1,3 +1,4 @@
+import { SCHOOL_ALARM_LEAD, nextSchoolCall } from './kids';
 import { CALL_AHEAD, nextShift } from './career';
 import { MINUTES_PER_DAY } from './clock';
 import { NEED_MAX, moodOf } from './needs';
@@ -43,6 +44,14 @@ const NIGHT_PRESSURE = 0.35;
 
 /** Tick em que o despertador toca antes do próximo turno (null = sem turno nas próximas 20 h). */
 export function wakeTime(catalog: Catalog, folk: Folk, tick: number): number | null {
+  // bloco 11: criança acorda para pegar o ônibus da escola
+  if (folk.age === 'child') {
+    const call = nextSchoolCall(tick);
+    if (call < 0) return null;
+    const wake = call - SCHOOL_ALARM_LEAD;
+    return wake - tick > 20 * 60 ? null : wake;
+  }
+  if (folk.age === 'baby') return null;
   const shift = nextShift(catalog, folk, tick);
   if (!shift) return null;
   const wake = shift.start - ALARM_LEAD;

@@ -31,3 +31,4 @@ export * from './topics';
 export * from './circles';
 export * from './cliques';
 export * from './marriage';
+export * from './kids';

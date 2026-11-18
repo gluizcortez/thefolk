@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { ball, box, colorMat, cyl, loft, rbox, rod, texMat } from './build';
 import type { Ring } from './build';
-import { PAL, SHIRT, SKIN, shade } from './palette';
+import { PAL, SHIRT, SKIN, mix, shade } from './palette';
 import { faceTextureName, getTexture } from './textures';
 import type { Expression } from './textures';
-import type { HeldProp, Look, UniformDef, Wear } from '../../sim/types';
+import type { Age, HeldProp, Look, UniformDef, Wear } from '../../sim/types';
 
 // Folk em 3D: um adulto de proporção realista (cerca de sete cabeças de
 // altura), modelado com cascas suaves para tronco, braços e pernas, roupa e
@@ -33,7 +33,9 @@ export type FolkAnim =
   | 'argue'
   // bloco 6: recusa (cruza os braços e balança a cabeça) e comemoração (desejo cumprido)
   | 'refuse'
-  | 'cheer';
+  | 'cheer'
+  // bloco 11: bebê no colo (braços dobrados na frente, embalando)
+  | 'cradle';
 
 export type FolkLook = Look;
 
@@ -63,6 +65,9 @@ export interface FolkFrame {
 }
 
 export const FOLK_HEIGHT = 1.8;
+/** bloco 11: tamanho da criança e do bebê em relação ao adulto */
+export const CHILD_SCALE = 0.64;
+export const BABY_SCALE = 0.4;
 const HIPS_Y = 0.9;
 const THIGH = 0.42;
 const SHIN = 0.41;
@@ -309,6 +314,18 @@ function poseFor(anim: FolkAnim, t: number, mood: number, energy = 100): Pose {
       p.torsoZ = 0.03 * Math.sin(t * 1.5);
       break;
     }
+    case 'cradle': {
+      p.torsoX -= 0.06;
+      p.armLX = -0.75;
+      p.armRX = -0.55;
+      p.armLOut = -0.2;
+      p.armROut = -0.32;
+      p.elbowL = -1.35;
+      p.elbowR = -1.5;
+      p.headX += 0.32;
+      p.torsoY = 0.12 * Math.sin(t * 1.4);
+      break;
+    }
     case 'kiss': {
       p.torsoX += 0.2;
       p.headX += 0.14;
@@ -394,6 +411,8 @@ export class FolkModel {
   private cup = new THREE.Group();
   /** bloco 10: mala na mão de quem se muda e aliança no dedo */
   private bag = new THREE.Group();
+  /** bloco 11: mamadeira na mão de quem alimenta o bebê */
+  private bottle = new THREE.Group();
   private ring = new THREE.Group();
   private faceMat: THREE.MeshPhongMaterial;
   private faceKey = '';
@@ -406,6 +425,8 @@ export class FolkModel {
     private readonly look: FolkLook,
     readonly wear: Wear = 'day',
     uniform?: UniformDef,
+    /** bloco 11: bebê (enrolado na manta) ou criança (menor, cabeça maior) */
+    readonly age?: Age,
   ) {
     const skinColor = SKIN[look.skin % SKIN.length];
     const skin = texMat(`skin:${look.skin % SKIN.length}`, { gloss: 0.12 });
@@ -643,7 +664,15 @@ export class FolkModel {
           box(0.085, 0.02, 0.43, colorMat(0x3a2418), 0, -FOREARM - 0.2, 0.02),
         );
         this.bag.visible = false;
-        fore.add(this.rag, this.cup, this.bag);
+        // bloco 11: mamadeira de bico para cima
+        this.bottle.add(
+          cyl(0.026, 0.026, 0.11, 10, colorMat(0xf4efdf, { gloss: 0.9 }), 0, -FOREARM - 0.14, 0.05),
+          cyl(0.028, 0.028, 0.02, 10, colorMat(0x7ec8e3, { gloss: 0.6 }), 0, -FOREARM - 0.035, 0.05),
+          ball(0.012, 0.022, 0.012, colorMat(0xd9a273, { gloss: 0.5 }), 0, -FOREARM - 0.005, 0.05, 6),
+        );
+        this.bottle.rotation.x = 0.6;
+        this.bottle.visible = false;
+        fore.add(this.rag, this.cup, this.bag, this.bottle);
       } else {
         // bloco 10: aliança dourada no anelar da mão esquerda
         const band = new THREE.Mesh(new THREE.TorusGeometry(0.013, 0.005, 5, 10), colorMat(PAL.brass, { gloss: 1 }));
@@ -738,6 +767,18 @@ export class FolkModel {
     this.blob.renderOrder = 1;
 
     this.group.add(this.body, this.blob);
+    // bloco 11: criança é menor e de cabeça maior; bebê vem enrolado na manta
+    if (age === 'child') {
+      this.group.scale.setScalar(CHILD_SCALE);
+      this.head.scale.setScalar(1.22);
+    } else if (age === 'baby') {
+      this.group.scale.setScalar(BABY_SCALE);
+      this.head.scale.setScalar(1.6);
+      this.legL.visible = false;
+      this.legR.visible = false;
+      const blanket = texMat('duvet', { color: mix(0xffffff, SHIRT[look.shirt % SHIRT.length], 0.45) });
+      this.hips.add(ball(0.2, 0.5, 0.17, blanket, 0, -0.32, 0, 12), ball(0.21, 0.12, 0.18, blanket, 0, 0.12, 0, 12));
+    }
     this.group.traverse((o) => {
       if (o instanceof THREE.Mesh && o !== this.blob) o.castShadow = true;
     });
@@ -755,7 +796,7 @@ export class FolkModel {
   /** Posição do alto da cabeça no mundo (para o balão de pensamento). */
   headTop(out: THREE.Vector3): THREE.Vector3 {
     this.head.getWorldPosition(out);
-    out.y += 0.38;
+    out.y += 0.38 * Math.max(0.55, this.group.scale.y);
     return out;
   }
 
@@ -802,6 +843,7 @@ export class FolkModel {
     this.rag.visible = hold === 'rag';
     this.cup.visible = hold === 'cup';
     this.bag.visible = hold === 'suitcase';
+    this.bottle.visible = hold === 'bottle';
     this.ring.visible = !!f.ring;
     const lying = f.anim === 'sleep' || f.anim === 'collapsed';
     this.blob.visible = f.anim !== 'sleep' && f.anim !== 'sit';

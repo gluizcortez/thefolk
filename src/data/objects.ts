@@ -3,6 +3,7 @@ import type { ObjectDef } from '../sim/types';
 import { admire, clean, dishes, lightOff, lightOn, repair, service, tuning } from './interactions';
 import { FURNITURE } from './furniture';
 import { REWARDS } from './rewards';
+import { KID_OBJECTS, homework } from './kids';
 
 // Catálogo de objetos. Tudo aqui é dado: para criar um objeto novo, adicione
 // uma entrada, os textos em i18n e (opcional) um modelo em game/art/furniture.ts
@@ -247,6 +248,8 @@ const list: ObjectDef[] = [
         autonomous: false,
         skill: { id: 'handiness', xpPerMinute: 0.8 },
       },
+      // bloco 11: pega o caderno na estante e senta à mesa, se houver
+      homework({ atTable: true }),
     ],
   },
   {
@@ -311,6 +314,17 @@ const list: ObjectDef[] = [
         autonomous: false,
         residentOnly: true,
         special: 'services',
+      },
+      {
+        // bloco 11: adotar um bebê pela agência (precisa de um berço livre)
+        id: 'adopt',
+        label: 'act.adopt',
+        duration: 15,
+        effects: { social: 0.6 },
+        autonomous: false,
+        residentOnly: true,
+        special: 'adopt',
+        hold: 'phone',
       },
     ],
   },
@@ -450,6 +464,7 @@ const list: ObjectDef[] = [
     interactions: [
       {
         id: 'cook',
+        kids: 'no',
         atTable: true,
         hold: 'plate',
         label: 'act.cook',
@@ -574,6 +589,7 @@ const list: ObjectDef[] = [
         autonomous: false,
         skill: { id: 'creativity', xpPerMinute: 1 },
       },
+      homework({ pose: 'sit' }),
       {
         id: 'freelance',
         label: 'act.freelance',
@@ -896,4 +912,4 @@ const list: ObjectDef[] = [
   },
 ];
 
-export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries([...list, ...FURNITURE, ...REWARDS].map((o) => [o.id, o]));
+export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries([...list, ...FURNITURE, ...REWARDS, ...KID_OBJECTS].map((o) => [o.id, o]));

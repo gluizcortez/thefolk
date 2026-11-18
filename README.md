@@ -421,6 +421,34 @@ npm run preview  # serve o dist/ localmente
   Dormir na mesma cama também aproxima o casal e deixa a lembrança da primeira
   noite. Conversas novas de casal: aconchego, falar manso, massagem nos
   ombros e dançar coladinho.
+- **Bebês (bloco 11)**: compre um berço (260 ⟡, categoria camas). Um casal
+  que mora junto e namora com romance 45+ pode "Tentar ter um bebê"; se der
+  certo, o painel mostra "bebê a caminho" e ele chega umas 20 horas depois,
+  direto no berço. Pelo telefone dá para adotar (250 ⟡, a assistente traz o
+  bebê às 10h do dia seguinte). O bebê não anda nem recebe ordens: chora
+  quando tem fome, está sujo ou quer companhia, e no berço aparecem "Dar
+  mamadeira", "Trocar fralda", "Pegar no colo" e "Ninar". Adultos com vontade
+  própria cuidam sozinhos, e o choro acorda alguém de noite. Depois de três
+  dias ele vira criança.
+- **Descaso (bloco 11)**: bebê ou criança com fome ou sujeira no fundo por
+  muito tempo chama a visitadora social. Na primeira visita ela avisa; na
+  segunda, leva a criança embora.
+- **Crianças e escola (bloco 11)**: criança é menor, não cozinha, não
+  trabalha, não namora. Nos dias úteis o ônibus escolar amarelo para na
+  calçada das 7h às 7h40; quem perde o ônibus falta e a nota cai. Na volta,
+  às 15h, há lição de casa (mesa com estante de livros ou escrivaninha) que
+  um adulto pode "Ajudar na lição". O boletim (0 a 10) sobe com lição feita e
+  humor bom e desce com lição esquecida e falta; sai toda sexta. Nota 8,5+
+  dá quadro de honra; nota abaixo de 2,5 por cinco dias manda a criança para
+  o colégio interno.
+- **Brinquedos (bloco 11)**: casinha de bonecas (criatividade, qualquer um
+  brinca), pião (jeito) e cavalinho de balanço (preparo), os dois últimos só
+  de criança.
+- **Herança e convivência (bloco 11)**: o bebê nasce com o temperamento
+  médio dos pais mais um empurrão aleatório, e traços e aparência de um ou
+  do outro. Aos domingos, quem mais cuidou da criança na semana (colo,
+  mamadeira, conversa, lição) passa para ela um ponto do eixo em que mais
+  diferem.
 
 ## Deploy na Vercel
 
@@ -460,6 +488,7 @@ src/
     rooms.ts        bloco 3: cômodos, nota de ambiente, luz do dia e das luminárias, nome do cômodo
     furnish.ts      bloco 4: faixas, depreciação, objeto querido, lugar à mesa, atividades a dois
     marriage.ts     bloco 10: noivado, casamento, sobrenome, economias e mudança
+    kids.ts         bloco 11: idade, bebê, herança, cuidados, escola e boletim
     build.ts        modo construção: planos de obra, custo, validação, desfazer
   data/       conteúdo como dados: objetos (com preço e categoria), pisos,
               revestimentos e preço de parede, porta e janela (build.ts), traços,
@@ -634,6 +663,16 @@ Decisões principais do núcleo:
   por `audio/cues.ts`. As vagas ficam em `platform/slots.ts` (atrás de
   `SaveBackend`; o IndexedDB é `idbBackend` em `saveStore.ts`), com
   exportar/importar; os cartões Jogos e Som estão em `ui/system.ts`.
+- **Bebês e crianças (bloco 11)** moram em `sim/kids.ts` (regras puras:
+  necessidades do bebê, herança, horário da escola, nota). `Folk` ganhou
+  `age` ('baby' | 'child'; adulto não tem) e `kid` (nascimento, quando cresce,
+  pais, nota, lição, cuidados por cuidador, descaso e aviso); `Household`,
+  `expecting`; `WorldObject`, `baby` (o bebê no berço); `Neighbor`, `away`
+  ('boarding' | 'fostered') e `age`. `Sim.residents()` não conta bebês;
+  `household()` conta todos e `adults()` só adultos. Interações com `baby`
+  (cuidado no berço), `kids` ('only' | 'no') e `homework`; conversas
+  `tryBaby` e `helpHomework`; serviço `social` (visitadora). A ida à escola é
+  um `away` com ação `school`, e a carona é o ônibus `SCHOOL_BUS`.
 - **Vida a dois (bloco 10)** mora em `sim/marriage.ts` (estágio do casal,
   sobrenome, economias, móveis da mudança, lugar livre perto). `Relation`
   ganhou `bond` ('engaged' | 'married', com `dating` ainda true) e `ex`;
@@ -718,6 +757,8 @@ Decisões principais do núcleo:
 - **Carreira nova**: `src/data/careers.ts` (cargos com pagamento, horário, dias
   e exigências) e os nomes em i18n.
 - **Ritmo das necessidades**: `src/data/needs.ts`.
+- **Brinquedo novo**: `src/data/kids.ts` (`kids: 'only'` deixa só para
+  criança) e o modelo em `src/game/art/kids.ts`.
 - **Casa inicial**: `src/data/house.ts` (mapa em texto, portas, janelas e objetos). Duas
   letras com o mesmo `room` formam um cômodo só, sem parede entre elas: é assim
   que a cozinha fica aberta para a sala com outro piso.
@@ -810,7 +851,23 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
   com cerimônia e sobrenome, morar junto com economias, mala e móveis,
   mudar alguém para fora, divórcio com divisão do dinheiro, cama de casal
   com deitar abraçadinho e conversas de casal (save v14).
-- Próximo: bloco 11, bebês, crianças e escola.
+- **Bloco 11 (feito)**: bebê por tentativa do casal ou adoção, berço com
+  mamadeira, fralda, colo e ninar, choro que acorda, visitadora social,
+  criança menor com escola, ônibus, lição, boletim e colégio interno,
+  brinquedos e temperamento herdado e aprendido (save v15).
+- Próximo: bloco 12, andares, escadas e telhado.
+
+## Limitações conhecidas do bloco 11
+
+- O criador de família não cria crianças; elas só chegam por bebê ou adoção.
+- Criança não envelhece até o bloco 17, e bebê vira criança sempre em três
+  dias.
+- A escola é fora da tela (como o trabalho); não há amigos de escola nem
+  visitas de colegas.
+- Quem vai para o colégio interno ou é levado pela visitadora vira vizinho
+  ausente e não volta.
+- O bebê no colo é preso ao braço por posição fixa; de alguns ângulos fica
+  um pouco à frente do corpo.
 
 ## Limitações conhecidas do bloco 10
 

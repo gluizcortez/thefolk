@@ -12,7 +12,7 @@ import { seedInterests } from './topics';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 14;
+export const SAVE_VERSION = 15;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -219,6 +219,14 @@ const migrations: Record<number, Migration> = {
   13: (save) => {
     const world = { ...(save.world as Obj) } as unknown as World;
     world.neighbors = (world.neighbors ?? []).map((n) => ({ ...n, funds: savingsOf(n) }));
+    return { ...save, world: world as unknown as Obj };
+  },
+  // bloco 11: bebês, crianças e escola. Ninguém da casa vira criança; a casa
+  // ganha o campo do bebê a caminho e o bairro, a visitadora social.
+  14: (save, ctx) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    world.household = { ...world.household, expecting: world.household?.expecting ?? null };
+    addMissingNeighbors(world, ctx);
     return { ...save, world: world as unknown as Obj };
   },
 };

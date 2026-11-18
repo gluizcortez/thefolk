@@ -97,6 +97,10 @@ import {
   ringOnLot,
   surname,
   weddingNames,
+  NEGLECT_VISIT,
+  gradeBand,
+  gradeText,
+  kidAllows,
 } from '../sim';
 import type {
   Action,
@@ -234,6 +238,9 @@ export class Hud {
   private needRows = new Map<NeedId, NeedRow>();
   private nameEl = el('div', 'folk-name');
   private traitsEl = el('div', 'folk-traits');
+  /** bloco 11: bebê (cresce quando, chorando), criança (boletim, lição) e bebê a caminho */
+  private kidEl = el('div', 'kid-line');
+  private kidSig = '';
   private moodWord = el('span', 'mood-word');
   /** bloco 3: o cômodo onde o folk está, com nota e luz */
   private roomEl = el('div', 'room-line');
@@ -481,7 +488,7 @@ export class Hud {
       this.panelButtons.set(id, b);
       tabs.append(b);
     }
-    body.append(this.nameEl, this.traitsEl, mood, this.wishesEl, auto, tabs);
+    body.append(this.nameEl, this.traitsEl, this.kidEl, mood, this.wishesEl, auto, tabs);
     card.append(face, body);
     this.root.append(card);
   }
@@ -586,6 +593,39 @@ export class Hud {
     this.wishesEl.append(row, spark);
   }
 
+  /**
+   * Bloco 11: linha de família no cartão: o bebê (quando vira criança, se
+   * está chorando ou dormindo, descaso), a criança (boletim e lição) e o
+   * bebê a caminho da casa.
+   */
+  private renderKid(folk: Folk): void {
+    const world = this.ctrl.world;
+    const lines: { text: string; tip?: string; warn?: boolean }[] = [];
+    const kid = folk.kid;
+    if (folk.age === 'baby' && kid) {
+      const state = kid.asleep ? t('kid.asleep') : folk.thought?.kind === 'want' ? t('kid.crying') : t('kid.calm');
+      lines.push({ text: `${t('kid.baby', { when: whenText(kid.grows) })} · ${state}` });
+    } else if (folk.age === 'child' && kid) {
+      const band = t(`grade.band.${gradeBand(kid.grade)}`);
+      const low = kid.lowDays > 0 ? ` · ${t('kid.low', { n: kid.lowDays })}` : '';
+      lines.push({ text: `${t('kid.grade', { grade: gradeText(kid.grade), band })} · ${t(`kid.homework.${kid.homework}`)}${low}`, tip: t('kid.gradeTip'), warn: kid.lowDays > 0 });
+      if (folk.away) lines.push({ text: t('kid.atSchool') });
+    }
+    if (kid && kid.neglect >= 30) lines.push({ text: t('kid.neglect', { n: Math.round(kid.neglect), max: NEGLECT_VISIT }), warn: true });
+    if (kid && kid.warned > 0) lines.push({ text: t('kid.warned'), warn: true });
+    const exp = world.household.expecting;
+    if (exp) lines.push({ text: t('hud.expecting', { when: whenText(exp.due) }) });
+    const sig = JSON.stringify(lines);
+    if (sig === this.kidSig) return;
+    this.kidSig = sig;
+    this.kidEl.replaceChildren(...lines.map((l) => {
+      const d = el('div', `kid-row${l.warn ? ' warn' : ''}`, l.text);
+      if (l.tip) d.title = l.tip;
+      return d;
+    }));
+    this.kidEl.hidden = lines.length === 0;
+  }
+
   private showNotice(text: string, icon: string): void {
     const card = el('div', 'card notice');
     const ic = el('span', 'notice-icon');
@@ -647,7 +687,7 @@ export class Hud {
     this.speedButtons.forEach((b, i) => b.classList.toggle('on', i === world.speed));
 
     this.nameEl.textContent = folk.name;
-    const traitText = folk.traits.map((id) => t(`trait.${id}`)).join(' · ');
+    const traitText = [...(folk.age ? [t(`age.${folk.age}`)] : []), ...folk.traits.map((id) => t(`trait.${id}`))].join(' · ');
     if (this.traitsEl.textContent !== traitText) this.traitsEl.textContent = traitText;
     this.autonomyInput.checked = folk.autonomy;
 
@@ -675,6 +715,8 @@ export class Hud {
     }
 
     this.renderRoom(folk);
+    this.renderKid(folk);
+    this.wishesEl.hidden = folk.age === 'baby';
     this.renderWishes(folk);
     this.renderQueue();
     this.renderWorkEvent();
@@ -737,7 +779,7 @@ export class Hud {
     }
     this.queueEl.parentElement!.hidden = false;
     if (folk.away) {
-      this.queueEl.append(el('div', 'queue-empty', t('queue.away', { time: formatClock(folk.away.until) })));
+      this.queueEl.append(el('div', 'queue-empty', t(folk.kid ? 'queue.school' : 'queue.away', { time: formatClock(folk.away.until) })));
       return;
     }
     if (folk.collapsed > 0) {
@@ -811,6 +853,9 @@ export class Hud {
     const world = this.ctrl.world;
     const shown = def.interactions.filter((it) => {
       if (it.hidden) return false;
+      // bloco 11: o que a idade deixa (e o berço só oferece cuidado com bebê dentro)
+      if (!kidAllows(folk, it)) return false;
+      if (it.baby) return interactionOpen(obj, it);
       if (it.care) return careAvailable(obj, it);
       // bloco 7: ligar, trocar e desligar o som só quando faz sentido
       if (it.tune) return interactionOpen(obj, it);
@@ -1350,7 +1395,8 @@ export class Hud {
 
   private renderHousehold(): void {
     const sim = this.ctrl.sim;
-    const residents = sim.residents();
+    // bloco 11: bebês aparecem na família também
+    const residents = sim.household();
     const sel = this.ctrl.folk.id;
     const sig = residents
       .map((f) => {
@@ -1709,10 +1755,44 @@ export class Hud {
       });
       tabs.append(b);
     }
+    // bloco 11: criança não trabalha; vai à escola
+    const folk = this.ctrl.folk;
+    if (folk.age) {
+      this.renderSchool(folk);
+      return;
+    }
     this.panelEl.append(tabs);
     if (this.jobTab === 'gigs') this.renderGigs();
     else if (this.jobTab === 'business') this.renderBusiness();
     else this.renderEmployment();
+  }
+
+  /** Bloco 11: o painel de trabalho da criança é a escola (e do bebê, nada). */
+  private renderSchool(folk: Folk): void {
+    const box = el('div', 'job-box');
+    const kid = folk.kid;
+    if (folk.age === 'child' && kid) {
+      const band = t(`grade.band.${gradeBand(kid.grade)}`);
+      box.append(
+        el('div', 'job-title', t('hud.school')),
+        el('div', 'job-career', t('kid.grade', { grade: gradeText(kid.grade), band })),
+        el('div', 'job-line', t('kid.school')),
+        el('div', 'job-line', t(`kid.homework.${kid.homework}`)),
+        el('div', 'job-line', t('kid.gradeTip')),
+      );
+      const perf = el('div', 'perf');
+      const track = el('div', 'perf-track');
+      const fill = el('div', 'perf-fill');
+      fill.style.width = `${Math.round(kid.grade)}%`;
+      fill.style.left = '0';
+      fill.classList.toggle('neg', kid.grade < 25);
+      track.append(fill);
+      perf.append(track);
+      box.append(perf);
+    } else if (kid) {
+      box.append(el('div', 'job-title', t('age.baby')), el('div', 'job-line', t('kid.baby', { when: whenText(kid.grows) })));
+    }
+    this.panelEl.append(box);
   }
 
   private refreshPanel(): void {

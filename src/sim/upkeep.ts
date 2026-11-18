@@ -94,6 +94,8 @@ export function careAvailable(obj: WorldObject, it: InteractionDef): boolean {
 /** Dá para usar esta interação agora? Objeto quebrado só aceita cuidado. */
 export function interactionOpen(obj: WorldObject, it: InteractionDef): boolean {
   if (it.care) return careAvailable(obj, it);
+  // bloco 11: cuidado com bebê só com um bebê no berço
+  if (it.baby) return obj.baby !== undefined && !stateOf(obj).broken;
   // bloco 3: o interruptor só oferece o que muda alguma coisa
   if (it.light === 'on') return !obj.lit && !stateOf(obj).broken;
   if (it.light === 'off') return !!obj.lit;

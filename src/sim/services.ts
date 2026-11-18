@@ -56,6 +56,7 @@ export const RING_WAIT: Record<ServiceKind | 'guest', number> = {
   maid: 15,
   repair: 15,
   bailiff: 0,
+  social: 0,
 };
 /** jornais velhos acumulados na calçada, no máximo */
 const MAX_PAPERS = 4;
@@ -540,7 +541,8 @@ export interface HouseOption {
  * quando a despensa acaba, comprar na feira, pagar as contas.
  */
 export function houseOptions(world: World, catalog: Catalog, folk: Folk): HouseOption[] {
-  if (folk.visit) return [];
+  // bloco 11: compras, feira e contas são coisa de adulto
+  if (folk.visit || folk.age !== undefined) return [];
   const house = world.household;
   const out: HouseOption[] = [];
   const hungry = 1 - folk.needs.hunger / NEED_MAX;

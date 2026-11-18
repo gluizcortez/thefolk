@@ -98,6 +98,13 @@ export function actionSound(def: ObjectDef | undefined, it: InteractionDef): Act
       return { loop: 'pedal' };
     case 'water':
       return { start: 'splash' };
+    // bloco 11
+    case 'feedBaby':
+      return { loop: 'clink' };
+    case 'changeBaby':
+      return { start: 'thunk', loop: 'scrub' };
+    case 'homework':
+      return { start: 'page' };
   }
   if (SILENT.has(it.id) || it.pose === 'dance' || it.pose === 'lie' || it.pose === 'sit') return null;
   return { start: 'click' };
@@ -137,6 +144,18 @@ export function logSound(key: string): SfxName | null {
     'log.repaired': 'hammer',
     'log.groceriesIn': 'door',
     'log.takeoutIn': 'door',
+    // bloco 11
+    'log.babyCries': 'cry',
+    'log.babyBorn': 'fanfare',
+    'log.babyAdopted': 'fanfare',
+    'log.grewUp': 'chime',
+    'log.schoolBus': 'honk',
+    'log.reportCard': 'mail',
+    'log.honorRoll': 'fanfare',
+    'log.homeworkDone': 'page',
+    'log.socialTook': 'sad',
+    'log.toBoarding': 'sad',
+    'log.missedSchool': 'sad',
   };
   return map[key] ?? null;
 }

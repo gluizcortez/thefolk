@@ -108,6 +108,7 @@ import { addMemory, affinity, applyDelta, coolRelations, ensureRelation, relatio
 import { skillLevel, trainSkill } from './skills';
 import { HABIT_PERIOD_DAYS, countHabit, settleHabits } from './temper';
 import {
+  MAX_SPARK,
   THINK_EVERY,
   INSPIRED_TRAINING,
   inspire,
@@ -206,6 +207,43 @@ import {
 } from './marriage';
 import type { Outfit, Party, SurnameChoice, Wedding } from './types';
 import {
+  ADOPT_FEE,
+  ADOPT_HOUR,
+  CARE_BELOW,
+  CARE_NEED,
+  CRY_BELOW,
+  EXPECT_HOURS,
+  HELP_CARE,
+  HONOR_AT,
+  MISSED_SCHOOL,
+  NEGLECT_VISIT,
+  SCHOOL_BUS_LEAVES,
+  SCHOOL_CALL,
+  SCHOOL_END,
+  SCHOOL_LUNCH,
+  TRY_CHANCE,
+  babyIn,
+  babyTick,
+  babyWant,
+  babyCareTick,
+  childNeglectTick,
+  clampGrade,
+  createBaby,
+  cribOf,
+  crying,
+  dayOf,
+  freeCrib,
+  gradeBand,
+  gradeText,
+  gradeVerdict,
+  isSchoolDay,
+  kidAllows,
+  kidsOf,
+  learnFromCaregiver,
+  schoolDelta,
+} from './kids';
+import type { BabyCare, Expecting } from './types';
+import {
   SEAT_REACH,
   TABLE_BONUS,
   TABLE_COMPANY,
@@ -264,7 +302,11 @@ export type CommandProblem =
   | 'noRing'
   | 'notEngaged'
   | 'alreadyEngaged'
-  | 'lastResident';
+  | 'lastResident'
+  | 'baby'
+  | 'tooYoung'
+  | 'noCrib'
+  | 'expecting';
 
 /** Resultado de uma conversa, para a tela mostrar o que mudou (não vai no save). */
 export interface SocialOutcome {
@@ -492,7 +534,15 @@ export class Sim {
         // convites e serviços passam pelos comandos 'invite' e 'callService'
         if (!folk || !obj || !def || !it || it.special === 'invite' || it.special === 'services' || it.special === 'party' || it.hidden) return false;
         if (folk.visit && (it.residentOnly || (it.cost ?? 0) > 0 || it.care)) return this.fail('visitor');
-        if (!interactionOpen(obj, it)) return this.fail(it.care || it.light ? 'nothingToDo' : 'broken');
+        // bloco 11: idade (bebê, criança no fogão, lição sem lição, brinquedo de criança)
+        if (folk.age === 'baby') return this.fail('baby');
+        if (!kidAllows(folk, it)) return this.fail(it.homework ? 'nothingToDo' : 'tooYoung');
+        if (it.special === 'adopt') {
+          if (this.world.household.expecting) return this.fail('expecting');
+          if (this.household().length >= MAX_RESIDENTS) return this.fail('houseFull');
+          if (!freeCrib(this.world, this.catalog)) return this.fail('noCrib');
+        }
+        if (!interactionOpen(obj, it)) return this.fail(it.care || it.light || it.baby ? 'nothingToDo' : 'broken');
         if (!interactionReady(this.world, it)) {
           return this.fail(it.special === 'payBills' ? 'noBills' : it.special === 'fair' ? 'closed' : it.night ? 'daytime' : 'noFood');
         }
@@ -544,7 +594,13 @@ export class Sim {
         if (other.visit && !other.visit.admitted) return this.fail('atDoor');
         if (!onLot(other) || !socialAllowed(this.world, this.catalog, def, folk, other)) return this.fail('socialNotNow');
         if (def.hidden) return false;
-        if (def.special === 'moveIn' && this.residents().length >= MAX_RESIDENTS) return this.fail('houseFull');
+        if (def.special === 'moveIn' && this.household().length >= MAX_RESIDENTS) return this.fail('houseFull');
+        // bloco 11: bebê precisa de berço livre, um de cada vez
+        if (def.special === 'tryBaby') {
+          if (this.world.household.expecting) return this.fail('expecting');
+          if (this.household().length >= MAX_RESIDENTS) return this.fail('houseFull');
+          if (!freeCrib(this.world, this.catalog)) return this.fail('noCrib');
+        }
         // bloco 10: pedido precisa de aliança; ninguém sai se for o último da casa
         if (def.special === 'engage') {
           if (!ringOnLot(this.world, this.catalog)) return this.fail('noRing');
@@ -552,7 +608,7 @@ export class Sim {
             return this.fail('alreadyEngaged');
           }
         }
-        if (def.special === 'moveOut' && this.residents().length < 2) return this.fail('lastResident');
+        if (def.special === 'moveOut' && (this.adults().length < 2 || other.age !== undefined)) return this.fail('lastResident');
         // bloco 9: "puxar assunto" escolhe o assunto do papo
         const topic = def.topic && cmd.topic && this.catalog.topics[cmd.topic] ? cmd.topic : undefined;
         return this.enqueuePlayer(folk, { kind: 'social', otherId: other.id, socialId: def.id, topic });
@@ -588,6 +644,7 @@ export class Sim {
         const folk = this.findFolk(cmd.folkId);
         if (!folk) return false;
         if (folk.visit) return this.fail('visitor');
+        if (folk.age !== undefined) return this.fail('tooYoung');
         if (this.world.party) return this.fail('partyOn');
         const guests = [...new Set(cmd.guestIds)].filter((id) => {
           const n = this.world.neighbors.find((x) => x.id === id);
@@ -636,6 +693,7 @@ export class Sim {
         const career = this.catalog.careers[cmd.careerId];
         if (!folk || !career) return false;
         if (folk.visit) return this.fail('visitor');
+        if (folk.age !== undefined) return this.fail('tooYoung');
         if (folk.away) return this.fail('away');
         if (folk.job?.careerId === cmd.careerId) return false;
         if (folk.business) return this.fail('hasBusiness');
@@ -669,6 +727,7 @@ export class Sim {
         const def = offer && this.catalog.gigs[offer.defId];
         if (!folk) return false;
         if (folk.visit) return this.fail('visitor');
+        if (folk.age !== undefined) return this.fail('tooYoung');
         if (!offer || !def) return this.fail('offerGone');
         if (folk.gig) return this.fail('hasGig');
         if (!gigAllowed(folk, def)) return this.fail('skillTooLow');
@@ -690,6 +749,7 @@ export class Sim {
         const def = this.catalog.businesses[cmd.businessId];
         if (!folk || !def) return false;
         if (folk.visit) return this.fail('visitor');
+        if (folk.age !== undefined) return this.fail('tooYoung');
         if (folk.away) return this.fail('away');
         if (folk.business) return this.fail('hasBusiness');
         if (this.world.household.funds < def.cost) return this.fail('funds');
@@ -913,6 +973,8 @@ export class Sim {
 
   private enqueuePlayer(folk: Folk, partial: ActionSeed): boolean {
     if (folk.visit) return this.fail('visitor');
+    // bloco 11: bebê não recebe ordens (quem cuida dele é a casa, pelo berço)
+    if (folk.age === 'baby') return this.fail('baby');
     if (folk.away) return this.fail('away');
     if (folk.collapsed > 0) return this.fail('collapsed');
     // ordem do jogador passa por cima do que o folk fazia por conta própria
@@ -946,19 +1008,26 @@ export class Sim {
     // bloco 9: telefone tocando e festa
     this.stepPhone();
     this.stepParty();
+    // bloco 11: bebê a caminho, visitadora social
+    this.stepFamily();
     if (minute === COOL_HOUR * 60) {
       coolRelations(world);
       // fofoca anda pela vizinhança; namoros apagados terminam
       spreadNews(world, this.catalog, this.logger);
       dailyHearts(world, this.catalog, this.logger);
       // bloco 8: no domingo de madrugada a vida corre nos lugares de trabalho
-      if (Math.floor(world.tick / MINUTES_PER_DAY) % 7 === 6) staffShuffle(world, this.catalog, this.logger);
+      if (Math.floor(world.tick / MINUTES_PER_DAY) % 7 === 6) {
+        staffShuffle(world, this.catalog, this.logger);
+        // bloco 11: no domingo a criança pega um pouco do jeito de quem mais cuidou dela
+        for (const kid of kidsOf(world, 'child')) this.learnFromCare(kid);
+      }
     }
     if (minute === BOARD_HOUR * 60) refreshBoard(world, this.catalog);
     if (minute === 0 && Math.floor(world.tick / MINUTES_PER_DAY) % HABIT_PERIOD_DAYS === 0) this.settleTempers();
     this.stepVisits();
     for (const folk of world.folks) {
       this.stepJob(folk);
+      if (folk.age === 'child' && !folk.visit) this.stepSchool(folk);
       if (folk.gig) checkGigDeadline(world, this.catalog, this.logger, folk);
       if (folk.business && minute === BUSINESS_CLOSE_HOUR * 60) settleBusiness(world, this.catalog, this.logger, folk);
       this.stepFolk(folk);
@@ -978,9 +1047,19 @@ export class Sim {
     }
   }
 
-  /** Quem mora na casa (não conta visitas). */
+  /** Quem mora na casa e anda pela casa (não conta visitas nem bebês no berço). */
   residents(): Folk[] {
+    return this.world.folks.filter((f) => !f.visit && f.age !== 'baby');
+  }
+
+  /** Bloco 11: todo mundo da casa, bebês incluídos (para o limite de moradores e a tela). */
+  household(): Folk[] {
     return this.world.folks.filter((f) => !f.visit);
+  }
+
+  /** Bloco 11: adultos da casa. */
+  adults(): Folk[] {
+    return this.world.folks.filter((f) => !f.visit && f.age === undefined);
   }
 
   /** Lê e esvazia os resultados de conversa desde a última chamada. */
@@ -1103,6 +1182,7 @@ export class Sim {
     else if (it.special === 'party' && action.guests) this.resolveParty(folk, action.guests, action.wedding);
     else if (it.special === 'buffet') this.setBuffet(folk, action);
     else if (it.special === 'unpack') this.unpack(folk, action);
+    else if (it.special === 'adopt') this.adopt(folk);
   }
 
   // ---------- trabalho ----------
@@ -1194,8 +1274,13 @@ export class Sim {
     }
     // ninguém desmaia no serviço: chega em casa no bagaço, mas chega
     folk.needs.energy = Math.max(3, folk.needs.energy);
-    this.stepWorkEvent(folk);
-    if (this.world.tick >= away.until) this.comeHome(folk);
+    // bloco 11: na escola tem merenda
+    if (folk.age === 'child') folk.needs.hunger = Math.max(folk.needs.hunger, SCHOOL_LUNCH);
+    else this.stepWorkEvent(folk);
+    if (this.world.tick >= away.until) {
+      if (folk.age === 'child') this.backFromSchool(folk);
+      else this.comeHome(folk);
+    }
   }
 
   /** Eventos do expediente: começa na hora sorteada; sem escolha do jogador, o folk decide. */
@@ -1300,6 +1385,10 @@ export class Sim {
   private stepFolk(folk: Folk): void {
     folk.px = folk.x;
     folk.py = folk.y;
+    if (folk.age === 'baby') {
+      this.stepBaby(folk);
+      return;
+    }
 
     if (folk.away) {
       this.stepAway(folk);
@@ -1378,7 +1467,7 @@ export class Sim {
     const asleep = !!using && isSleep(using);
     if (asleep) {
       // o despertador toca antes do turno; quem dorme sem ele acorda quando a energia enche
-      if (folk.alarm && folk.job && wakeTime(this.catalog, folk, tick) === tick) {
+      if (folk.alarm && (folk.job || folk.age === 'child') && wakeTime(this.catalog, folk, tick) === tick) {
         this.finish(folk);
         folk.idleTicks = IDLE_BEFORE_AUTO;
         setThought(folk, 'alarm', 'alarm', tick, 6);
@@ -1503,6 +1592,9 @@ export class Sim {
     // bloco 9: atender o telefone e entrar (ou puxar) uma roda de conversa
     if (this.answerPhoneIfRinging(folk)) return;
     if (this.circleWish(folk)) return;
+    // bloco 11: bebê chorando chama os adultos; criança com lição vai fazer
+    if (this.babyWish(folk)) return;
+    if (this.homeworkWish(folk)) return;
     const choice = chooseAutonomous(this.world, this.catalog, folk, this.nav);
     if (!choice) return;
     if (choice.socialId !== undefined) {
@@ -1600,6 +1692,10 @@ export class Sim {
       }
       if (action.kind === 'work') {
         this.depart(folk);
+        return;
+      }
+      if (action.kind === 'school') {
+        this.departSchool(folk);
         return;
       }
       if (action.kind === 'leave') {
@@ -1719,6 +1815,16 @@ export class Sim {
         return;
       }
       applyEffects(folk, it);
+      // bloco 11: cuidar do bebê do berço (termina quando o que ele pedia encheu)
+      if (it.baby) {
+        const crib = this.findObject(action.objectId!);
+        const baby = crib && babyIn(this.world, crib);
+        if (!baby || babyCareTick(baby, it.baby, folk.id)) {
+          if (baby) this.babyCared(folk, baby, it.baby);
+          this.finish(folk);
+          return;
+        }
+      }
       this.soundTick(folk, action, it);
       if (!folk.visit) wishOnUse(this.world, this.catalog, this.logger, folk, it);
       const used = this.findObject(action.objectId!);
@@ -1756,6 +1862,11 @@ export class Sim {
         if (it.dress && folk.outfit !== it.dress) {
           folk.outfit = it.dress;
           if (!folk.visit) this.log('log.dressed', { name: folk.name, outfit: `outfit.${it.dress}` });
+        }
+        // bloco 11: lição feita conta no boletim de amanhã
+        if (it.homework && folk.kid?.homework === 'due') {
+          folk.kid.homework = 'done';
+          this.log('log.homeworkDone', { name: folk.name });
         }
         if (it.special === 'invite' && action.otherId !== undefined) this.resolveInvite(folk, action.otherId);
         else if (it.special) this.resolveHouseSpecial(folk, it, action);
@@ -1913,7 +2024,7 @@ export class Sim {
   }
 
   private planPath(folk: Folk, action: Action) {
-    if (action.kind === 'work' || action.kind === 'leave') return findPath(this.nav, folk, this.world.exit);
+    if (action.kind === 'work' || action.kind === 'leave' || action.kind === 'school') return findPath(this.nav, folk, this.world.exit);
     if (action.kind === 'goto') {
       return action.target ? findPath(this.nav, folk, action.target) : null;
     }
@@ -2140,6 +2251,10 @@ export class Sim {
     }
     if (mem?.target) addMemory(world, this.catalog, other.id, folk.id, mem.target);
     if (ok && def.special) this.socialSpecial(folk, other, def.special);
+    // bloco 11: adulto que dá atenção à criança conta como quem cuida dela
+    if (ok && def.category === 'friendly' && other.kid && folk.age === undefined) {
+      other.kid.cares[folk.id] = (other.kid.cares[folk.id] ?? 0) + def.duration;
+    }
     if (!ok && def.special === 'engage') this.proposalRefused(folk, other);
     if (!folk.visit) wishOnTalk(world, this.catalog, this.logger, folk, other.id, def, ok);
     if (!other.visit) wishOnTalk(world, this.catalog, this.logger, other, folk.id, def, ok);
@@ -2190,8 +2305,17 @@ export class Sim {
       this.marry(folk, other);
     } else if (special === 'divorce') {
       this.divorce(folk, other);
+    } else if (special === 'tryBaby') {
+      this.tryBaby(folk, other);
+    } else if (special === 'helpHomework') {
+      if (other.kid?.homework === 'due') {
+        other.kid.homework = 'done';
+        other.kid.cares[folk.id] = (other.kid.cares[folk.id] ?? 0) + HELP_CARE;
+        other.skills.logic = (other.skills.logic ?? 0) + 20;
+        this.log('log.helpedHomework', names);
+      }
     } else if (special === 'moveOut') {
-      if (other.visit || this.residents().length < 2) return;
+      if (other.visit || other.age !== undefined || this.adults().length < 2) return;
       createNews(this.world, this.catalog, this.logger, 'movedOut', other.id, folk.id, onLotWitnesses(this.world, folk, [folk.id, other.id]));
       this.moveOut(other, 0);
     }
@@ -2205,7 +2329,7 @@ export class Sim {
    */
   private moveIn(other: Folk, host: Folk): boolean {
     const names = { name: host.name, other: other.name };
-    if (!other.visit || this.residents().length >= MAX_RESIDENTS) {
+    if (!other.visit || this.household().length >= MAX_RESIDENTS) {
       this.log('log.houseFull', names);
       return false;
     }
@@ -2261,7 +2385,7 @@ export class Sim {
    */
   private moveOut(folk: Folk, money: number): boolean {
     const world = this.world;
-    if (folk.visit || folk.away || this.residents().length < 2) return false;
+    if (folk.visit || folk.away || folk.age !== undefined || this.adults().length < 2) return false;
     const c = circleOfFolk(world, folk.id);
     if (c) this.dropFromCircle(folk, c, true);
     const take = Math.max(0, Math.min(money, world.household.funds));
@@ -2342,7 +2466,7 @@ export class Sim {
     const outsider = [folk, other].find((f) => f.visit);
     if (outsider) {
       const resident = outsider === folk ? other : folk;
-      if (this.residents().length < MAX_RESIDENTS) {
+      if (this.household().length < MAX_RESIDENTS) {
         if (outsider.visit) outsider.visit.party = false;
         this.moveIn(outsider, resident);
       } else this.log('log.marriedApart', { name: outsider.name });
@@ -2624,6 +2748,10 @@ export class Sim {
       this.stepBailiff(folk);
       return;
     }
+    if (sv.kind === 'social') {
+      this.stepSocialWorker(folk);
+      return;
+    }
     const tooLong = sv.kind === 'maid' && this.world.tick - sv.started >= MAID.hours * 60;
     const task = tooLong ? null : serviceTask(this.world, this.catalog, folk, this.nav);
     if (task) {
@@ -2844,8 +2972,10 @@ export class Sim {
       gig: null,
       business: null,
       // bloco 2: todo mundo toca a campainha, menos o oficial de penhora
-      visit: { until, leaving: false, hostId, admitted: service?.kind === 'bailiff', rang: -1, service },
+      visit: { until, leaving: false, hostId, admitted: service?.kind === 'bailiff' || service?.kind === 'social', rang: -1, service },
     };
+    // bloco 11: criança da vizinhança vem como criança
+    if (n.age) folk.age = n.age;
     world.folks.push(folk);
   }
 
@@ -3595,6 +3725,385 @@ export class Sim {
     for (const g of guests) this.startLeaving(g);
     for (const f of world.folks) if (f.visit?.party) f.visit.party = false;
     world.pendingVisits = world.pendingVisits.filter((v) => !v.party);
+  }
+
+  // ---------- bloco 11: bebês, crianças e escola ----------
+
+  /** Bebê a caminho nasce (ou chega da agência); descaso grave chama a visitadora social. */
+  private stepFamily(): void {
+    const world = this.world;
+    const exp = world.household.expecting;
+    if (exp && world.tick >= exp.due) this.deliverBaby(exp);
+    for (const kid of kidsOf(world)) {
+      const k = kid.kid!;
+      if (k.worker || k.neglect < NEGLECT_VISIT) continue;
+      const n = serviceNeighbor(world, 'social');
+      if (!n || !this.spawnService('social', null, 0)) continue;
+      const worker = this.findFolk(n.id);
+      if (worker?.visit?.service) worker.visit.service.target = kid.id;
+      k.worker = true;
+      this.log('log.socialComing', { name: n.name, kid: kid.name });
+    }
+  }
+
+  /** O bebê chega ao berço livre; sem berço (ou casa cheia), espera e a casa é lembrada. */
+  private deliverBaby(exp: Expecting): void {
+    const world = this.world;
+    const crib = freeCrib(world, this.catalog);
+    if (!crib || this.household().length >= MAX_RESIDENTS) {
+      exp.due = world.tick + 60;
+      if (clockOf(world.tick).hour === 9) this.log('log.babyWaiting');
+      return;
+    }
+    world.household.expecting = null;
+    const parents = exp.parents
+      .map((id) => this.findFolk(id) ?? world.neighbors.find((n) => n.id === id))
+      .filter((p): p is Folk | Neighbor => !!p);
+    const baby = createBaby(world, this.catalog, parents, crib, exp.adopted);
+    const names = parents.map((p) => p.name.split(' ')[0]);
+    this.log(exp.adopted ? 'log.babyAdopted' : 'log.babyBorn', { name: baby.name, parents: names.join(' e ') });
+    if (parents[0]) createNews(world, this.catalog, this.logger, 'newBaby', parents[0].id, parents[1]?.id ?? 0);
+  }
+
+  /** O casal tentou: às vezes vem bebê (nasce no dia seguinte, no berço livre). */
+  private tryBaby(folk: Folk, other: Folk): void {
+    const world = this.world;
+    const names = { name: folk.name, other: other.name };
+    if (world.household.expecting || !freeCrib(world, this.catalog) || this.household().length >= MAX_RESIDENTS) {
+      this.log('log.babyNoCrib', names);
+      return;
+    }
+    if (nextFloat(world) >= TRY_CHANCE) {
+      this.log('log.babyNotYet', names);
+      return;
+    }
+    world.household.expecting = { parents: [folk.id, other.id], due: world.tick + EXPECT_HOURS * 60, adopted: false };
+    this.log('log.babyComing', names);
+  }
+
+  /** Ligou para a agência: paga a taxa e o bebê chega amanhã de manhã. */
+  private adopt(folk: Folk): void {
+    const world = this.world;
+    const house = world.household;
+    if (house.expecting || !freeCrib(world, this.catalog) || this.household().length >= MAX_RESIDENTS) {
+      this.log('log.adoptNo', { name: folk.name });
+      return;
+    }
+    if (house.funds < ADOPT_FEE) {
+      this.log('log.noMoney', { name: folk.name });
+      return;
+    }
+    house.funds -= ADOPT_FEE;
+    const spouse = spouseOf(world, folk.id);
+    const parents = spouse && this.findFolk(spouse) && !this.findFolk(spouse)!.visit ? [folk.id, spouse] : [folk.id];
+    const day = dayOf(world.tick) + 1;
+    house.expecting = { parents, due: day * MINUTES_PER_DAY + ADOPT_HOUR * 60, adopted: true };
+    this.log('log.adoptCalled', { name: folk.name, fee: formatMoney(ADOPT_FEE) });
+  }
+
+  /** Um minuto do bebê no berço: necessidades, sono, choro e crescer. */
+  private stepBaby(baby: Folk): void {
+    const world = this.world;
+    const kid = baby.kid;
+    if (!kid) {
+      delete baby.age;
+      return;
+    }
+    const tick = world.tick;
+    const crib = cribOf(world, baby);
+    if (crib) {
+      baby.x = baby.px = crib.x;
+      baby.y = baby.py = crib.y;
+    }
+    const held = !!crib && world.folks.some((f) => {
+      const a = f.queue[0];
+      return a?.phase === 'using' && a.objectId === crib.id && this.interactionOf(a)?.baby === 'hold';
+    });
+    const before = { hunger: baby.needs.hunger, hygiene: baby.needs.hygiene, social: baby.needs.social };
+    babyTick(baby, held);
+    if (crying(baby)) {
+      const want = babyWant(baby)!;
+      const need = CARE_NEED[want];
+      if (baby.thought?.icon !== need || tick >= baby.thought.until - 1) setThought(baby, 'want', need, tick, 15);
+      // o choro começa: avisa uma vez
+      if ((Object.keys(before) as (keyof typeof before)[]).some((k) => before[k] >= CRY_BELOW && baby.needs[k] < CRY_BELOW)) {
+        this.log('log.babyCries', { name: baby.name, need: `cry.${need}` });
+      }
+      if ((tick - kid.born) % 30 === 0) this.wakeForBaby(baby);
+    } else if (baby.thought?.kind === 'want') {
+      baby.thought = null;
+    }
+    if (tick >= kid.grows) this.growUp(baby);
+  }
+
+  /** Bebê chorando com a casa toda dormindo: acorda o adulto mais descansado. */
+  private wakeForBaby(baby: Folk): void {
+    const adults = this.adults().filter((a) => !a.away && a.collapsed === 0);
+    if (adults.length === 0 || adults.some((a) => !this.sleeping(a))) return;
+    const best = adults.filter((a) => a.needs.energy >= 40).sort((a, b) => b.needs.energy - a.needs.energy || a.id - b.id)[0];
+    if (!best) return;
+    this.finish(best);
+    best.idleTicks = IDLE_BEFORE_AUTO;
+    this.log('log.babyWokeUp', { name: best.name, kid: baby.name });
+  }
+
+  /** Terminou um cuidado: o bebê para de chorar. */
+  private babyCared(_folk: Folk, baby: Folk, _care: BabyCare): void {
+    if (baby.thought?.kind === 'want') baby.thought = null;
+  }
+
+  /** Bloco 11: um adulto à toa vai cuidar do bebê que precisa (chorando, sempre). */
+  private babyWish(folk: Folk): boolean {
+    if (folk.visit || folk.age !== undefined) return false;
+    const world = this.world;
+    let best: { crib: WorldObject; care: BabyCare; v: number } | null = null;
+    for (const baby of kidsOf(world, 'baby')) {
+      const crib = cribOf(world, baby);
+      if (!crib) continue;
+      const taken = world.folks.some((f) => f !== folk && f.queue.some((a) => a.objectId === crib.id && !!this.interactionOf(a)?.baby));
+      if (taken) continue;
+      const care = babyWant(baby, CARE_BELOW);
+      if (!care || (baby.kid!.asleep && (care === 'hold' || care === 'lull'))) continue;
+      const v = baby.needs[CARE_NEED[care]];
+      if (!best || v < best.v) best = { crib, care, v };
+    }
+    if (!best) return false;
+    const cry = best.v < CRY_BELOW;
+    // quem está apertado resolve o seu primeiro
+    if (folk.needs.bladder < (cry ? 8 : 20) || folk.needs.hunger < (cry ? 5 : 15)) return false;
+    const p = cry ? 1 : Math.max(0.1, 0.3 + 0.05 * (folk.temper.warmth - 5));
+    if (nextFloat(world) >= p) return false;
+    const it = this.defOf(best.crib)?.interactions.find((i) => i.baby === best!.care);
+    if (!it) return false;
+    folk.queue.push(this.makeAction({ kind: 'use', objectId: best.crib.id, interactionId: it.id }, 'auto'));
+    return true;
+  }
+
+  /** Bloco 11: criança com lição pendente vai fazer (quem tem mais Ordem vai antes). */
+  private homeworkWish(folk: Folk): boolean {
+    if (folk.age !== 'child' || folk.visit || folk.kid?.homework !== 'due') return false;
+    const world = this.world;
+    const hour = clockOf(world.tick).hour;
+    if (hour < 15 || hour >= 22) return false;
+    if (folk.needs.hunger < 25 || folk.needs.bladder < 25 || folk.needs.energy < 20) return false;
+    const p = 0.12 + 0.03 * (folk.temper.order - 5) + (hour >= 19 ? 0.2 : 0);
+    if (nextFloat(world) >= p) return false;
+    let best: { obj: WorldObject; it: InteractionDef; d: number } | null = null;
+    for (const obj of world.objects) {
+      const it = this.defOf(obj)?.interactions.find((i) => i.homework);
+      if (!it || !interactionOpen(obj, it) || this.usingCount(obj.id, folk) >= (this.defOf(obj)!.slots ?? 1)) continue;
+      const d = Math.abs(obj.x - folk.x) + Math.abs(obj.y - folk.y);
+      if (!best || d < best.d) best = { obj, it, d };
+    }
+    if (!best || refusal(this.catalog, folk, best.it, world.tick)) return false;
+    folk.queue.push(this.makeAction({ kind: 'use', objectId: best.obj.id, interactionId: best.it.id }, 'auto'));
+    return true;
+  }
+
+  /** O bebê vira criança: sai do berço, anda, brinca e vai começar a escola. */
+  private growUp(baby: Folk): void {
+    const crib = cribOf(this.world, baby);
+    if (crib) delete crib.baby;
+    const kid = baby.kid!;
+    baby.age = 'child';
+    baby.autonomy = true;
+    kid.asleep = false;
+    kid.homework = 'none';
+    kid.neglect = 0;
+    for (const id of NEED_IDS) baby.needs[id] = Math.max(baby.needs[id], id === 'ambience' ? baby.needs[id] : 60);
+    baby.thought = null;
+    const spot = this.freeTileNear(crib ?? baby);
+    baby.x = baby.px = spot.x;
+    baby.y = baby.py = spot.y;
+    baby.facing = { x: 0, y: 1 };
+    this.log('log.grewUp', { name: baby.name });
+    this.learnFromCare(baby);
+  }
+
+  /** Um tile livre perto (para quem sai do berço). */
+  private freeTileNear(at: Vec): Vec {
+    for (let r = 1; r <= 6; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.abs(dx) + Math.abs(dy) !== r) continue;
+          const x = at.x + dx;
+          const y = at.y + dy;
+          if (this.nav.isFree(x, y) && !this.world.folks.some((f) => !f.away && f.x === x && f.y === y)) return { x, y };
+        }
+      }
+    }
+    return { ...this.world.exit };
+  }
+
+  /** A criança pega um ponto do temperamento de quem mais cuidou dela. */
+  private learnFromCare(kid: Folk): void {
+    const r = learnFromCaregiver(this.world, kid);
+    if (r) this.log('log.learnedFrom', { name: kid.name, other: this.nameOfPerson(r.from), axis: `temper.${r.axis}` });
+  }
+
+  /** Bloco 11: o ônibus da escola nos dias de aula; quem não embarca falta. */
+  private stepSchool(folk: Folk): void {
+    const kid = folk.kid;
+    if (!kid || folk.away) return;
+    childNeglectTick(folk);
+    const tick = this.world.tick;
+    const day = dayOf(tick);
+    if (!isSchoolDay(day)) return;
+    const minute = tick - day * MINUTES_PER_DAY;
+    if (minute === SCHOOL_CALL && kid.calledDay !== day) {
+      kid.calledDay = day;
+      if (folk.collapsed === 0) {
+        folk.queue = folk.queue.filter((a) => a.source !== 'auto');
+        const cur = folk.queue[0];
+        if (cur) cur.phase = 'queued';
+        folk.path = [];
+        folk.queue.unshift(this.makeAction({ kind: 'school' }, 'player'));
+        if (folk.queue.length > MAX_QUEUE) folk.queue.length = MAX_QUEUE;
+        if (folk.outfit === 'sleep') folk.outfit = 'day';
+      }
+      this.log('log.schoolBus', { name: folk.name });
+    }
+    if (kid.calledDay === day && kid.schoolDay !== day && minute > SCHOOL_BUS_LEAVES) {
+      kid.schoolDay = day;
+      if (folk.queue[0]?.kind === 'school') folk.path = [];
+      folk.queue = folk.queue.filter((a) => a.kind !== 'school');
+      kid.grade = clampGrade(kid.grade - MISSED_SCHOOL);
+      this.log('log.missedSchool', { name: folk.name });
+      this.checkGrade(folk);
+    }
+  }
+
+  /** Chegou à calçada a tempo: embarca no ônibus. */
+  private departSchool(folk: Folk): void {
+    const kid = folk.kid;
+    const tick = this.world.tick;
+    const day = dayOf(tick);
+    if (!kid || kid.calledDay !== day || kid.schoolDay === day) {
+      this.finish(folk);
+      return;
+    }
+    kid.schoolDay = day;
+    folk.away = { until: day * MINUTES_PER_DAY + SCHOOL_END, late: 0, mood: moodOf(this.catalog, folk.needs), event: null, nextEvent: -1 };
+    const c = circleOfFolk(this.world, folk.id);
+    if (c) this.dropFromCircle(folk, c, true);
+    folk.queue = [];
+    folk.path = [];
+    folk.idleTicks = 0;
+    this.log('log.leftForSchool', { name: folk.name });
+  }
+
+  /** Volta da escola: nota do dia, lição para casa e, na sexta, o boletim. */
+  private backFromSchool(folk: Folk): void {
+    const away = folk.away!;
+    const kid = folk.kid!;
+    folk.away = null;
+    folk.x = folk.px = this.world.exit.x;
+    folk.y = folk.py = this.world.exit.y;
+    folk.facing = { x: 0, y: -1 };
+    folk.idleTicks = 0;
+    const avg = (away.mood + moodOf(this.catalog, folk.needs)) / 2;
+    kid.grade = clampGrade(kid.grade + schoolDelta(folk, avg));
+    kid.homework = 'due';
+    this.log('log.backFromSchool', { name: folk.name, grade: gradeText(kid.grade) });
+    if (dayOf(this.world.tick) % 7 === 4) {
+      this.log('log.reportCard', { name: folk.name, grade: gradeText(kid.grade), band: `grade.band.${gradeBand(kid.grade)}` });
+      if (kid.grade >= HONOR_AT) {
+        folk.spark = Math.min(MAX_SPARK, folk.spark + 2);
+        this.log('log.honorRoll', { name: folk.name });
+      }
+    }
+    this.checkGrade(folk);
+  }
+
+  private checkGrade(folk: Folk): void {
+    const verdict = gradeVerdict(folk.kid!);
+    if (verdict === 'warn') this.log('log.gradeWarn', { name: folk.name });
+    else if (verdict === 'boarding') {
+      this.log('log.toBoarding', { name: folk.name });
+      const parent = this.adults()[0];
+      createNews(this.world, this.catalog, this.logger, 'boarding', folk.id, parent?.id ?? 0);
+      this.sendAway(folk, 'boarding');
+    }
+  }
+
+  /**
+   * Criança (ou bebê) sai de casa: vira alguém da vizinhança que não aparece
+   * (colégio interno ou outra família). Bebê sai no colo da visitadora.
+   */
+  private sendAway(folk: Folk, why: 'boarding' | 'fostered'): void {
+    const world = this.world;
+    const c = circleOfFolk(world, folk.id);
+    if (c) this.dropFromCircle(folk, c, true);
+    const crib = cribOf(world, folk);
+    if (crib) delete crib.baby;
+    const n: Neighbor = {
+      id: folk.id,
+      name: folk.name,
+      traits: [...folk.traits],
+      look: { ...folk.look },
+      temper: { ...folk.temper },
+      month: folk.month,
+      skills: { ...folk.skills },
+      career: null,
+      interests: folk.interests ? { ...folk.interests } : undefined,
+      funds: 0,
+      away: why,
+      age: folk.age,
+    };
+    world.neighbors = world.neighbors.filter((x) => x.id !== folk.id);
+    world.neighbors.push(n);
+    if (folk.age === 'baby' || folk.away) {
+      world.folks = world.folks.filter((f) => f.id !== folk.id);
+      return;
+    }
+    folk.wishes = [];
+    folk.alarm = false;
+    folk.collapsed = 0;
+    delete folk.kid;
+    folk.visit = { until: world.tick, leaving: false, hostId: 0, admitted: true, rang: -1, service: null, moving: true };
+    this.startLeaving(folk);
+  }
+
+  /** A visitadora social vai até a criança e avisa (da primeira vez) ou leva embora. */
+  private stepSocialWorker(folk: Folk): void {
+    const world = this.world;
+    const sv = folk.visit!.service!;
+    const kid = world.folks.find((f) => f.id === sv.target && f.kid && !f.visit);
+    if (!kid) {
+      this.startLeaving(folk);
+      return;
+    }
+    if (sv.done === 0) {
+      sv.done = 1;
+      const crib = cribOf(world, kid);
+      const tiles = crib
+        ? besideTiles(world, this.catalog, this.nav, crib)
+        : [
+            { x: kid.x + 1, y: kid.y },
+            { x: kid.x - 1, y: kid.y },
+            { x: kid.x, y: kid.y + 1 },
+            { x: kid.x, y: kid.y - 1 },
+          ].filter((t) => this.nav.isFree(t.x, t.y));
+      const path = findPathToAny(this.nav, folk, tiles);
+      if (path && path.length) {
+        folk.queue.push(this.makeAction({ kind: 'goto', target: path[path.length - 1] }, 'auto'));
+        return;
+      }
+    }
+    const k = kid.kid!;
+    k.worker = false;
+    const names = { name: folk.name, kid: kid.name };
+    if (k.warned === 0) {
+      k.warned = 1;
+      k.neglect = 0;
+      this.log('log.socialWarned', names);
+    } else {
+      this.log('log.socialTook', names);
+      const parent = this.adults()[0];
+      createNews(world, this.catalog, this.logger, 'kidTaken', parent?.id ?? kid.id, kid.id);
+      this.sendAway(kid, 'fostered');
+    }
+    this.startLeaving(folk);
   }
 
   private faceObject(folk: Folk, action: Action): void {

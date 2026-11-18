@@ -15,7 +15,8 @@ export function socialTaste(catalog: Catalog, folk: Pick<Folk, 'traits'> & { tem
 
 /** O folk está em casa e em condição de conversar com alguém? */
 export function onLot(folk: Folk): boolean {
-  return !folk.away && folk.collapsed === 0 && !folk.visit?.leaving;
+  // bloco 11: bebê fica no berço, fora das conversas e das rodas
+  return !folk.away && folk.collapsed === 0 && !folk.visit?.leaving && folk.age !== 'baby';
 }
 
 /** Com quem o folk está conversando agora (0 = ninguém). */
@@ -34,7 +35,14 @@ export function talkingWith(folk: Folk): number {
  * (amizade, romance, quem é visita). Usa como `a` vê `b`.
  */
 export function socialAllowed(world: World, catalog: Catalog, def: SocialDef, a: Folk, b: Folk): boolean {
+  // bloco 11: bebê não conversa; romance só entre adultos
+  if (a.age === 'baby' || b.age === 'baby') return false;
+  if (def.category === 'romantic' && (a.age !== undefined || b.age !== undefined)) return false;
   const req = def.requires;
+  if (req?.adult && a.age !== undefined) return false;
+  if (req?.child && b.age !== 'child') return false;
+  if (req?.kid && a.age !== 'child' && b.age !== 'child') return false;
+  if (req?.homework && b.kid?.homework !== 'due') return false;
   if (!req) return knows(world, a.id, b.id);
   const rel = relationOf(world, a.id, b.id);
   const known = rel !== undefined;

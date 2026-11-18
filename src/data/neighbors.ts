@@ -195,6 +195,15 @@ const RAW: NeighborSeed[] = [
     career: null,
     service: 'bailiff',
   },
+  // bloco 11: a visitadora social vem quando um bebê (ou criança) passa necessidade
+  {
+    name: 'Glória Amparo',
+    traits: ['gentil', 'caprichoso'],
+    look: { skin: 2, hair: 4, shirt: 5, pants: 1 },
+    skills: { charisma: 600, logic: 360 },
+    career: null,
+    service: 'social',
+  },
 ];
 
 /**

@@ -450,7 +450,7 @@ relação; desvio local. Save v13.
 **Pronto quando**: casal noiva, casa e divide a cama; dá para mandar alguém
 embora; divórcio funciona; testes.
 
-## Bloco 11 — Bebês, crianças e escola (save v15)
+## Bloco 11 — Bebês, crianças e escola (save v15) — feito em 18/11/2026
 
 **Escopo**
 - Bebê vem de casal que mora junto (tentar ter bebê) ou de adoção pelo

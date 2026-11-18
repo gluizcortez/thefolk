@@ -15,6 +15,7 @@ import { temperPull } from './temper';
 import { JOIN_BONUS, TIER_PULL, duoPartners, occupiedId, tierOf } from './furnish';
 import { isSleep, refusal, sleepPressure } from './will';
 import { wishPull, wishTalkPull, wishTidyPull } from './wishes';
+import { kidAllows } from './kids';
 
 /** Bloco 6: quanto a hora de deitar soma na vontade de dormir (com pressão 1). */
 export const BEDTIME_BONUS = 70;
@@ -192,7 +193,7 @@ export function scoreOptions(world: World, catalog: Catalog, folk: Folk, nav: Na
     const visitor = folk.visit !== null;
     const care =
       drive > 0
-        ? def.interactions.filter((it) => it.care && !it.hidden && careAvailable(obj, it) && objectCareScore(obj, it) > 0)
+        ? def.interactions.filter((it) => it.care && !it.hidden && careAvailable(obj, it) && objectCareScore(obj, it) > 0 && kidAllows(folk, it))
         : [];
     const auto = def.interactions.filter(
       (it) =>
@@ -201,6 +202,8 @@ export function scoreOptions(world: World, catalog: Catalog, folk: Folk, nav: Na
         (!it.special || it.special === 'call') &&
         !it.care &&
         !it.hidden &&
+        // bloco 11: criança não cozinha no fogão; brinquedo de criança é só dela
+        kidAllows(folk, it) &&
         canUse(world, obj, it) &&
         (it.cost ?? 0) <= world.household.funds &&
         !(visitor && (it.residentOnly || (it.cost ?? 0) > 0)) &&
