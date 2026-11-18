@@ -23,7 +23,7 @@ import {
   writeSlot,
 } from '../platform/slots';
 import { Sim, createWorld, isBuildCommand } from '../sim';
-import type { Command, FamilyDraft, FenceKind, Folk, OpeningKind, Rotation, Side, Speed, World } from '../sim';
+import type { Command, FamilyDraft, LifePace, FenceKind, Folk, OpeningKind, Rotation, Side, Speed, World } from '../sim';
 import { MAX_LEVELS, levelOfRow } from '../sim';
 import { cleanName, familyProblem, foundTown } from '../sim';
 
@@ -185,6 +185,8 @@ export class GameController {
   slotName = '';
   /** bloco 7: tira a miniatura da casa para a vaga (a tela fornece) */
   snapshot: (() => string | undefined) | null = null;
+  /** bloco 17: foto do álbum (a tela liga) */
+  photographer: (() => string | undefined) | null = null;
   private commandListeners: CommandListener[] = [];
   private readonly db: SaveBackend = idbBackend;
 
@@ -390,7 +392,8 @@ export class GameController {
       this.objectsVersion++;
     }
     // bloco 14: Seu Sereno abriu o livro: pausa para o jogador decidir
-    const bargaining = this.world.passings[0]?.stage === 'waiting';
+    // bloco 17: de velhice não tem barganha (o jogo segue enquanto a família se despede)
+    const bargaining = this.world.passings[0]?.stage === 'waiting' && this.world.passings[0]?.cause !== 'age';
     if (bargaining && !this.hadBargain && this.world.speed !== 0) {
       this.pausedForBargain = this.world.speed;
       this.command({ type: 'setSpeed', speed: 0 });
@@ -644,16 +647,16 @@ export class GameController {
     await this.save(true, slot ?? this.slot);
   }
 
-  newGame(death = true): void {
-    this.replaceWorld(townWorld(createWorld({ ...starterHouse(freshSeed()), death })));
+  newGame(death = true, life: LifePace = 'off'): void {
+    this.replaceWorld(townWorld(createWorld({ ...starterHouse(freshSeed()), death, life })));
     this.toast(t('toast.newGame'));
     void this.freshSlot();
   }
 
   /** Bloco 5: começa de novo com a família criada na tela de criação. */
-  newFamily(draft: FamilyDraft, death = true): boolean {
+  newFamily(draft: FamilyDraft, death = true, life: LifePace = 'off'): boolean {
     if (familyProblem(this.sim.catalog, draft)) return false;
-    this.replaceWorld(townWorld(createWorld({ ...familySeed(draft, freshSeed()), death })));
+    this.replaceWorld(townWorld(createWorld({ ...familySeed(draft, freshSeed()), death, life })));
     this.toast(t('toast.newFamily', { name: cleanName(draft.surname) }));
     void this.freshSlot();
     return true;

@@ -7,7 +7,8 @@ import { START_PANTRY } from './services';
 import { freshState } from './upkeep';
 import { NEUTRAL_TEMPER, fullLook } from './temper';
 import { storied } from './grid';
-import type { EdgeKind, Folk, Grid, Look, Neighbor, Needs, Outfit, Rotation, Temper, Vec, World } from './types';
+import { BASE_PENSION, schoolKid } from './life';
+import type { EdgeKind, Folk, Grid, LifePace, Look, Neighbor, Needs, Outfit, Rotation, Temper, Vec, World } from './types';
 
 export interface RoomStyle {
   floor: string;
@@ -71,6 +72,8 @@ export interface FolkSeed {
   temper?: Temper;
   month?: number;
   outfit?: Outfit;
+  /** bloco 17: jovem ou idoso (sem campo = adulto) */
+  age?: 'teen' | 'elder';
 }
 
 export interface ObjectSeed {
@@ -112,6 +115,8 @@ export interface WorldSeed {
   pantry?: number;
   /** bloco 14: com morte (padrão) ou sem morte */
   death?: boolean;
+  /** bloco 17: relógio da vida (padrão desligado) */
+  life?: LifePace;
 }
 
 /** De quanto em quanto tempo as contas chegam, em minutos. */
@@ -237,6 +242,9 @@ export function makeFolk(id: number, f: FolkSeed): Folk {
     gig: null,
     business: null,
     visit: null,
+    // bloco 17: jovem vai para a escola; idoso já chega aposentado
+    ...(f.age === 'teen' ? { age: 'teen' as const, kid: schoolKid(0, []) } : {}),
+    ...(f.age === 'elder' ? { age: 'elder' as const, retired: { careerId: '', level: -1 }, pension: BASE_PENSION } : {}),
   };
 }
 
@@ -285,7 +293,7 @@ export function createWorld(seed: WorldSeed): World {
     lastBargain: null,
     departed: [],
     spirits: [],
-    rules: { death: seed.death ?? true },
+    rules: { death: seed.death ?? true, life: seed.life ?? 'off' },
     lastBurglary: seed.startTick,
     town: null,
     outing: null,

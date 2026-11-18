@@ -534,7 +534,7 @@ de fora o desnível de terreno.
 **Pronto quando**: fogo começa, espalha e é apagado; gatuno é pego com
 alarme; morte gera lápide e fantasma; opção "sem morte" no jogo novo; testes.
 
-## Bloco 15 — Bairro: vários lotes e famílias (save v19)
+## Bloco 15 — Bairro: vários lotes e famílias (save v19) — feito em 18/11/2026
 
 **Lacuna**: uma casa só; vizinhos não têm casa de verdade.
 
@@ -566,7 +566,7 @@ testes de troca de família, mudança e simulação resumida.
 **Pronto quando**: casal sai para jantar, o encontro recebe nota e muda a
 relação; compras do centro chegam em casa; testes.
 
-## Bloco 17 — Gerações: envelhecer e herdar (save v21) — aprofundamento
+## Bloco 17 — Gerações: envelhecer e herdar (save v21) — feito em 18/11/2026
 
 Vai além do jogo de referência (que não envelhecia ninguém).
 
@@ -583,6 +583,13 @@ Vai além do jogo de referência (que não envelhecia ninguém).
 **Pronto quando**: com o relógio ligado uma criança cresce até idosa em uma
 simulação acelerada; herança é distribuída; com ele desligado nada envelhece;
 testes.
+
+Como ficou: `sim/life.ts` com os ritmos curto, médio e longo; jovem na escola
+com meio período das 17h às 20h; idoso aposentado com pensão do último cargo;
+morte de velhice sem barganha; pecúlio repartido entre cônjuge e filhos (mesmo
+os de outras casas do bairro) e objetos queridos passados ao herdeiro; botão
+"Família" com árvore e álbum (fotos da câmera e marcos automáticos); o
+criador faz jovens e idosos e o bairro fora de jogo envelhece junto.
 
 ---
 

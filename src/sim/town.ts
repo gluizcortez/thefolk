@@ -1,10 +1,11 @@
 import { MINUTES_PER_DAY } from './clock';
-import { BILL_BASE, BILL_RATE, checkPlacement, objectValue, sellValue } from './economy';
+import { BILL_BASE, BILL_RATE, checkPlacement, formatMoney, objectValue, sellValue } from './economy';
 import { cleanName, copyTemper, familyProblem } from './family';
 import type { FamilyDraft } from './family';
 import { introduce } from './gossip';
 import { buildNav, footprint, levelOfRow, storied } from './grid';
-import { savingsOf, spotNear } from './marriage';
+import { savingsOf, spotNear, spouseOf } from './marriage';
+import { ageNeighbor, copyLife, estateOf, fitKid, heirsOf, splitEstate } from './life';
 import { personOf } from './people';
 import { ensureRelation, relationOf } from './relations';
 import { nextFloat, nextInt } from './rng';
@@ -299,7 +300,9 @@ function neighborFrom(folk: Folk, home: number): Neighbor {
     home,
   };
   if (folk.bornName) n.bornName = folk.bornName;
-  if (folk.age) n.age = folk.age;
+  // bloco 17: a fase, os pais e a aposentadoria vão junto; meio período não conta como carreira
+  copyLife({ ...folk, parents: folk.parents ?? (folk.kid?.parents.length ? folk.kid.parents : undefined) }, n);
+  if (folk.job?.partTime) n.career = null;
   return n;
 }
 
@@ -408,10 +411,13 @@ function enterFamily(world: World, catalog: Catalog, fam: Family): void {
     else delete folk.bornName;
     folk.skills = { ...n.skills };
     folk.interests = { ...ensureInterests(catalog, n) };
-    if (n.age) folk.age = n.age;
+    // bloco 17: a vida andou fora de jogo (cresceu, envelheceu, aposentou)
+    copyLife(n, folk);
+    fitKid(folk, world.tick);
     // o emprego andou sozinho (promoção, demissão) enquanto estava fora de jogo
     const career = n.career && catalog.careers[n.career.id] ? n.career : null;
     if (!career) folk.job = null;
+    else if (folk.job?.careerId === career.id && folk.job.partTime) folk.job = { ...newJob(career.id), level: 0 };
     else if (folk.job?.careerId === career.id) folk.job.level = Math.min(career.level, catalog.careers[career.id].levels.length - 1);
     else folk.job = { ...newJob(career.id), level: Math.min(career.level, catalog.careers[career.id].levels.length - 1) };
     // a vida resumida deixa todo mundo nem bem nem mal
@@ -526,6 +532,7 @@ export function foundFamily(world: World, catalog: Catalog, draft: FamilyDraft, 
       y: 0,
       needs: { hunger: 70, energy: 80, bladder: 70, fun: 60, social: 55, hygiene: 80 },
       look: { ...m.look },
+      ...(m.age ? { age: m.age } : {}),
       temper: copyTemper(m.temper),
       month: m.month,
     }),
@@ -606,13 +613,21 @@ export function townDay(world: World, catalog: Catalog): void {
   const weekday = day % 7;
   for (const fam of [...town.families]) {
     if (fam.id === town.active) continue;
-    const members = world.neighbors.filter((n) => n.home === fam.id);
+    let members = world.neighbors.filter((n) => n.home === fam.id);
     if (members.length === 0) {
       dissolve(world, fam);
       continue;
     }
     let pay = 0;
+    // bloco 17: o relógio da vida anda também nas outras casas
     for (const n of members) {
+      const changed = ageNeighbor(world, catalog, n);
+      if (changed === 'passed') passAway(world, n);
+      else if (changed) pushFeed(world, `feed.became.${changed}`, { name: n.name });
+    }
+    members = members.filter((n) => world.neighbors.includes(n));
+    for (const n of members) {
+      pay += n.pension ?? 0;
       if (!n.career) continue;
       const level = catalog.careers[n.career.id]?.levels[n.career.level];
       if (level && level.days.includes(weekday)) pay += level.pay;
@@ -649,6 +664,45 @@ export function townDay(world: World, catalog: Catalog): void {
       pushFeed(world, 'feed.visited', { name: n.name, other: o.name });
     }
     if (pay > 0 && fam.funds < 0) pushFeed(world, 'feed.broke', { family: fam.name });
+  }
+}
+
+/**
+ * Bloco 17: alguém de uma família fora de jogo morreu de velhice. Sai do
+ * bairro, fica na lista de quem se foi (para a árvore) e o pecúlio vai para
+ * os herdeiros (a casa em jogo também, se tiver filho ou cônjuge lá).
+ */
+function passAway(world: World, n: Neighbor): void {
+  const spouse = spouseOf(world, n.id);
+  const heirs = heirsOf(world, n.id, spouse);
+  world.departed.push({
+    id: n.id,
+    name: n.name,
+    look: { ...n.look },
+    age: n.age,
+    cause: 'age',
+    died: world.tick,
+    ...(n.parents?.length ? { parents: [...n.parents] } : {}),
+    ...(spouse ? { spouse } : {}),
+  });
+  world.neighbors = world.neighbors.filter((x) => x.id !== n.id);
+  for (const [key, rel] of Object.entries(world.relations)) {
+    const [a, b] = key.split('>').map(Number);
+    if (a !== n.id && b !== n.id) continue;
+    rel.dating = false;
+    delete rel.bond;
+  }
+  const fam = n.home !== undefined ? familyById(world, n.home) : undefined;
+  pushFeed(world, 'feed.passed', { name: n.name, family: fam?.name ?? '' });
+  const shares = splitEstate(estateOf({ job: null, retired: n.retired, age: n.age }), heirs.length ? heirs : [{ id: 0, where: n.home ?? 'out', tie: 'child' }]);
+  for (const [where, amount] of shares) {
+    if (where === 'home') {
+      world.household.funds += amount;
+      world.log.push({ tick: world.tick, key: 'log.estateFromTown', params: { name: n.name, amount: formatMoney(amount) } });
+    } else if (typeof where === 'number') {
+      const f = familyById(world, where);
+      if (f) f.funds += amount;
+    }
   }
 }
 

@@ -1,4 +1,5 @@
 import { MINUTES_PER_DAY, clockOf, nightAmount } from './clock';
+import { isAdult } from './kids';
 import { formatMoney, objectBusy, sellValue } from './economy';
 import type { Nav } from './grid';
 import { floorAt, inBounds, useTiles } from './grid';
@@ -582,7 +583,7 @@ export interface HouseOption {
  */
 export function houseOptions(world: World, catalog: Catalog, folk: Folk): HouseOption[] {
   // bloco 11: compras, feira e contas são coisa de adulto
-  if (folk.visit || folk.age !== undefined) return [];
+  if (folk.visit || !isAdult(folk)) return [];
   const house = world.household;
   const out: HouseOption[] = [];
   const hungry = 1 - folk.needs.hunger / NEED_MAX;

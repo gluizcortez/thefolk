@@ -36,6 +36,7 @@ export function familySeed(draft: FamilyDraft, seed: number): WorldSeed {
     look: { ...m.look },
     temper: copyTemper(m.temper),
     month: m.month,
+    ...(m.age ? { age: m.age } : {}),
   }));
   const family: RelationSeed[] = [];
   for (let i = 0; i < names.length; i++) {

@@ -38,8 +38,21 @@ export function careerOf(catalog: Catalog, job: Job): CareerDef | undefined {
   return catalog.careers[job.careerId];
 }
 
+/** Bloco 17: meio período do jovem: depois da aula, nos dias de semana, por esta parte do salário. */
+export const PART_TIME_START = 17;
+export const PART_TIME_HOURS = 3;
+export const PART_TIME_PAY = 0.45;
+
 export function levelOfJob(catalog: Catalog, job: Job): CareerLevel | undefined {
-  return careerOf(catalog, job)?.levels[job.level];
+  const level = careerOf(catalog, job)?.levels[job.level];
+  if (!level || !job.partTime) return level;
+  return {
+    ...level,
+    startHour: PART_TIME_START,
+    hours: PART_TIME_HOURS,
+    days: [0, 1, 2, 3, 4],
+    pay: Math.round((level.pay * PART_TIME_PAY) / 5) * 5,
+  };
 }
 
 export function weekdayOf(tick: number): number {
@@ -125,14 +138,16 @@ export interface Ride {
  */
 export function rideFor(catalog: Catalog, folk: Folk, tick: number): Ride | null {
   // bloco 11: o ônibus da escola espera a criança chamada hoje
-  if (folk.age === 'child' && folk.kid && !folk.away && !folk.visit) {
+  if ((folk.age === 'child' || folk.age === 'teen') && folk.kid && !folk.away && !folk.visit) {
     const kid = folk.kid;
     const day = Math.floor(tick / MINUTES_PER_DAY);
-    if (kid.calledDay !== day || kid.schoolDay === day) return null;
     const arrived = day * MINUTES_PER_DAY + SCHOOL_CALL;
     const leaves = day * MINUTES_PER_DAY + SCHOOL_BUS_LEAVES;
-    if (tick < arrived || tick > leaves) return null;
-    return { folkId: folk.id, careerId: 'school', vehicle: SCHOOL_BUS, arrived, leaves };
+    if (kid.calledDay === day && kid.schoolDay !== day && tick >= arrived && tick <= leaves) {
+      return { folkId: folk.id, careerId: 'school', vehicle: SCHOOL_BUS, arrived, leaves };
+    }
+    // bloco 17: o jovem com meio período ainda pega a carona do trabalho à tarde
+    if (!folk.job) return null;
   }
   const job = folk.job;
   const level = job && levelOfJob(catalog, job);

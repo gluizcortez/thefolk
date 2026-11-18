@@ -46,7 +46,7 @@ import type { FolkAnim } from './art/folk';
 import { buildFurniture, furnitureSpec } from './art/furniture';
 import type { Anchor, FurnitureModel, FurnitureSpec } from './art/furniture';
 import { COVER_ART, FLOOR_ART, HALF_H, House, LEVEL_H, LOW_H, POOL_SURFACE, TH, WALL_H, sceneZ } from './art/house';
-import { CHILD_SCALE } from './art/folk';
+import { CHILD_SCALE, TEEN_SCALE } from './art/folk';
 import { poolOf, poolTiles } from '../sim/yard';
 import { raining } from '../sim/garden';
 import { isLineTool, isOpeningTool } from './controller';
@@ -270,7 +270,8 @@ export class GameView {
   private rides = new Map<string, RideView>();
   private rideRoot = new THREE.Group();
   /** quem estava no trabalho no quadro anterior (para ver a volta para casa) */
-  private wasAway = new Set<number>();
+  /** quem está fora e se foi à escola (true) ou ao trabalho */
+  private wasAway = new Map<number, boolean>();
   /** bloco 12: altura do alvo da câmera (sobe e desce com o andar) */
   private aimY = 0;
   /** bloco 12: quem estava selecionado e em que andar (a vista segue quando muda) */
@@ -375,7 +376,7 @@ export class GameView {
     this.fireViews.clear();
     this.spiritViews.clear();
     this.sprays.clear();
-    this.wasAway = new Set(this.ctrl.world.folks.filter((f) => f.away).map((f) => f.id));
+    this.wasAway = new Map(this.ctrl.world.folks.filter((f) => f.away).map((f) => [f.id, !!f.away!.school || f.age === 'child']));
 
     const world = this.ctrl.world;
     const { grid } = world;
@@ -1281,10 +1282,11 @@ export class GameView {
     }
     // quem voltou do trabalho: carona encosta, deixa e vai
     for (const f of world.folks) {
-      if (f.away) this.wasAway.add(f.id);
+      if (f.away) this.wasAway.set(f.id, !!f.away.school || f.age === 'child');
       else if (this.wasAway.has(f.id)) {
+        const school = this.wasAway.get(f.id);
         this.wasAway.delete(f.id);
-        const v = f.age === 'child' ? SCHOOL_BUS : f.job && vehicleOf(catalog, f.job);
+        const v = school ? SCHOOL_BUS : f.job && vehicleOf(catalog, f.job);
         if (v) this.spawnRide(`back:${f.id}:${world.tick}`, v, stopX, 'in', laneZ);
       }
     }
@@ -1436,7 +1438,7 @@ export class GameView {
   ): { anim: FolkAnim; place: { x: number; y: number; z: number; heading: number } } {
     const sim = this.ctrl.sim;
     const pool = poolOf(sim.world, sim.catalog, entry.obj, entry.def);
-    const scale = folk.age === 'child' ? CHILD_SCALE : 1;
+    const scale = folk.age === 'child' ? CHILD_SCALE : folk.age === 'teen' ? TEEN_SCALE : 1;
     const y = -POOL_SURFACE - 1.32 * scale;
     if (pool.length === 0) return { anim: pose === 'dive' ? 'dive' : 'swim', place: onBoard };
     if (pose === 'dive') {
@@ -2289,6 +2291,10 @@ export class GameView {
 
   /** Desenha a cena fora da tela e devolve a imagem em 16 bits, como o jogo. */
   private renderToUrl(scene: THREE.Scene, cam: THREE.Camera, w: number, h: number): string {
+    return this.renderToCanvas(scene, cam, w, h).toDataURL();
+  }
+
+  private renderToCanvas(scene: THREE.Scene, cam: THREE.Camera, w: number, h: number): HTMLCanvasElement {
     const target = new THREE.WebGLRenderTarget(w, h, { type: THREE.UnsignedByteType, colorSpace: THREE.SRGBColorSpace });
     const prevColor = this.renderer.getClearColor(new THREE.Color());
     const prevAlpha = this.renderer.getClearAlpha();
@@ -2317,7 +2323,23 @@ export class GameView {
       }
     }
     ctx.putImageData(img, 0, 0);
-    return canvas.toDataURL();
+    return canvas;
+  }
+
+  /** Bloco 17: foto para o álbum (a vista de agora, em JPEG pequeno para caber no save). */
+  photo(w = 288): string {
+    const el = this.renderer.domElement;
+    const aspect = el.clientWidth > 0 && el.clientHeight > 0 ? el.clientWidth / el.clientHeight : 16 / 9;
+    const h = Math.max(48, Math.round(w / Math.max(1, aspect)));
+    const shot = this.renderToCanvas(this.scene, this.camera, w, h);
+    const out = document.createElement('canvas');
+    out.width = w;
+    out.height = h;
+    const ctx = out.getContext('2d')!;
+    ctx.fillStyle = '#1d2430';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(shot, 0, 0);
+    return out.toDataURL('image/jpeg', 0.72);
   }
 
   /**

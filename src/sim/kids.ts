@@ -106,8 +106,9 @@ export function isBaby(f: Pick<Folk, 'age'> | undefined): boolean {
 export function isChild(f: Pick<Folk, 'age'> | undefined): boolean {
   return f?.age === 'child';
 }
+/** Adulto de verdade (bloco 17: idoso também; jovem ainda não). */
 export function isAdult(f: Pick<Folk, 'age'> | undefined): boolean {
-  return !!f && f.age === undefined;
+  return !!f && (f.age === undefined || f.age === 'elder');
 }
 
 /** Interações que só adultos fazem quando quem pede é criança. */
@@ -120,10 +121,12 @@ const ADULT_SPECIALS = new Set(['services', 'payBills', 'party', 'invite', 'adop
  */
 export function kidAllows(folk: Pick<Folk, 'age' | 'kid'>, it: InteractionDef): boolean {
   if (folk.age === 'baby') return false;
-  if (it.homework) return folk.age === 'child' && folk.kid?.homework === 'due';
+  if (it.homework) return (folk.age === 'child' || folk.age === 'teen') && folk.kid?.homework === 'due';
   if (it.kids === 'only') return folk.age === 'child';
-  if (it.baby) return folk.age === undefined;
-  if (folk.age !== 'child') return true;
+  if (it.baby) return isAdult(folk);
+  if (isAdult(folk)) return true;
+  // bloco 17: o jovem já cozinha e conserta, mas coisa da casa é com os adultos
+  if (folk.age === 'teen') return !(it.special && ADULT_SPECIALS.has(it.special));
   if (it.kids === 'no' || it.task || it.care === 'repair' || it.care === 'service') return false;
   return !(it.special && ADULT_SPECIALS.has(it.special));
 }
@@ -288,6 +291,8 @@ export function createBaby(world: World, catalog: Catalog, parents: Parent[], cr
     age: 'baby',
     kid: freshKid(world.tick, parents.map((p) => p.id), adopted),
   };
+  // bloco 17: os pais ficam para sempre (a ficha de criança some quando cresce)
+  if (parents.length) baby.parents = parents.map((p) => p.id);
   world.folks.push(baby);
   crib.baby = baby.id;
   // a casa inteira já conhece o bebê; pai e mãe com carinho de família
@@ -488,5 +493,5 @@ export function childNeglectTick(folk: Folk): void {
 
 /** Bebês e crianças da casa. */
 export function kidsOf(world: World, age?: Age): Folk[] {
-  return world.folks.filter((f) => !f.visit && f.kid && (age ? f.age === age : f.age !== undefined));
+  return world.folks.filter((f) => !f.visit && f.kid && (age ? f.age === age : !isAdult(f)));
 }

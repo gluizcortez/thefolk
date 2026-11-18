@@ -14,7 +14,8 @@ import {
   temperSum,
   traitsClash,
 } from '../sim';
-import type { FamilyDraft, Look, MemberDraft, Outfit, Speed, Wear } from '../sim';
+import type { FamilyDraft, LifePace, Look, MemberDraft, Outfit, Speed, Wear } from '../sim';
+import { LIFE_PACE_IDS } from '../sim';
 
 // Bloco 5: tela de criar família. Monta um rascunho (sobrenome e até oito
 // moradores com nome, aparência, roupas, traços, mês e temperamento) e
@@ -67,6 +68,8 @@ export class FamilyCreator {
   private speedBefore: Speed = 1;
   /** bloco 14: perigos podem matar (desligado: quem cairia escapa por um triz) */
   private death = true;
+  /** bloco 17: relógio da vida do jogo novo */
+  private life: LifePace = 'off';
   /** bloco 15: família nova para um lote do bairro (0 = jogo novo) */
   private lotId = 0;
 
@@ -238,6 +241,19 @@ export class FamilyCreator {
       this.render();
     });
     row.append(random);
+    // bloco 17: jovem, adulto ou idoso
+    const ages = el('div', 'catalog-tabs creator-wears creator-ages');
+    ages.append(el('span', 'creator-label', t('create.age')));
+    for (const a of ['teen', undefined, 'elder'] as const) {
+      const b = el('button', 'tab', t(`age.${a ?? 'adult'}`));
+      b.classList.toggle('on', m.age === a);
+      b.addEventListener('click', () => {
+        if (a) m.age = a;
+        else delete m.age;
+        this.render();
+      });
+      ages.append(b);
+    }
     if (this.draft.members.length > 1) {
       const remove = el('button', 'btn btn-small btn-quiet', t('create.remove'));
       remove.addEventListener('click', () => {
@@ -247,7 +263,7 @@ export class FamilyCreator {
       });
       row.append(remove);
     }
-    left.append(img, name, wears, row);
+    left.append(img, name, wears, ages, row);
 
     // aparência e roupas
     const mid = el('div', 'creator-col');
@@ -375,7 +391,7 @@ export class FamilyCreator {
     const note = el('div', 'creator-problem');
     const ready = el('button', 'btn btn-quiet', t('create.ready'));
     ready.addEventListener('click', () => {
-      this.ctrl.newGame(this.death);
+      this.ctrl.newGame(this.death, this.life);
       this.hide();
     });
     // bloco 14: morte ligada ou não no jogo novo
@@ -386,6 +402,18 @@ export class FamilyCreator {
     box.addEventListener('change', () => (this.death = box.checked));
     death.title = t('create.deathHint');
     death.append(box, el('span', '', t('create.death')));
+    // bloco 17: relógio da vida
+    const life = el('label', 'creator-death creator-life');
+    const select = el('select') as HTMLSelectElement;
+    for (const id of LIFE_PACE_IDS) {
+      const o = el('option', '', t(`life.pace.${id}`)) as HTMLOptionElement;
+      o.value = id;
+      o.selected = id === this.life;
+      select.append(o);
+    }
+    select.addEventListener('change', () => (this.life = select.value as LifePace));
+    life.title = t('create.lifeHint');
+    life.append(el('span', '', t('create.life')), select);
     const buttons = el('div', 'creator-buttons');
     if (this.cancellable) {
       const cancel = el('button', 'btn btn-quiet', t('create.cancel'));
@@ -403,7 +431,7 @@ export class FamilyCreator {
         }
         return;
       }
-      this.ctrl.newFamily(this.draft, this.death);
+      this.ctrl.newFamily(this.draft, this.death, this.life);
       this.hide();
     });
     if (this.lotId) {
@@ -411,7 +439,7 @@ export class FamilyCreator {
       foot.append(note, buttons);
     } else {
       buttons.append(ready, start);
-      foot.append(el('div', 'creator-note', t('create.note')), death, note, buttons);
+      foot.append(el('div', 'creator-note', t('create.note')), death, life, note, buttons);
     }
     queueMicrotask(() => this.refreshFoot());
     return foot;

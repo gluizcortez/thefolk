@@ -527,6 +527,23 @@ npm run preview  # serve o dist/ localmente
   O centro fecha às 2h (todo mundo volta de táxi) e quem cai de sono volta
   antes. Figurantes do centro passeiam pelo largo e, depois de conhecidos,
   viram vizinhos como os outros.
+- **Gerações (bloco 17)**: no jogo novo dá para ligar o "Relógio da vida"
+  (vida curta, média ou longa; desligado, ninguém envelhece, como no
+  clássico). Ligado, o bebê vira criança, a criança vira jovem, o jovem vira
+  adulto e o adulto vira idoso; no fim da velhice, com a morte ligada, o Seu
+  Sereno vem buscar com calma (sem par ou ímpar). O jovem continua na
+  escola e pode pegar um meio período depois da aula (17h às 20h, menos da
+  metade do salário, sem promoção); ao virar adulto, se forma (a nota vai
+  para o álbum) e fica efetivado. Quem vira idoso se aposenta com pensão
+  por dia tirada do último cargo. Quem morre deixa um pecúlio que cresce com
+  o cargo: vai para o cônjuge e os filhos, mesmo os que moram em outra casa
+  do bairro, e os objetos queridos passam para o herdeiro da casa. O botão
+  "Família" mostra a árvore (avós em cima, casais lado a lado, quem se foi em
+  sépia) e o álbum: "Tirar foto" cola a vista de agora com legenda, e os
+  grandes momentos entram sozinhos (nascimento, casamento, cargo mais alto,
+  formatura, aposentadoria, herança, despedida). O criador de família já
+  faz jovens e idosos, e as famílias do bairro fora de jogo também
+  envelhecem.
 
 ## Deploy na Vercel
 
@@ -796,6 +813,17 @@ Decisões principais do núcleo:
   `game/art/downtown.ts` e os sobrados em volta em `buildScenery(..., downtown)`.
   `Sim.lotStamp` avisa a tela quando a própria simulação traz todo mundo de
   volta.
+- **Gerações (bloco 17)** moram em `sim/life.ts` (regras puras: dias de cada
+  fase por ritmo, `scheduleAge`, pensão, pecúlio e herdeiros, álbum, árvore,
+  `ageNeighbor` para o bairro). O `Sim` chama em `stepLife`, `ageUp`,
+  `payPensions` e `inherit` (de dentro de `die`). `Age` ganhou `teen` e
+  `elder` (adulto continua sem campo; `isAdult` conta o idoso); `Folk` e
+  `Neighbor` ganharam `parents`, `nextAge` (-1 = já viveu tudo, sem morte),
+  `pension` e `retired`; `Job.partTime` muda o turno em `levelOfJob`;
+  `Away.school` separa escola de trabalho para o jovem; `Household.album`
+  guarda o álbum (vai junto na troca de família); `World.rules.life` é o
+  relógio. A foto vem de `GameView.photo()` (JPEG pequeno) pelo comando
+  `takePhoto`.
 - **Bebês e crianças (bloco 11)** moram em `sim/kids.ts` (regras puras:
   necessidades do bebê, herança, horário da escola, nota). `Folk` ganhou
   `age` ('baby' | 'child'; adulto não tem) e `kid` (nascimento, quando cresce,
@@ -1011,7 +1039,23 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
   e cardápio), café e bazar; encontros com nota de 1 a 5 que muda a relação;
   presentes, roupas e encomendas que chegam em casa; figurantes para
   conhecer; quem fica em casa segue a vida (save v20).
-- Próximo: bloco 17, gerações: envelhecer e herdar.
+- **Bloco 17 (feito)**: relógio da vida opcional (criança, jovem, adulto,
+  idoso e despedida), meio período do jovem, aposentadoria com pensão,
+  herança de pecúlio e objetos queridos, árvore da família, álbum com fotos
+  e marcos, bairro envelhecendo junto (save v21). Com ele o plano de
+  evolução (`docs/plano-evolucao.md`) está completo.
+
+## Limitações conhecidas do bloco 17
+
+- O relógio da vida só se escolhe no jogo novo; saves antigos abrem com ele
+  desligado.
+- Fora de jogo, quem morre de velhice não deixa lápide no lote da família;
+  os prestadores, chefes e gente do centro não envelhecem.
+- O jovem não namora adulto nem noiva; jovem não cuida de bebê no berço.
+- As fotos do álbum são pequenas (para caber no save) e ficam no máximo 16;
+  o álbum guarda 60 páginas.
+- Não tem envelhecer por "bolo de aniversário": a fase muda sozinha quando o
+  relógio manda.
 
 ## Limitações conhecidas do bloco 16
 

@@ -306,7 +306,7 @@ describe('bloco 16: save v20', () => {
     run(sim, 30);
     const file = serialize(sim.world, 0);
     expect(file.version).toBe(SAVE_VERSION);
-    expect(SAVE_VERSION).toBe(20);
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(20);
     const back = new Sim(CATALOG, deserialize(JSON.parse(JSON.stringify(file)), CTX).world);
     expect(back.world.outing?.home.folks.map((f) => f.name)).toEqual(['Lia Sacada']);
     expect(back.dispatch({ type: 'goHome' })).toBe(true);
@@ -320,7 +320,7 @@ describe('bloco 16: save v20', () => {
     delete w.lastDate;
     w.neighbors = (w.neighbors as { name: string; downtown?: boolean; service?: string }[]).filter((n) => !n.downtown && n.service !== 'waiter');
     const file = deserialize({ version: 19, savedAt: 0, world: w }, CTX);
-    expect(file.version).toBe(20);
+    expect(file.version).toBe(SAVE_VERSION);
     expect(file.world.outing).toBeNull();
     expect(file.world.lastDate).toBeNull();
     expect(file.world.neighbors.filter((n) => n.downtown)).toHaveLength(8);

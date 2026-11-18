@@ -166,7 +166,36 @@ export type HeldProp = 'plate' | 'book' | 'phone' | 'rag' | 'cup' | 'suitcase' |
 // ---------- Bloco 11: bebês, crianças e escola ----------
 
 /** Fase da vida (sem campo = adulto). */
-export type Age = 'baby' | 'child';
+/**
+ * Bloco 11: bebê ou criança; bloco 17: jovem e idoso. Adulto continua sem
+ * campo (os saves antigos e quase todo o jogo contam com isso).
+ */
+export type Age = 'baby' | 'child' | 'teen' | 'elder';
+
+/** Bloco 17: fase da vida, com o adulto nomeado. */
+export type LifeStage = 'baby' | 'child' | 'teen' | 'adult' | 'elder';
+
+/** Bloco 17: relógio da vida do jogo novo ('off' = ninguém envelhece, como no clássico). */
+export type LifePace = 'off' | 'short' | 'normal' | 'long';
+
+/** Bloco 17: o que vai para o álbum da casa. */
+export type AlbumKind = 'photo' | 'birth' | 'adopted' | 'wedding' | 'topJob' | 'teen' | 'graduated' | 'elder' | 'retired' | 'passing' | 'heirloom';
+
+/** Bloco 17: uma página do álbum (foto tirada pelo jogador ou marco automático). */
+export interface AlbumEntry {
+  id: number;
+  tick: number;
+  kind: AlbumKind;
+  /** quem aparece (ids) e os nomes de então (a pessoa pode sumir do jogo) */
+  who: number[];
+  names: string[];
+  /** detalhe do marco (cargo, nota, valor), já pronto para o texto */
+  params?: Record<string, string | number>;
+  /** foto em data URL (só as tiradas pelo jogador) */
+  photo?: string;
+  /** legenda escrita pelo jogador */
+  caption?: string;
+}
 
 export type BabyCare = 'feed' | 'change' | 'hold' | 'lull';
 
@@ -815,6 +844,11 @@ export interface Neighbor {
   home?: number;
   /** bloco 16: gente do centro (anda pela praça; só aparece em casa depois de conhecida) */
   downtown?: boolean;
+  /** bloco 17: como no Folk (família do bairro fora de jogo também envelhece) */
+  parents?: number[];
+  nextAge?: number;
+  pension?: number;
+  retired?: { careerId: string; level: number };
 }
 
 export interface Visit {
@@ -1131,7 +1165,8 @@ export interface WorldObject {
 }
 
 /** Bloco 14: de que se morre (e quase se morre). */
-export type DeathCause = 'fire' | 'drown' | 'hunger';
+/** Bloco 17: 'age' = de velhice, no fim da fase de idoso. */
+export type DeathCause = 'fire' | 'drown' | 'hunger' | 'age';
 
 /** Bloco 14: a lápide ou a urna guarda quem se foi e o quanto ainda não descansou. */
 export interface Memorial {
@@ -1185,6 +1220,9 @@ export interface Departed {
   age?: Age;
   cause: DeathCause;
   died: number;
+  /** bloco 17: pais e cônjuge, para a árvore da família */
+  parents?: number[];
+  spouse?: number;
 }
 
 /** Bloco 14: fantasma andando de noite perto da lápide. */
@@ -1353,6 +1391,13 @@ export interface Folk {
   sooty?: number;
   /** bloco 16: presentes comprados na loja do centro, ainda não dados (ids em GIFTS) */
   gifts?: string[];
+  /** bloco 17: pais (para a árvore e a herança; fica depois de crescer) */
+  parents?: number[];
+  /** bloco 17: tick em que passa para a próxima fase (só com o relógio da vida ligado) */
+  nextAge?: number;
+  /** bloco 17: aposentado: pensão por dia e de onde veio */
+  pension?: number;
+  retired?: { careerId: string; level: number };
 }
 
 /** Aparência: índices nas paletas da arte. */
@@ -1395,6 +1440,8 @@ export interface Job {
   chain?: { defId: string; actorId: number; day: number } | null;
   /** bloco 8: a carona buzinou de novo (dia) */
   honkDay?: number;
+  /** bloco 17: meio período de jovem (depois da aula, sem promoção) */
+  partTime?: boolean;
 }
 
 /** Acontecimento do expediente esperando uma escolha. */
@@ -1458,6 +1505,8 @@ export interface Away {
   event: PendingWorkEvent | null;
   /** tick do próximo evento do expediente (-1 = não tem mais) */
   nextEvent: number;
+  /** bloco 17: na escola (sem isso, no trabalho; o jovem pode ter os dois) */
+  school?: boolean;
 }
 
 export interface Household {
@@ -1489,6 +1538,8 @@ export interface Household {
   unlocked: string[];
   /** bloco 11: bebê a caminho */
   expecting?: Expecting | null;
+  /** bloco 17: álbum da família (vai junto na mudança e na troca de família) */
+  album?: AlbumEntry[];
 }
 
 export interface LogEntry {
@@ -1551,7 +1602,7 @@ export interface World {
   /** bloco 14: fantasmas andando agora */
   spirits: Spirit[];
   /** bloco 14: regras do jogo novo (sem morte: quem cairia escapa por pouco) */
-  rules: { death: boolean };
+  rules: { death: boolean; life?: LifePace };
   /** bloco 14: tick do último gatuno */
   lastBurglary: number;
   /** bloco 15: o bairro com os lotes e as famílias (null = só a casa, como nos testes antigos) */
@@ -1846,6 +1897,9 @@ export type Command =
   // bloco 16: centro da cidade (de táxi) e encontros
   | { type: 'goDowntown'; folkIds: number[]; dateId?: number }
   | { type: 'goHome' }
+  // bloco 17: foto para o álbum (a tela manda a imagem pronta)
+  | { type: 'takePhoto'; photo: string; caption?: string; who?: number[] }
+  | { type: 'dropPhoto'; entryId: number }
   // modo construção: linhas de paredes vão de vértice a vértice do grid
   | { type: 'buildWalls'; x0: number; y0: number; x1: number; y1: number }
   | { type: 'eraseWalls'; x0: number; y0: number; x1: number; y1: number }

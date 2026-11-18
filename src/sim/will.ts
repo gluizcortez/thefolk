@@ -45,7 +45,8 @@ const NIGHT_PRESSURE = 0.35;
 /** Tick em que o despertador toca antes do próximo turno (null = sem turno nas próximas 20 h). */
 export function wakeTime(catalog: Catalog, folk: Folk, tick: number): number | null {
   // bloco 11: criança acorda para pegar o ônibus da escola
-  if (folk.age === 'child') {
+  // bloco 17: jovem também; com meio período, o despertador é o da escola (de manhã)
+  if (folk.age === 'child' || folk.age === 'teen') {
     const call = nextSchoolCall(tick);
     if (call < 0) return null;
     const wake = call - SCHOOL_ALARM_LEAD;

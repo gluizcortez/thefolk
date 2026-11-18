@@ -3,7 +3,7 @@ import { COVER_ART, FLOOR_ART } from '../game/art/house';
 import type { BuildTool, GameController } from '../game/controller';
 import { OPENING_TOOLS, isOpeningTool } from '../game/controller';
 import { ROOF_COLORS } from '../data/build';
-import { t } from '../i18n';
+import { hasText, t } from '../i18n';
 import {
   DARK_BELOW,
   roofArea,
@@ -31,6 +31,12 @@ import {
   FRIEND_AT,
   adsOfDay,
   careerOf,
+  daysToNextStage,
+  familyTree,
+  levelOfJob,
+  newJob,
+  nextStage,
+  stageOf,
   familyFriends,
   missingFriends,
   rideFor,
@@ -169,7 +175,9 @@ const CATEGORIES: (ObjectCategory | 'all')[] = [
 /** Bloco 4: filtro de faixa de preço no catálogo. */
 const TIERS: ('all' | 0 | 1 | 2)[] = ['all', 0, 1, 2];
 
-type Panel = 'skills' | 'job' | 'relations' | null;
+type Panel = 'skills' | 'job' | 'relations' | 'family' | null;
+/** Bloco 17: abas do painel da família. */
+type FamilyTab = 'tree' | 'album';
 type JobTab = 'job' | 'gigs' | 'business';
 const JOB_TABS: JobTab[] = ['job', 'gigs', 'business'];
 
@@ -268,6 +276,20 @@ function scheduleText(level: CareerLevel): string {
   });
 }
 
+/** Bloco 17: o enfeite de cada marco do álbum. */
+const ALBUM_MARKS: Partial<Record<string, string>> = {
+  birth: '✿',
+  adopted: '✿',
+  wedding: '♥',
+  topJob: '★',
+  teen: '✎',
+  graduated: '✎',
+  elder: '❦',
+  retired: '☕',
+  passing: '✝',
+  heirloom: '♦',
+};
+
 function whenText(tick: number): string {
   const c = clockOf(tick);
   return `${t(`weekday.${(c.day - 1) % 7}`)} ${formatClock(tick)}`;
@@ -312,6 +334,9 @@ export class Hud {
   private panel: Panel = null;
   private panelSig = '';
   private jobTab: JobTab = 'job';
+  private familyTab: FamilyTab = 'tree';
+  /** legenda que o jogador está escrevendo para a próxima foto */
+  private photoCaption = '';
   private wevEl = el('div', 'card wev');
   /** bloco 14: o par ou ímpar com o Seu Sereno e o aviso de casa vazia */
   private bargainEl = el('div', 'card wev bargain');
@@ -596,7 +621,7 @@ export class Hud {
     });
     auto.append(this.autonomyInput, el('span', 'switch'), el('span', '', t('hud.autonomy')));
     const tabs = el('div', 'folk-tabs');
-    for (const id of ['skills', 'job', 'relations'] as const) {
+    for (const id of ['skills', 'job', 'relations', 'family'] as const) {
       const b = el('button', 'btn btn-small', t(`hud.${id}`));
       b.addEventListener('click', () => this.togglePanel(id));
       this.panelButtons.set(id, b);
@@ -719,12 +744,19 @@ export class Hud {
     if (folk.age === 'baby' && kid) {
       const state = kid.asleep ? t('kid.asleep') : folk.thought?.kind === 'want' ? t('kid.crying') : t('kid.calm');
       lines.push({ text: `${t('kid.baby', { when: whenText(kid.grows) })} · ${state}` });
-    } else if (folk.age === 'child' && kid) {
+    } else if ((folk.age === 'child' || folk.age === 'teen') && kid) {
       const band = t(`grade.band.${gradeBand(kid.grade)}`);
       const low = kid.lowDays > 0 ? ` · ${t('kid.low', { n: kid.lowDays })}` : '';
       lines.push({ text: `${t('kid.grade', { grade: gradeText(kid.grade), band })} · ${t(`kid.homework.${kid.homework}`)}${low}`, tip: t('kid.gradeTip'), warn: kid.lowDays > 0 });
       if (folk.away) lines.push({ text: t('kid.atSchool') });
     }
+    // bloco 17: relógio da vida e aposentadoria
+    const left = daysToNextStage(world, folk);
+    const next = nextStage(stageOf(folk));
+    if (left !== null && folk.age !== 'baby') {
+      lines.push({ text: next ? t('life.next', { stage: t(`age.${next}`), n: left }) : t('life.lastDays', { n: left }), tip: t('life.tip') });
+    }
+    if (folk.retired) lines.push({ text: folk.pension ? t('life.pension', { pay: formatMoney(folk.pension) }) : t('life.retired') });
     if (kid && kid.neglect >= 30) lines.push({ text: t('kid.neglect', { n: Math.round(kid.neglect), max: NEGLECT_VISIT }), warn: true });
     if (kid && kid.warned > 0) lines.push({ text: t('kid.warned'), warn: true });
     const exp = world.household.expecting;
@@ -1709,7 +1741,9 @@ export class Hud {
         ? `s|${folk.id}|${JSON.stringify(folk.temper)}|${Object.entries(folk.skills)
             .map(([k, v]) => `${k}:${Math.floor(v)}`)
             .join(',')}`
-        : this.panel === 'relations'
+        : this.panel === 'family'
+          ? `f|${this.familyTab}|${world.household.album?.length ?? 0}|${world.household.album?.at(-1)?.id ?? 0}|${world.folks.map((f) => `${f.id}${f.age ?? ''}`).join(',')}|${world.departed.length}|${Math.floor(world.tick / 60)}`
+          : this.panel === 'relations'
           ? `r|${folk.id}|${Math.floor(world.tick / 10)}|${world.folks.map((f) => f.id).join(',')}|${world.pendingVisits.length}|${world.news.length}`
           : `j|${this.jobTab}|${folk.id}|${folk.alarm}|${JSON.stringify([folk.job, folk.gig && Math.floor(folk.gig.progress / 5), folk.business && Math.floor(folk.business.quality), world.gigBoard, world.household.funds >= 0])}|${folk.away?.until ?? ''}|${Math.floor(world.tick / 60)}`;
     if (sig === this.panelSig) return;
@@ -1728,7 +1762,108 @@ export class Hud {
     this.panelEl.append(head);
     if (this.panel === 'skills') this.renderSkills();
     else if (this.panel === 'relations') this.renderRelations();
+    else if (this.panel === 'family') this.renderFamily();
     else this.renderJob();
+  }
+
+  // ---------- bloco 17: árvore e álbum ----------
+
+  private renderFamily(): void {
+    const tabs = el('div', 'catalog-tabs job-tabs');
+    for (const id of ['tree', 'album'] as FamilyTab[]) {
+      const b = el('button', 'tab', t(`family.tab.${id}`));
+      b.classList.toggle('on', this.familyTab === id);
+      b.addEventListener('click', () => {
+        this.familyTab = id;
+        this.panelSig = '';
+        this.renderPanel();
+      });
+      tabs.append(b);
+    }
+    this.panelEl.append(tabs);
+    if (this.familyTab === 'tree') this.renderTree();
+    else this.renderAlbum();
+  }
+
+  /** Gerações de cima para baixo; casal lado a lado; quem se foi em sépia. */
+  private renderTree(): void {
+    const world = this.ctrl.world;
+    const rows = familyTree(world);
+    const box = el('div', 'tree');
+    rows.forEach((row, i) => {
+      const line = el('div', 'tree-row');
+      line.append(el('div', 'tree-gen', t('tree.gen', { n: i + 1 })));
+      const people = el('div', 'tree-people');
+      row.people.forEach((p, j) => {
+        const prev = row.people[j - 1];
+        if (prev && prev.spouse === p.id) people.append(el('span', 'tree-tie', '♥'));
+        const card = el('div', `tree-person${p.gone ? ' gone' : ''}${p.home ? ' home' : ''}`);
+        const face = el('span', 'tree-face');
+        face.innerHTML = faceSvg(p.stage === 'elder' ? { ...p.look, hair: 4 } : p.look, 30);
+        card.append(face, el('div', 'tree-name', p.name.split(' ')[0]), el('div', 'tree-stage', p.gone ? t('tree.gone') : t(`age.${p.stage}`)));
+        card.title = p.name;
+        people.append(card);
+      });
+      line.append(people);
+      box.append(line);
+    });
+    if (rows.length === 0) box.append(el('div', 'panel-note', t('tree.empty')));
+    this.panelEl.append(box, el('div', 'panel-note', t('tree.note')));
+  }
+
+  /** Álbum: tirar foto da vista de agora, e as páginas (fotos e marcos) da mais nova para a mais velha. */
+  private renderAlbum(): void {
+    const world = this.ctrl.world;
+    const bar = el('div', 'album-bar');
+    const caption = el('input', 'album-caption') as HTMLInputElement;
+    caption.maxLength = 60;
+    caption.placeholder = t('album.caption');
+    caption.value = this.photoCaption;
+    caption.addEventListener('input', () => (this.photoCaption = caption.value));
+    const snap = el('button', 'btn btn-small btn-go', t('album.snap'));
+    snap.addEventListener('click', () => {
+      const photo = this.ctrl.photographer?.();
+      if (!photo) return;
+      const who = world.folks.filter((f) => !f.visit && !f.away).map((f) => f.id);
+      if (this.ctrl.commandOrExplain({ type: 'takePhoto', photo, caption: this.photoCaption, who })) {
+        this.photoCaption = '';
+        this.ctrl.toast(t('album.taken'));
+      }
+      this.refreshPanel();
+    });
+    bar.append(caption, snap);
+    this.panelEl.append(bar);
+    const pages = [...(world.household.album ?? [])].reverse();
+    if (pages.length === 0) {
+      this.panelEl.append(el('div', 'panel-note', t('album.empty')));
+      return;
+    }
+    const grid = el('div', 'album');
+    for (const page of pages) {
+      const card = el('div', `album-page album-${page.kind}`);
+      if (page.photo) {
+        const img = el('img', 'album-photo') as HTMLImageElement;
+        img.src = page.photo;
+        img.alt = page.caption ?? t('album.photo');
+        card.append(img);
+      } else {
+        card.append(el('div', 'album-mark', ALBUM_MARKS[page.kind] ?? '★'));
+      }
+      const params: Record<string, string | number> = { name: page.names[0] ?? '', other: page.names[1] ?? '', ...page.params };
+      for (const [k, v] of Object.entries(params)) if (typeof v === 'string' && hasText(v)) params[k] = t(v);
+      const title = page.kind === 'photo' ? (page.caption ?? (page.names.map((n) => n.split(' ')[0]).join(', ') || t('album.photo'))) : t(`album.${page.kind}`, params);
+      card.append(el('div', 'album-title', title), el('div', 'album-when', t('album.when', { day: clockOf(page.tick).day })));
+      if (page.kind === 'photo') {
+        const drop = this.confirmButton('✕', t('album.drop'), () => {
+          this.ctrl.commandOrExplain({ type: 'dropPhoto', entryId: page.id });
+          this.refreshPanel();
+        });
+        drop.classList.add('album-drop');
+        card.append(drop);
+      }
+      grid.append(card);
+    }
+    this.panelEl.append(grid);
   }
 
   private renderRelations(): void {
@@ -1944,6 +2079,13 @@ export class Hud {
     const head = el('div', 'wev-head');
     const face = el('span', 'wev-face');
     face.innerHTML = faceSvg(body.look, 40, 10);
+    // bloco 17: de velhice não tem par ou ímpar, só a despedida
+    if (p.cause === 'age') {
+      head.append(face, el('div', 'wev-title', t('farewell.title', { name: body.name })));
+      this.bargainEl.append(head, el('div', 'wev-text', t('farewell.text', { name: body.name })));
+      this.bargainEl.hidden = false;
+      return;
+    }
     head.append(face, el('div', 'wev-title', t('bargain.title', { name: body.name })));
     this.bargainEl.append(head, el('div', 'wev-text', t('bargain.text')));
     this.bargainEl.append(el('div', 'panel-note', by ? t('bargain.who', { name: by.name }) : t('bargain.nobody')));
@@ -2060,8 +2202,32 @@ export class Hud {
     }
     // bloco 11: criança não trabalha; vai à escola
     const folk = this.ctrl.folk;
-    if (folk.age) {
+    if (folk.age === 'baby' || folk.age === 'child') {
       this.renderSchool(folk);
+      return;
+    }
+    // bloco 17: jovem estuda e pode pegar meio período; idoso é aposentado
+    if (folk.age === 'teen') {
+      this.renderSchool(folk);
+      this.panelEl.append(el('div', 'panel-sub', t('life.partTimeHead')), el('div', 'panel-note', t('life.partTimeNote')));
+      this.renderEmployment();
+      return;
+    }
+    if (folk.age === 'elder') {
+      const box = el('div', 'job-box');
+      const was = folk.retired?.careerId ? this.ctrl.sim.catalog.careers[folk.retired.careerId] : undefined;
+      box.append(
+        el('div', 'job-title', t('life.retiredTitle')),
+        el('div', 'job-career', was ? t('life.retiredFrom', { job: t(was.levels[folk.retired!.level]?.title ?? ''), career: t(was.name) }) : t('life.retiredNone')),
+        el('div', 'job-line', t('life.pension', { pay: formatMoney(folk.pension ?? 0) })),
+      );
+      this.panelEl.append(box);
+      if (this.jobTab === 'job') this.jobTab = 'gigs';
+      tabs.querySelector('.tab')?.remove();
+      tabs.querySelectorAll('.tab').forEach((b, i) => b.classList.toggle('on', ['gigs', 'business'][i] === this.jobTab));
+      this.panelEl.append(tabs);
+      if (this.jobTab === 'gigs') this.renderGigs();
+      else this.renderBusiness();
       return;
     }
     this.panelEl.append(tabs);
@@ -2074,7 +2240,7 @@ export class Hud {
   private renderSchool(folk: Folk): void {
     const box = el('div', 'job-box');
     const kid = folk.kid;
-    if (folk.age === 'child' && kid) {
+    if ((folk.age === 'child' || folk.age === 'teen') && kid) {
       const band = t(`grade.band.${gradeBand(kid.grade)}`);
       box.append(
         el('div', 'job-title', t('hud.school')),
@@ -2130,7 +2296,7 @@ export class Hud {
     const catalog = this.ctrl.sim.catalog;
     const job = folk.job;
     const career = job && careerOf(catalog, job);
-    const level = career?.levels[job!.level];
+    const level = job ? levelOfJob(catalog, job) : undefined;
     if (job && career && level) {
       const box = el('div', 'job-box');
       box.append(
@@ -2165,7 +2331,7 @@ export class Hud {
       const ride = rideFor(catalog, folk, world.tick);
       if (ride) box.append(el('div', 'job-line strong', t('job.rideWaiting', { time: formatClock(ride.leaves) })));
       const prize = Object.values(catalog.objects).find((o) => o.reward?.career === career.id);
-      if (prize?.reward && job.level < prize.reward.level) {
+      if (prize?.reward && job.level < prize.reward.level && !job.partTime) {
         box.append(el('div', 'panel-note', t('job.reward', { title: t(career.levels[prize.reward.level].title), object: t(prize.name) })));
       }
       // bloco 6: despertador na cama, antes do turno
@@ -2186,7 +2352,7 @@ export class Hud {
       alarm.append(input, el('span', 'switch'), el('span', '', alarmText));
       box.append(alarm);
 
-      const next = career.levels[job.level + 1];
+      const next = job.partTime ? undefined : career.levels[job.level + 1];
       if (next) {
         box.append(el('div', 'job-line', t('job.next', { title: t(next.title), pay: formatMoney(next.pay) })));
         const missing = missingSkills(folk, next);
@@ -2287,8 +2453,10 @@ export class Hud {
   }
 
   private adFor(career: CareerDef, folk: Folk): HTMLElement {
-    const level = transferLevel(folk, folk.job, career);
-    const entry = career.levels[level];
+    // bloco 17: o jovem só pega o meio período (o primeiro cargo, à tarde)
+    const teen = folk.age === 'teen';
+    const level = teen ? 0 : transferLevel(folk, folk.job, career);
+    const entry = teen ? levelOfJob(this.ctrl.sim.catalog, { ...newJob(career.id), partTime: true })! : career.levels[level];
     const ad = el('div', 'ad');
     const text = el('div', 'ad-text');
     text.append(
@@ -2297,6 +2465,7 @@ export class Hud {
       el('div', 'ad-line', t('job.skillsUsed', { skills: career.skills.map((s) => t(`skill.${s}`)).join(', ') })),
     );
     if (level > 0) text.append(el('div', 'ad-line strong', t('job.transfer', { title: t(entry.title) })));
+    if (teen) text.append(el('div', 'ad-line strong', t('life.partTimeAd')));
     const take = el('button', 'btn btn-small', t(folk.job ? 'job.switch' : 'job.take'));
     take.addEventListener('click', () => {
       this.ctrl.commandOrExplain({ type: 'takeJob', folkId: folk.id, careerId: career.id });

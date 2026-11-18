@@ -5,12 +5,22 @@ import { partnersOf, reputationOf } from './gossip';
 import { affinity, knows, memoryWeight, relationOf } from './relations';
 import type { Catalog, Folk, SocialCategory, SocialDef, Temper, Vec, World } from './types';
 import { temperSocial } from './temper';
+import { isAdult } from './kids';
 
 /** Gosto do folk por um tipo de interação social (produto dos traços). */
 export function socialTaste(catalog: Catalog, folk: Pick<Folk, 'traits'> & { temper?: Temper }, cat: SocialCategory): number {
   let m = 1;
   for (const t of folk.traits) m *= catalog.traits[t]?.social?.[cat] ?? 1;
   return m * temperSocial(folk.temper, cat);
+}
+
+/** Socials românticos que jovem não faz (casamento e filhos são coisa de adulto). */
+const ADULT_ROMANCE = new Set(['propose', 'vows', 'divorce', 'tryBaby']);
+
+/** Bloco 17: os dois podem ter romance? Adulto com adulto, ou jovem com jovem. */
+export function romanceAllowed(a: Pick<Folk, 'age'>, b: Pick<Folk, 'age'>, socialId?: string): boolean {
+  if (isAdult(a) && isAdult(b)) return true;
+  return a.age === 'teen' && b.age === 'teen' && !(socialId && ADULT_ROMANCE.has(socialId));
 }
 
 /** O folk está em casa e em condição de conversar com alguém? */
@@ -37,11 +47,12 @@ export function talkingWith(folk: Folk): number {
 export function socialAllowed(world: World, catalog: Catalog, def: SocialDef, a: Folk, b: Folk): boolean {
   // bloco 11: bebê não conversa; romance só entre adultos
   if (a.age === 'baby' || b.age === 'baby') return false;
-  if (def.category === 'romantic' && (a.age !== undefined || b.age !== undefined)) return false;
+  // bloco 17: romance entre adultos (idosos também) ou entre dois jovens, sem noivado nem filhos
+  if (def.category === 'romantic' && !romanceAllowed(a, b, def.id)) return false;
   const req = def.requires;
   // bloco 16: presente só com presente na mão
   if (req?.gift && !(a.gifts?.length ?? 0)) return false;
-  if (req?.adult && a.age !== undefined) return false;
+  if (req?.adult && !isAdult(a)) return false;
   if (req?.child && b.age !== 'child') return false;
   if (req?.kid && a.age !== 'child' && b.age !== 'child') return false;
   if (req?.homework && b.kid?.homework !== 'due') return false;

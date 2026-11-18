@@ -176,7 +176,25 @@ import {
   wakeTime,
 } from './will';
 import { rollWishes, wishOnBuy, wishOnHost, wishOnTalk, wishOnTidy, wishOnUse, wishesDue } from './wishes';
-import { acceptChance, adjacent, onLot, socialAllowed, talkTiles, talkingWith } from './social';
+import type { Heir } from './life';
+import {
+  FAREWELL_MINUTES,
+  addAlbum,
+  copyLife,
+  fitKid,
+  estateOf,
+  heirloomHeir,
+  heirsOf,
+  inSchool,
+  lifeOn,
+  nextStage,
+  pensionFor,
+  scheduleAge,
+  setStage,
+  splitEstate,
+  stageOf,
+} from './life';
+import { acceptChance, adjacent, onLot, romanceAllowed, socialAllowed, talkTiles, talkingWith } from './social';
 import type {
   Action,
   Catalog,
@@ -214,7 +232,7 @@ import {
 } from './upkeep';
 import { BILL_INTERVAL, isServiceNeighbor } from './world';
 import type { TownProblem } from './town';
-import { TOWN_HOUR, emptyVisitors, foundFamily, leaveFamily, moveHouse, placeAtHome, playFamily, settle, streetSide, townDay } from './town';
+import { TOWN_HOUR, emptyVisitors, foundFamily, leaveFamily, moveHouse, placeAtHome, playFamily, pushFeed, settle, streetSide, townDay } from './town';
 import type { OutingProblem } from './downtown';
 import {
   CLOSE_HOUR,
@@ -319,6 +337,7 @@ import {
   gradeText,
   gradeVerdict,
   isSchoolDay,
+  isAdult,
   kidAllows,
   kidsOf,
   learnFromCaregiver,
@@ -349,6 +368,8 @@ export type CommandProblem =
   | PlaceProblem
   | BuildProblem
   | 'busy'
+  | 'retired'
+  | 'oldAge'
   | 'away'
   | 'collapsed'
   | 'queueFull'
@@ -556,6 +577,8 @@ export class Sim {
     w.departed ??= [];
     w.spirits ??= [];
     w.rules ??= { death: true };
+    w.rules.life ??= 'off';
+    w.household.album ??= [];
     w.lastBurglary ??= w.tick;
     w.town ??= null;
     w.outing ??= null;
@@ -729,7 +752,7 @@ export class Sim {
             return this.fail('alreadyEngaged');
           }
         }
-        if (def.special === 'moveOut' && (this.adults().length < 2 || other.age !== undefined)) return this.fail('lastResident');
+        if (def.special === 'moveOut' && (this.adults().length < 2 || !isAdult(other))) return this.fail('lastResident');
         // bloco 9: "puxar assunto" escolhe o assunto do papo
         const topic = def.topic && cmd.topic && this.catalog.topics[cmd.topic] ? cmd.topic : undefined;
         return this.enqueuePlayer(folk, { kind: 'social', otherId: other.id, socialId: def.id, topic });
@@ -765,7 +788,7 @@ export class Sim {
         const folk = this.findFolk(cmd.folkId);
         if (!folk) return false;
         if (folk.visit) return this.fail('visitor');
-        if (folk.age !== undefined) return this.fail('tooYoung');
+        if (!isAdult(folk)) return this.fail('tooYoung');
         if (this.world.party) return this.fail('partyOn');
         const guests = [...new Set(cmd.guestIds)].filter((id) => {
           const n = this.world.neighbors.find((x) => x.id === id);
@@ -793,6 +816,26 @@ export class Sim {
         return this.goDowntown(cmd.folkIds, cmd.dateId);
       case 'goHome':
         return this.goHome();
+      // bloco 17: álbum
+      case 'takePhoto': {
+        const who = (cmd.who ?? []).filter((id) => this.findFolk(id));
+        const caption = (cmd.caption ?? '').replace(/\s+/g, ' ').trim().slice(0, 60);
+        const page = addAlbum(this.world, {
+          kind: 'photo',
+          who,
+          names: who.map((id) => this.findFolk(id)!.name),
+          photo: cmd.photo,
+          caption: caption || undefined,
+        });
+        return page ? true : this.fail('invalid');
+      }
+      case 'dropPhoto': {
+        const album = this.world.household.album ?? [];
+        const page = album.find((e) => e.id === cmd.entryId);
+        if (!page || page.kind !== 'photo') return this.fail('invalid');
+        this.world.household.album = album.filter((e) => e !== page);
+        return true;
+      }
       case 'answerPhone': {
         const folk = this.findFolk(cmd.folkId);
         if (!folk) return false;
@@ -828,9 +871,18 @@ export class Sim {
         const career = this.catalog.careers[cmd.careerId];
         if (!folk || !career) return false;
         if (folk.visit) return this.fail('visitor');
-        if (folk.age !== undefined) return this.fail('tooYoung');
+        // bloco 17: jovem pega meio período; idoso já se aposentou
+        const teen = folk.age === 'teen';
+        if (!isAdult(folk) && !teen) return this.fail('tooYoung');
+        if (folk.age === 'elder') return this.fail('retired');
         if (folk.away) return this.fail('away');
         if (folk.job?.careerId === cmd.careerId) return false;
+        if (teen) {
+          this.dropWork(folk);
+          folk.job = { ...newJob(cmd.careerId), partTime: true };
+          this.log('log.partTimeHired', { name: folk.name, job: career.levels[0].title });
+          return true;
+        }
         if (folk.business) return this.fail('hasBusiness');
         this.dropWork(folk);
         // troca de área: leva parte da experiência
@@ -862,7 +914,7 @@ export class Sim {
         const def = offer && this.catalog.gigs[offer.defId];
         if (!folk) return false;
         if (folk.visit) return this.fail('visitor');
-        if (folk.age !== undefined) return this.fail('tooYoung');
+        if (!isAdult(folk)) return this.fail('tooYoung');
         if (!offer || !def) return this.fail('offerGone');
         if (folk.gig) return this.fail('hasGig');
         if (!gigAllowed(folk, def)) return this.fail('skillTooLow');
@@ -884,7 +936,7 @@ export class Sim {
         const def = this.catalog.businesses[cmd.businessId];
         if (!folk || !def) return false;
         if (folk.visit) return this.fail('visitor');
-        if (folk.age !== undefined) return this.fail('tooYoung');
+        if (!isAdult(folk)) return this.fail('tooYoung');
         if (folk.away) return this.fail('away');
         if (folk.business) return this.fail('hasBusiness');
         if (this.world.household.funds < def.cost) return this.fail('funds');
@@ -1000,7 +1052,7 @@ export class Sim {
     this.removeObject(objectId);
     for (const f of swimmers) {
       const pool = poolTiles(this.world.grid, this.catalog, obj.x, obj.y);
-      if (pool.length === 0 || poolHasLadder(this.world, this.catalog, pool) || f.visit || f.age !== undefined) continue;
+      if (pool.length === 0 || poolHasLadder(this.world, this.catalog, pool) || f.visit || !isAdult(f)) continue;
       f.adrift = { x: obj.x, y: obj.y };
       f.queue = [];
       f.path = [];
@@ -1187,7 +1239,12 @@ export class Sim {
     }
     if (minute === BOARD_HOUR * 60) refreshBoard(world, this.catalog);
     // bloco 15: a vida das outras casas do bairro anda uma vez por dia
-    if (minute === TOWN_HOUR * 60) townDay(world, this.catalog);
+    if (minute === TOWN_HOUR * 60) {
+      townDay(world, this.catalog);
+      this.payPensions();
+    }
+    // bloco 17: relógio da vida
+    if (lifeOn(world) && !world.outing) this.stepLife();
     if (minute === 0 && Math.floor(world.tick / MINUTES_PER_DAY) % HABIT_PERIOD_DAYS === 0) this.settleTempers();
     this.stepVisits();
     for (const folk of [...world.folks]) {
@@ -1199,7 +1256,7 @@ export class Sim {
       }
       if (!world.folks.includes(folk)) continue;
       this.stepJob(folk);
-      if (folk.age === 'child' && !folk.visit) this.stepSchool(folk);
+      if (inSchool(folk) && !folk.visit) this.stepSchool(folk);
       if (folk.gig) checkGigDeadline(world, this.catalog, this.logger, folk);
       if (folk.business && minute === BUSINESS_CLOSE_HOUR * 60) settleBusiness(world, this.catalog, this.logger, folk);
       this.stepFolk(folk);
@@ -1231,7 +1288,7 @@ export class Sim {
 
   /** Bloco 11: adultos da casa. */
   adults(): Folk[] {
-    return this.world.folks.filter((f) => !f.visit && f.age === undefined);
+    return this.world.folks.filter((f) => !f.visit && isAdult(f));
   }
 
   /** Lê e esvazia os resultados de conversa desde a última chamada. */
@@ -1455,7 +1512,7 @@ export class Sim {
   private stepAway(folk: Folk): void {
     const away = folk.away!;
     const job = folk.job;
-    const career = job && careerOf(this.catalog, job);
+    const career = !away.school && job ? careerOf(this.catalog, job) : undefined;
     for (const id of NEED_IDS) {
       if (id === 'ambience') continue;
       const rate = this.catalog.needs[id].decayPerMinute * (AWAY_DECAY[id] ?? 1);
@@ -1465,10 +1522,10 @@ export class Sim {
     // ninguém desmaia no serviço: chega em casa no bagaço, mas chega
     folk.needs.energy = Math.max(3, folk.needs.energy);
     // bloco 11: na escola tem merenda
-    if (folk.age === 'child') folk.needs.hunger = Math.max(folk.needs.hunger, SCHOOL_LUNCH);
+    if (inSchool(folk) && away.school) folk.needs.hunger = Math.max(folk.needs.hunger, SCHOOL_LUNCH);
     else this.stepWorkEvent(folk);
     if (this.world.tick >= away.until) {
-      if (folk.age === 'child') this.backFromSchool(folk);
+      if (inSchool(folk) && away.school) this.backFromSchool(folk);
       else this.comeHome(folk);
     }
   }
@@ -1526,7 +1583,8 @@ export class Sim {
     resolveRaise(this.world, this.catalog, this.logger, folk);
 
     const career = careerOf(this.catalog, job);
-    const next = career?.levels[job.level + 1];
+    // bloco 17: meio período de jovem não tem promoção
+    const next = job.partTime ? undefined : career?.levels[job.level + 1];
     if (next && job.performance >= PROMOTE_AT) {
       const blocked = bossBlocks(this.world, folk, job.level + 1);
       if (Object.keys(missingSkills(folk, next)).length > 0) {
@@ -1543,6 +1601,10 @@ export class Sim {
         this.log('log.promoted', { name: folk.name, job: next.title, pay: formatMoney(next.pay) });
         createNews(this.world, this.catalog, this.logger, 'promoted', folk.id, 0);
         this.unlockRewards(folk);
+        // bloco 17: o cargo mais alto vai para o álbum
+        if (career && job.level === career.levels.length - 1) {
+          addAlbum(this.world, { kind: 'topJob', who: [folk.id], names: [folk.name], params: { job: next.title } });
+        }
       }
     }
     this.checkFired(folk);
@@ -1664,7 +1726,7 @@ export class Sim {
     const asleep = !!using && isSleep(using);
     if (asleep) {
       // o despertador toca antes do turno; quem dorme sem ele acorda quando a energia enche
-      if (folk.alarm && (folk.job || folk.age === 'child') && wakeTime(this.catalog, folk, tick) === tick) {
+      if (folk.alarm && (folk.job || inSchool(folk)) && wakeTime(this.catalog, folk, tick) === tick) {
         this.finish(folk);
         folk.idleTicks = IDLE_BEFORE_AUTO;
         setThought(folk, 'alarm', 'alarm', tick, 6);
@@ -2121,7 +2183,7 @@ export class Sim {
     const pool = poolOf(this.world, this.catalog, obj, def);
     if (pool.length === 0 || poolHasLadder(this.world, this.catalog, pool)) return;
     // bloco 14: morador fica preso na água até alguém pôr uma escadinha (ou cansar de vez)
-    if (!folk.visit && folk.age === undefined) {
+    if (!folk.visit && isAdult(folk)) {
       folk.adrift = { ...pool[0] };
       folk.queue = [];
       folk.path = [];
@@ -2506,7 +2568,7 @@ export class Sim {
     if (mem?.target) addMemory(world, this.catalog, other.id, folk.id, mem.target);
     if (ok && def.special) this.socialSpecial(folk, other, def.special);
     // bloco 11: adulto que dá atenção à criança conta como quem cuida dela
-    if (ok && def.category === 'friendly' && other.kid && folk.age === undefined) {
+    if (ok && def.category === 'friendly' && other.kid && isAdult(folk)) {
       other.kid.cares[folk.id] = (other.kid.cares[folk.id] ?? 0) + def.duration;
     }
     if (!ok && def.special === 'engage') this.proposalRefused(folk, other);
@@ -2572,7 +2634,7 @@ export class Sim {
         this.log('log.helpedHomework', names);
       }
     } else if (special === 'moveOut') {
-      if (other.visit || other.age !== undefined || this.adults().length < 2) return;
+      if (other.visit || !isAdult(other) || this.adults().length < 2) return;
       createNews(this.world, this.catalog, this.logger, 'movedOut', other.id, folk.id, onLotWitnesses(this.world, folk, [folk.id, other.id]));
       this.moveOut(other, 0);
     }
@@ -2595,10 +2657,10 @@ export class Sim {
     let guest: Neighbor | undefined;
     let guestId = 0;
     if (dateId !== undefined) {
-      if (host.age !== undefined || dateId === host.id) return this.fail('dateBusy');
+      if (!isAdult(host) || dateId === host.id) return this.fail('dateBusy');
       const resident = world.folks.find((f) => f.id === dateId && !f.visit);
       if (resident) {
-        if (!ids.includes(dateId) || resident.age !== undefined) return this.fail('dateBusy');
+        if (!ids.includes(dateId) || !isAdult(resident)) return this.fail('dateBusy');
         guestId = dateId;
       } else {
         const n = world.neighbors.find((x) => x.id === dateId);
@@ -2765,7 +2827,7 @@ export class Sim {
     const extras = world.folks.filter((f) => f.visit && !f.visit.service && !f.visit.date);
     if (extras.length >= EXTRAS_MAX) return;
     const town = world.neighbors.filter((n) => n.downtown && !this.findFolk(n.id));
-    const street = world.neighbors.filter((n) => n.home !== undefined && !isServiceNeighbor(n) && n.age === undefined && !this.findFolk(n.id));
+    const street = world.neighbors.filter((n) => n.home !== undefined && !isServiceNeighbor(n) && isAdult(n) && !this.findFolk(n.id));
     const pool = street.length && nextFloat(world) < 0.25 ? street : town;
     if (pool.length === 0) return;
     const n = pool[nextInt(world, pool.length)];
@@ -2927,7 +2989,7 @@ export class Sim {
       if (f.age === 'baby' || f.down) continue;
       this.stepJob(f);
       if (f.queue[0]?.kind === 'work') this.depart(f);
-      if (f.age === 'child') {
+      if (inSchool(f)) {
         this.stepSchool(f);
         if (f.queue[0]?.kind === 'school') this.departSchool(f);
       }
@@ -3003,7 +3065,7 @@ export class Sim {
     const id = folk.gifts?.shift();
     const def = id ? this.catalog.gifts?.[id] : undefined;
     if (!def) return;
-    const romantic = folk.age === undefined && other.age === undefined;
+    const romantic = romanceAllowed(folk, other);
     applyDelta(this.world, this.catalog, other, folk, { friendship: def.friendship, romance: romantic ? def.romance : 0 });
     const d = this.world.outing?.date;
     if (d && ((d.host === folk.id && d.guest === other.id) || (d.guest === folk.id && d.host === other.id))) d.gifts++;
@@ -3053,6 +3115,11 @@ export class Sim {
     other.visit = null;
     this.world.neighbors = this.world.neighbors.filter((x) => x.id !== other.id);
     if (n?.bornName) other.bornName = n.bornName;
+    // bloco 17: a fase, os pais e a aposentadoria vêm junto
+    if (n) {
+      copyLife(n, other);
+      fitKid(other, this.world.tick);
+    }
     // quem se muda traz o emprego junto
     const career = n?.career && this.catalog.careers[n.career.id] ? n.career : null;
     other.job = career ? { ...newJob(career.id), level: Math.min(career.level, this.catalog.careers[career.id].levels.length - 1) } : null;
@@ -3102,7 +3169,7 @@ export class Sim {
    */
   private moveOut(folk: Folk, money: number): boolean {
     const world = this.world;
-    if (folk.visit || folk.away || folk.age !== undefined || this.adults().length < 2) return false;
+    if (folk.visit || folk.away || !isAdult(folk) || this.adults().length < 2) return false;
     const c = circleOfFolk(world, folk.id);
     if (c) this.dropFromCircle(folk, c, true);
     const take = Math.max(0, Math.min(money, world.household.funds));
@@ -3167,6 +3234,7 @@ export class Sim {
     rename(world, host.id, hn);
     rename(world, partner.id, pn);
     this.log('log.married', before);
+    addAlbum(world, { kind: 'wedding', who: [host.id, partner.id], names: [hn, pn] });
     if (hn !== before.name || pn !== before.other) this.log('log.newNames', { name: hn, other: pn });
     const guests = world.folks.filter((f) => f !== folk && f !== other && onLot(f) && !f.visit?.service);
     for (const g of guests) {
@@ -4515,6 +4583,7 @@ export class Sim {
     const baby = createBaby(world, this.catalog, parents, crib, exp.adopted);
     const names = parents.map((p) => p.name.split(' ')[0]);
     this.log(exp.adopted ? 'log.babyAdopted' : 'log.babyBorn', { name: baby.name, parents: names.join(' e ') });
+    addAlbum(world, { kind: exp.adopted ? 'adopted' : 'birth', who: [baby.id, ...parents.map((p) => p.id)], names: [baby.name, ...parents.map((p) => p.name)] });
     if (parents[0]) createNews(world, this.catalog, this.logger, 'newBaby', parents[0].id, parents[1]?.id ?? 0);
   }
 
@@ -4607,7 +4676,7 @@ export class Sim {
 
   /** Bloco 11: um adulto à toa vai cuidar do bebê que precisa (chorando, sempre). */
   private babyWish(folk: Folk): boolean {
-    if (folk.visit || folk.age !== undefined) return false;
+    if (folk.visit || !isAdult(folk)) return false;
     const world = this.world;
     let best: { crib: WorldObject; care: BabyCare; v: number } | null = null;
     for (const baby of kidsOf(world, 'baby')) {
@@ -4634,7 +4703,7 @@ export class Sim {
 
   /** Bloco 11: criança com lição pendente vai fazer (quem tem mais Ordem vai antes). */
   private homeworkWish(folk: Folk): boolean {
-    if (folk.age !== 'child' || folk.visit || folk.kid?.homework !== 'due') return false;
+    if (!inSchool(folk) || folk.visit || folk.kid?.homework !== 'due') return false;
     const world = this.world;
     const hour = clockOf(world.tick).hour;
     if (hour < 15 || hour >= 22) return false;
@@ -4671,6 +4740,8 @@ export class Sim {
     baby.facing = { x: 0, y: 1 };
     this.log('log.grewUp', { name: baby.name });
     this.learnFromCare(baby);
+    // bloco 17: com o relógio ligado, a infância começa a contar agora
+    scheduleAge(this.world, baby, true);
   }
 
   /** Um tile livre perto (para quem sai do berço). */
@@ -4736,7 +4807,7 @@ export class Sim {
       return;
     }
     kid.schoolDay = day;
-    folk.away = { until: day * MINUTES_PER_DAY + SCHOOL_END, late: 0, mood: moodOf(this.catalog, folk.needs), event: null, nextEvent: -1 };
+    folk.away = { until: day * MINUTES_PER_DAY + SCHOOL_END, late: 0, mood: moodOf(this.catalog, folk.needs), event: null, nextEvent: -1, school: true };
     const c = circleOfFolk(this.world, folk.id);
     if (c) this.dropFromCircle(folk, c, true);
     folk.queue = [];
@@ -5023,7 +5094,7 @@ export class Sim {
       folk.scorch = Math.max(0, folk.scorch - 0.5);
       if (folk.scorch === 0) delete folk.scorch;
     }
-    if (!folk.visit && folk.age === undefined) {
+    if (!folk.visit && isAdult(folk)) {
       if (folk.needs.hunger <= 0) {
         folk.starving = (folk.starving ?? 0) + 1;
         if (folk.starving === 1) this.log('log.starving', { name: folk.name });
@@ -5084,7 +5155,7 @@ export class Sim {
     if (world.fires.length > 0) {
       const fire = nearestFire(world, folk);
       if (!fire) return false;
-      if (folk.age === undefined) {
+      if (isAdult(folk)) {
         const ext = safetyOf(world, this.catalog, 'extinguisher');
         const extDef = ext && this.defOf(ext);
         if (ext && extDef && findPathToAny(this.nav, folk, useTiles(world, this.nav, ext, extDef))) {
@@ -5105,7 +5176,7 @@ export class Sim {
     const thief = this.burglar();
     if (thief && !thief.visit?.leaving && reach(world, folk, thief) <= 6) {
       setThought(folk, 'fear', 'burglar', world.tick, 30);
-      if (folk.age === undefined && world.help.police === 0 && !world.folks.some((f) => f.queue.some((a) => a.interactionId === 'callPolice'))) {
+      if (isAdult(folk) && world.help.police === 0 && !world.folks.some((f) => f.queue.some((a) => a.interactionId === 'callPolice'))) {
         const phone = this.nearestSpecial(folk, 'callPolice');
         if (phone) {
           folk.queue.push(this.makeAction({ kind: 'use', objectId: phone.obj.id, interactionId: phone.it.id }, 'auto'));
@@ -5441,7 +5512,8 @@ export class Sim {
     if (p.stage === 'coming') {
       if (reach(world, folk, body) <= 1) {
         p.stage = 'waiting';
-        p.deadline = world.tick + BARGAIN_MINUTES;
+        // bloco 17: de velhice não tem par ou ímpar: ele espera a família se despedir
+        p.deadline = world.tick + (p.cause === 'age' ? FAREWELL_MINUTES : BARGAIN_MINUTES);
         folk.facing = { x: Math.sign(body.x - folk.x), y: Math.sign(body.y - folk.y) };
         this.log('log.reaperArrived', { name: body.name });
         return;
@@ -5482,6 +5554,7 @@ export class Sim {
     const world = this.world;
     const p = world.passings[0];
     if (!p || p.stage !== 'waiting') return this.fail('noBargain');
+    if (p.cause === 'age' && pick !== null) return this.fail('oldAge');
     const body = this.findFolk(p.folkId);
     if (pick === null || !body) {
       this.takeAway(p);
@@ -5527,8 +5600,22 @@ export class Sim {
   private die(folk: Folk, cause: DeathCause): void {
     const world = this.world;
     const at = { x: folk.x, y: folk.y };
-    world.departed.push({ id: folk.id, name: folk.name, look: { ...folk.look }, age: folk.age, cause, died: world.tick });
+    // bloco 17: o cônjuge e os herdeiros saem antes de o casamento se desfazer
+    const spouse = spouseOf(world, folk.id);
+    const heirs = heirsOf(world, folk.id, spouse);
+    const parents = folk.parents ?? folk.kid?.parents;
+    world.departed.push({
+      id: folk.id,
+      name: folk.name,
+      look: { ...folk.look },
+      age: folk.age,
+      cause,
+      died: world.tick,
+      ...(parents?.length ? { parents: [...parents] } : {}),
+      ...(spouse ? { spouse } : {}),
+    });
     this.removeFolk(folk);
+    this.inherit(folk, heirs);
     let kind = memorialKind(world, this.catalog, at, cause);
     let spot = freeSpotFor(world, this.catalog, kind, at);
     if (!spot && kind === 'urn') {
@@ -5560,6 +5647,129 @@ export class Sim {
       if (kids.length > 0) this.log('log.kidsToRelatives');
     }
     if (this.household().length === 0) this.log('log.houseEmpty');
+  }
+
+  // ---------- bloco 17: gerações ----------
+
+  /**
+   * Relógio da vida: quem não tem data marcada ganha uma (começando num
+   * ponto qualquer da fase), quem chegou na data passa para a fase seguinte.
+   * Quem está fora (trabalho, escola) ou caído espera voltar.
+   */
+  private stepLife(): void {
+    const world = this.world;
+    for (const folk of this.household()) {
+      if (folk.age === 'baby' || folk.down || folk.away) continue;
+      // -1 = idoso que já viveu tudo o que o relógio conta (sem morte ligada)
+      if (folk.nextAge !== undefined && folk.nextAge < 0) continue;
+      if (folk.nextAge === undefined) {
+        scheduleAge(world, folk, false);
+        continue;
+      }
+      if (world.tick >= folk.nextAge) this.ageUp(folk);
+    }
+  }
+
+  /** Passa para a próxima fase (e o que muda com ela). */
+  ageUp(folk: Folk): void {
+    const world = this.world;
+    const stage = stageOf(folk);
+    const next = nextStage(stage);
+    if (stage === 'elder' || !next) {
+      delete folk.nextAge;
+      if (world.rules.death) {
+        if (world.passings.length === 0) this.fall(folk, 'age');
+        else folk.nextAge = world.tick + 60;
+      } else {
+        folk.nextAge = -1;
+        this.log('log.longLife', { name: folk.name });
+      }
+      return;
+    }
+    setStage(folk, next);
+    const params = { name: folk.name };
+    if (next === 'teen') {
+      this.log('log.becameTeen', params);
+      addAlbum(world, { kind: 'teen', who: [folk.id], names: [folk.name] });
+    } else if (next === 'adult') {
+      const kid = folk.kid;
+      if (kid) {
+        if (kid.parents.length && !folk.parents) folk.parents = [...kid.parents];
+        addAlbum(world, { kind: 'graduated', who: [folk.id], names: [folk.name], params: { grade: gradeText(kid.grade) } });
+        if (kid.grade >= HONOR_AT) this.log('log.graduatedHonor', params);
+      }
+      delete folk.kid;
+      folk.queue = folk.queue.filter((a) => a.kind !== 'school' && !this.interactionOf(a)?.homework);
+      this.log('log.becameAdult', params);
+      if (folk.job?.partTime) {
+        delete folk.job.partTime;
+        this.log('log.partTimeFull', { name: folk.name, job: levelOfJob(this.catalog, folk.job)?.title ?? '' });
+      }
+    } else if (next === 'elder') {
+      const job = folk.job;
+      if (job) {
+        const pension = pensionFor(this.catalog, job);
+        folk.retired = { careerId: job.careerId, level: job.level };
+        folk.pension = pension;
+        this.dropWork(folk);
+        folk.job = null;
+        if (folk.outfit === 'work') folk.outfit = 'day';
+        this.log('log.retired', { name: folk.name, pay: formatMoney(pension) });
+        addAlbum(world, { kind: 'retired', who: [folk.id], names: [folk.name], params: { pay: formatMoney(pension) } });
+      } else {
+        this.log('log.becameElder', params);
+        addAlbum(world, { kind: 'elder', who: [folk.id], names: [folk.name] });
+      }
+      folk.retired ??= { careerId: '', level: -1 };
+      folk.pension ??= 0;
+    }
+    setThought(folk, 'wish', 'spark', world.tick, 30);
+    scheduleAge(world, folk, true);
+  }
+
+  /** Pensão dos aposentados, uma vez por dia. */
+  private payPensions(): void {
+    const total = this.household().reduce((s, f) => s + (f.pension ?? 0), 0);
+    if (total > 0) this.world.household.funds += total;
+  }
+
+  /**
+   * Herança: o pecúlio de quem morreu é repartido entre o cônjuge e os filhos
+   * (por casa: a nossa, as do bairro, quem mora fora leva a parte embora) e
+   * os objetos queridos dele passam para o herdeiro da casa.
+   */
+  private inherit(dead: Folk, heirs: Heir[]): void {
+    const world = this.world;
+    const total = estateOf(dead);
+    if (total > 0) {
+      const shares = splitEstate(total, heirs);
+      for (const [where, amount] of shares) {
+        if (where === 'home') world.household.funds += amount;
+        else if (typeof where === 'number') {
+          const fam = world.town?.families.find((f) => f.id === where);
+          if (fam) {
+            fam.funds += amount;
+            pushFeed(world, 'feed.inherited', { family: fam.name, name: dead.name, amount: formatMoney(amount) });
+          }
+        }
+      }
+      const home = shares.get('home') ?? 0;
+      this.log(home > 0 ? 'log.estate' : 'log.estateAway', { name: dead.name, amount: formatMoney(home), total: formatMoney(total), n: heirs.length });
+    }
+    for (const obj of world.objects) {
+      if (obj.beloved !== dead.id) continue;
+      const heir = heirloomHeir(world, dead.id, obj.uses, heirs);
+      const def = this.defOf(obj);
+      if (!heir) {
+        delete obj.beloved;
+        continue;
+      }
+      obj.beloved = heir;
+      const who = this.findFolk(heir);
+      this.log('log.heirloom', { name: who?.name ?? '', other: dead.name, object: def?.name ?? '' });
+      addAlbum(world, { kind: 'heirloom', who: [heir, dead.id], names: [who?.name ?? '', dead.name], params: { object: def?.name ?? '' } });
+    }
+    addAlbum(world, { kind: 'passing', who: [dead.id], names: [dead.name], params: { stage: `age.${stageOf(dead)}` } });
   }
 
   /** Tira o folk do mundo (conversas, rodas, festa, telefone, namoros e casamentos). */

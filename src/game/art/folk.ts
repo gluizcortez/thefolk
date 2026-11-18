@@ -75,6 +75,11 @@ export const FOLK_HEIGHT = 1.8;
 /** bloco 11: tamanho da criança e do bebê em relação ao adulto */
 export const CHILD_SCALE = 0.64;
 export const BABY_SCALE = 0.4;
+/** Bloco 17: jovem quase do tamanho de adulto; idoso um tico menor e de cabelo branco. */
+export const TEEN_SCALE = 0.86;
+export const ELDER_SCALE = 0.96;
+/** índice do cinza em HAIR */
+export const ELDER_HAIR = 4;
 const HIPS_Y = 0.9;
 const THIGH = 0.42;
 const SHIN = 0.41;
@@ -518,6 +523,10 @@ export class FolkModel {
     /** bloco 11: bebê (enrolado na manta) ou criança (menor, cabeça maior) */
     readonly age?: Age,
   ) {
+    if (age === 'elder' && look.hair !== ELDER_HAIR) {
+      look = { ...look, hair: ELDER_HAIR };
+      this.look = look;
+    }
     const skinColor = SKIN[look.skin % SKIN.length];
     const skin = texMat(`skin:${look.skin % SKIN.length}`, { gloss: 0.12 });
     // bloco 5: a roupa depende da ocasião
@@ -878,6 +887,11 @@ export class FolkModel {
     if (age === 'child') {
       this.group.scale.setScalar(CHILD_SCALE);
       this.head.scale.setScalar(1.22);
+    } else if (age === 'teen') {
+      this.group.scale.setScalar(TEEN_SCALE);
+      this.head.scale.setScalar(1.06);
+    } else if (age === 'elder') {
+      this.group.scale.setScalar(ELDER_SCALE);
     } else if (age === 'baby') {
       this.group.scale.setScalar(BABY_SCALE);
       this.head.scale.setScalar(1.6);

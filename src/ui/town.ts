@@ -133,7 +133,7 @@ export class TownPanel {
         const f = world.folks.find((x) => x.id === m.id);
         const age = n?.age ?? f?.age;
         const career = n?.career ?? (f?.job ? { id: f.job.careerId, level: f.job.level } : null);
-        const job = age === 'baby' ? t('town.baby') : age === 'child' ? t('town.kid') : career ? t(catalog.careers[career.id]?.levels[career.level]?.title ?? '') : t('town.jobless');
+        const job = age === 'baby' ? t('town.baby') : age === 'child' ? t('town.kid') : age === 'teen' ? t('town.teen') : age === 'elder' ? t('town.elder') : career ? t(catalog.careers[career.id]?.levels[career.level]?.title ?? '') : t('town.jobless');
         const li = el('li');
         li.append(el('b', '', m.name), el('span', '', ` · ${job}`));
         people.append(li);

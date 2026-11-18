@@ -15,7 +15,7 @@ import type { TownPlan } from './town';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 20;
+export const SAVE_VERSION = 21;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -288,6 +288,33 @@ const migrations: Record<number, Migration> = {
     world.outing = null;
     world.lastDate = null;
     addMissingNeighbors(world, ctx);
+    return { ...save, world: world as unknown as Obj };
+  },
+  // bloco 17: gerações. O relógio da vida fica desligado nos saves antigos
+  // (ninguém começa a envelhecer de surpresa); os pais dos bebês e crianças
+  // passam a ficar para sempre, quem está na escola fica marcado como tal
+  // e a casa ganha o álbum (vazio).
+  20: (save) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    world.rules = { ...(world.rules ?? { death: true }), life: 'off' };
+    const fix = (f: World['folks'][number]) => {
+      const parents = f.kid?.parents ?? [];
+      const out = { ...f };
+      if (parents.length && !out.parents) out.parents = [...parents];
+      if (out.away && out.age === 'child') out.away = { ...out.away, school: true };
+      return out;
+    };
+    world.folks = (world.folks ?? []).map(fix);
+    if (world.outing?.home) world.outing = { ...world.outing, home: { ...world.outing.home, folks: world.outing.home.folks.map(fix) } };
+    world.household = { ...world.household, album: world.household.album ?? [] };
+    if (world.town) {
+      world.town = {
+        ...world.town,
+        families: world.town.families.map((fam) =>
+          fam.stash ? { ...fam, stash: { ...fam.stash, folks: fam.stash.folks.map(fix), household: { ...fam.stash.household, album: fam.stash.household.album ?? [] } } } : fam,
+        ),
+      };
+    }
     return { ...save, world: world as unknown as Obj };
   },
 };

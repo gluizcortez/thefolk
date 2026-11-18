@@ -15,6 +15,8 @@ export interface MemberDraft {
   traits: string[];
   temper: Temper;
   month: number;
+  /** bloco 17: jovem ou idoso (sem campo = adulto) */
+  age?: 'teen' | 'elder';
 }
 
 export interface FamilyDraft {
@@ -33,7 +35,9 @@ export type FamilyProblem =
   | 'clashingTraits'
   | 'temper'
   | 'month'
-  | 'look';
+  | 'look'
+  /** bloco 17: a casa precisa de pelo menos um adulto (ou idoso) */
+  | 'noAdult';
 
 /** Nome sem espaços sobrando, com no máximo MAX_NAME letras. */
 export function cleanName(s: string): string {
@@ -74,6 +78,7 @@ export function familyProblem(catalog: Catalog, draft: FamilyDraft): FamilyProbl
       if (!Number.isInteger(v) || v < 0 || v >= LOOK_LIMITS[k]) return 'look';
     }
   }
+  if (members.every((m) => m.age === 'teen')) return 'noAdult';
   return null;
 }
 

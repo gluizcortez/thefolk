@@ -25,6 +25,7 @@ async function boot(): Promise<void> {
   view.start();
   // bloco 7: miniatura da casa para os jogos salvos
   ctrl.snapshot = () => view.snapshot();
+  ctrl.photographer = () => view.photo();
 
   // bloco 7: som. O navegador só libera o áudio depois de um clique ou tecla.
   const engine = new AudioEngine(loadPrefs());

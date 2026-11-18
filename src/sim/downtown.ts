@@ -1,4 +1,5 @@
 import { clockOf } from './clock';
+import { isAdult } from './kids';
 import { moodOf } from './needs';
 import { relationOf } from './relations';
 import { buildHome } from './town';
@@ -100,17 +101,18 @@ export function outingProblem(world: World, folkIds: number[]): OutingProblem | 
   const goers = folkIds.map((id) => world.folks.find((f) => f.id === id));
   if (goers.some((f) => !f || !canGo(f))) return 'cantGo';
   const going = goers as Folk[];
-  if (going.some((f) => f.age === 'child') && !going.some((f) => f.age === undefined)) return 'kidAlone';
+  if (going.some((f) => f.age === 'child') && !going.some((f) => isAdult(f))) return 'kidAlone';
   const stay = world.folks.filter((f) => !f.visit && !folkIds.includes(f.id));
-  const keeper = stay.some((f) => f.age === undefined);
-  if (stay.some((f) => f.age !== undefined) && !keeper) return 'babyAlone';
+  // bloco 17: jovem já fica em casa sozinho e olha os pequenos
+  const keeper = stay.some((f) => isAdult(f) || f.age === 'teen');
+  if (stay.some((f) => f.age === 'baby' || f.age === 'child') && !keeper) return 'babyAlone';
   if (world.household.funds < TAXI_FARE) return 'funds';
   return null;
 }
 
 /** Vizinho que dá para chamar para sair: adulto, no bairro ou na cidade, sem ser prestador. */
 export function dateAvailable(n: Neighbor | undefined): boolean {
-  return !!n && n.service === undefined && n.away === undefined && n.age === undefined;
+  return !!n && n.service === undefined && n.away === undefined && isAdult(n);
 }
 
 /** Chance de o vizinho topar sair com `host` (amizade, romance e namoro pesam). */
