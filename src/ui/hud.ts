@@ -1,9 +1,12 @@
 import { PAINT, SHIRT, SKIN, css } from '../game/art/palette';
 import { COVER_ART, FLOOR_ART } from '../game/art/house';
 import type { BuildTool, GameController } from '../game/controller';
+import { OPENING_TOOLS, isOpeningTool } from '../game/controller';
+import { ROOF_COLORS } from '../data/build';
 import { t } from '../i18n';
 import {
   DARK_BELOW,
+  roofArea,
   roomAt,
   roomGrade,
   roomKind,
@@ -103,6 +106,8 @@ import {
   kidAllows,
 } from '../sim';
 import type {
+  OpeningKind,
+  RoofStyle,
   Action,
   CareerDef,
   CareerLevel,
@@ -158,18 +163,37 @@ type Panel = 'skills' | 'job' | 'relations' | null;
 type JobTab = 'job' | 'gigs' | 'business';
 const JOB_TABS: JobTab[] = ['job', 'gigs', 'business'];
 
-type BuildTab = 'walls' | 'openings' | 'floors' | 'coverings';
-const BUILD_TABS: BuildTab[] = ['walls', 'openings', 'floors', 'coverings'];
+type BuildTab = 'walls' | 'openings' | 'floors' | 'coverings' | 'roof';
+const BUILD_TABS: BuildTab[] = ['walls', 'openings', 'floors', 'coverings', 'roof'];
 /** ferramenta que cada aba do modo construção escolhe ao abrir */
-const TAB_TOOL: Record<BuildTab, BuildTool> = { walls: 'wall', openings: 'door', floors: 'floor', coverings: 'paint' };
+const TAB_TOOL: Record<BuildTab, BuildTool> = { walls: 'wall', openings: 'door', floors: 'floor', coverings: 'paint', roof: 'roof' };
 /** aba onde fica cada ferramenta */
 const TOOL_TAB: Record<BuildTool, BuildTab> = {
   wall: 'walls',
+  half: 'walls',
   erase: 'walls',
+  column: 'walls',
+  stairs: 'walls',
   door: 'openings',
+  doorGlass: 'openings',
+  doorDouble: 'openings',
+  arch: 'openings',
   window: 'openings',
+  windowTall: 'openings',
+  windowHigh: 'openings',
   floor: 'floors',
   paint: 'coverings',
+  roof: 'roof',
+};
+/** bloco 12: amostra de cada estilo de porta e janela no catálogo da obra */
+const OPENING_SWATCH: Record<OpeningKind, string> = {
+  door: 'door',
+  doorGlass: 'windowOut',
+  doorDouble: 'door',
+  arch: 'wallPlaster',
+  window: 'windowOut',
+  windowTall: 'windowOut',
+  windowHigh: 'windowOut',
 };
 
 const SOCIAL_ORDER: SocialCategory[] = ['friendly', 'professional', 'romantic', 'mean'];
@@ -287,6 +311,9 @@ export class Hud {
   private catalogSig = '';
   private thumbnail: ((art: string) => string) | null = null;
   private swatch: ((texture: string, tall?: boolean) => string) | null = null;
+  /** bloco 12: botão do modo das paredes e nome do andar visto */
+  private wallsButton = el('button', 'btn');
+  private levelLabel = el('span', 'level-label');
   /** bloco 5: abre a tela de criar família */
   openCreator: (() => void) | null = null;
   private buildButton = el('button', 'btn btn-buy');
@@ -446,16 +473,31 @@ export class Hud {
       b.addEventListener('click', () => this.ctrl.rotateCamera(dir));
       return b;
     };
-    const walls = el('button', 'btn', t(`hud.walls.${this.ctrl.wallMode}`));
+    const walls = this.wallsButton;
+    walls.textContent = t(`hud.walls.${this.ctrl.wallMode}`);
     walls.title = t('hud.wallsTip');
     walls.addEventListener('click', () => {
       walls.textContent = t(`hud.walls.${this.ctrl.cycleWallMode()}`);
     });
+    // bloco 12: andar que se vê (PageUp / PageDown)
+    const floors = el('div', 'levelbar');
+    const step = (glyph: string, tip: string, dir: number) => {
+      const b = el('button', 'btn btn-icon', glyph);
+      b.title = t(tip);
+      b.setAttribute('aria-label', t(tip));
+      b.addEventListener('click', () => {
+        this.ctrl.changeLevel(dir);
+        this.update();
+      });
+      return b;
+    };
+    this.levelLabel.title = t('hud.levelTip');
+    floors.append(step('▾', 'hud.levelDown', -1), this.levelLabel, step('▴', 'hud.levelUp', 1));
     this.buyButton.title = t('hud.buyTip');
     this.buyButton.addEventListener('click', () => this.toggleBuyMode());
     this.buildButton.title = t('hud.buildTip');
     this.buildButton.addEventListener('click', () => this.toggleBuildMode());
-    bar.append(turn('⟲', 'hud.turnLeft', -1), turn('⟳', 'hud.turnRight', 1), walls, this.buyButton, this.buildButton);
+    bar.append(turn('⟲', 'hud.turnLeft', -1), turn('⟳', 'hud.turnRight', 1), walls, floors, this.buyButton, this.buildButton);
     this.root.append(bar, el('div', 'help', t('hud.help')));
   }
 
@@ -656,6 +698,10 @@ export class Hud {
     const world = this.ctrl.world;
     const folk = this.ctrl.folk;
     const clock = clockOf(world.tick);
+    const levelText = t(`hud.level.${this.ctrl.viewLevel}`);
+    if (this.levelLabel.textContent !== levelText) this.levelLabel.textContent = levelText;
+    const wallsText = t(`hud.walls.${this.ctrl.wallMode}`);
+    if (this.wallsButton.textContent !== wallsText) this.wallsButton.textContent = wallsText;
 
     this.clockDay.textContent = t('hud.day', { day: clock.day, weekday: t(`weekday.${(clock.day - 1) % 7}`) });
     const house = world.household;
@@ -2186,7 +2232,8 @@ export class Hud {
     this.buildTab = TOOL_TAB[c.buildTool];
     const depth = c.sim.undoDepth;
     const funds = c.world.household.funds;
-    const sig = `${this.buildTab}|${c.buildTool}|${c.floorId}|${c.coveringId}|${depth}|${funds}`;
+    const roof = c.world.grid.roof;
+    const sig = `${this.buildTab}|${c.buildTool}|${c.floorId}|${c.coveringId}|${depth}|${funds}|${c.viewLevel}|${c.stairDir}|${roof?.style}|${roof?.color}`;
     if (sig === this.buildSig) return;
     this.buildSig = sig;
     for (const b of this.buildTabs.children) {
@@ -2194,7 +2241,9 @@ export class Hud {
     }
     this.undoButton.textContent = depth > 0 ? t('build.undoN', { n: depth }) : t('build.undo');
     this.undoButton.disabled = depth === 0;
-    this.buildHint.textContent = t(`build.hint.${c.buildTool}`);
+    this.buildHint.textContent = isOpeningTool(c.buildTool)
+      ? t(c.buildTool.startsWith('window') ? 'build.hint.window' : 'build.hint.door')
+      : t(`build.hint.${c.buildTool}`, { dir: t(`build.dir.${c.stairDir}`) });
     this.buildItems.replaceChildren();
     const catalog = c.sim.catalog;
     const add = (name: string, price: string, img: string | null, on: boolean, pick: () => void, tip?: string) => {
@@ -2222,22 +2271,49 @@ export class Hud {
     const tool = (tool: BuildTool) => () => c.setBuildTool(tool);
     if (this.buildTab === 'walls') {
       add(t('build.wall'), t('build.perMeter', { price: formatMoney(catalog.parts.wall.price) }), sw('wallExterior', true), c.buildTool === 'wall', tool('wall'));
+      add(t('build.half'), t('build.perMeter', { price: formatMoney(catalog.parts.half.price) }), sw('wallPlaster', true), c.buildTool === 'half', tool('half'));
+      add(t('build.column'), formatMoney(catalog.parts.column.price), sw('wallPlaster', true), c.buildTool === 'column', tool('column'), t('build.hint.column'));
+      add(t('build.stairs'), formatMoney(catalog.parts.stairs.price), sw('walnut'), c.buildTool === 'stairs', tool('stairs'), t('build.stairsTip'));
       add(t('build.erase'), t('build.free'), null, c.buildTool === 'erase', tool('erase'), t('build.hint.erase'));
     } else if (this.buildTab === 'openings') {
-      add(t('build.door'), formatMoney(catalog.parts.door.price), sw('door', true), c.buildTool === 'door', tool('door'));
-      add(
-        t('build.window'),
-        formatMoney(catalog.parts.window.price),
-        sw('windowOut', true),
-        c.buildTool === 'window',
-        tool('window'),
-        `${t('build.window')} · ${formatMoney(catalog.parts.window.price)} · ${t('need.ambience')} +${catalog.parts.window.ambience}`,
-      );
+      for (const kind of OPENING_TOOLS) {
+        const part = catalog.parts[kind];
+        const amb = part.ambience ? ` · ${t('need.ambience')} +${part.ambience}` : '';
+        add(t(`build.${kind}`), formatMoney(part.price), sw(OPENING_SWATCH[kind], true), c.buildTool === kind, tool(kind), `${t(`build.${kind}`)} · ${formatMoney(part.price)}${amb}`);
+      }
+    } else if (this.buildTab === 'roof') {
+      // bloco 12: estilo e cor do telhado (vale para a casa inteira)
+      const area = roofArea(c.world.grid, catalog);
+      const price = area * catalog.parts.roof.price;
+      const set = (style: RoofStyle, color: string) => () => {
+        c.commandOrExplain({ type: 'setRoof', style, color });
+        c.wallMode = 'up';
+      };
+      const cur = roof ?? { style: 'hip', color: 'terracotta' };
+      for (const style of ['hip', 'gable'] as RoofStyle[]) {
+        add(t(`build.roof.${style}`), price > 0 ? formatMoney(price) : t('build.free'), sw('roof'), cur.style === style, set(style, cur.color), t(`build.roof.${style}Tip`));
+      }
+      for (const color of Object.keys(ROOF_COLORS)) {
+        const item = el('button', 'item');
+        item.classList.toggle('on', cur.color === color);
+        const chip = el('span', 'item-img item-glyph');
+        chip.style.background = `#${ROOF_COLORS[color].toString(16).padStart(6, '0')}`;
+        item.append(chip, el('span', 'item-name', t(`build.roofColor.${color}`)), el('span', 'item-price', price > 0 ? formatMoney(price) : t('build.free')));
+        item.title = t(`build.roofColor.${color}`);
+        item.addEventListener('click', () => {
+          set(cur.style as RoofStyle, color)();
+          this.renderBuild();
+        });
+        this.buildItems.append(item);
+      }
     } else if (this.buildTab === 'floors') {
       for (const f of Object.values(catalog.floors).sort((a, b) => a.price - b.price)) {
+        // bloco 12: o vão não aparece; no andar de cima, a grama vira "sem piso"
+        if (f.void) continue;
+        const bare = f.outdoor && c.viewLevel > 0;
         const tex = f.outdoor ? 'grass' : FLOOR_ART.includes(f.id) ? f.id : 'wood';
         const price = f.price > 0 ? t('build.perTile', { price: formatMoney(f.price) }) : t('build.free');
-        add(t(f.name), price, sw(tex), c.buildTool === 'floor' && c.floorId === f.id, () => {
+        add(bare ? t('floor.void') : t(f.name), price, bare ? null : sw(tex), c.buildTool === 'floor' && c.floorId === f.id, () => {
           c.floorId = f.id;
           c.setBuildTool('floor');
         });

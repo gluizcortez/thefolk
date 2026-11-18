@@ -4,7 +4,7 @@
 // revestimento e cantos), e não mais de um raio em volta do folk.
 
 import { daylightAt } from './clock';
-import { blocksFloor, edgeKey, footprint, inBounds } from './grid';
+import { blocksFloor, edgeKey, footprint, inBounds, isDoorway, isWindow, rowsOf } from './grid';
 import { MESS_AMBIENCE, messSenseOf, stateAmbience } from './upkeep';
 import type { Catalog, Folk, Grid, ObjectDef, RoomTaste, Side, Vec, World, WorldObject } from './types';
 
@@ -46,11 +46,13 @@ const SIDES: { side: Side; dx: number; dy: number }[] = [
 
 /** Separa o terreno em cômodos. Função pura do grid (e dos pisos do catálogo). */
 export function computeRooms(grid: Grid, catalog: Catalog): RoomMap {
-  const { w, h } = grid;
+  // bloco 12: todos os andares; as linhas do vão entre eles ficam de fora
+  const { w } = grid;
+  const h = rowsOf(grid);
   const of = new Int32Array(w * h).fill(-1);
   const rooms: Room[] = [];
   for (let start = 0; start < w * h; start++) {
-    if (of[start] !== -1) continue;
+    if (of[start] !== -1 || !inBounds(grid, start % w, Math.floor(start / w))) continue;
     const id = rooms.length;
     const queue = [start];
     of[start] = id;
@@ -74,10 +76,11 @@ export function computeRooms(grid: Grid, catalog: Catalog): RoomMap {
         const key = edgeKey(x, y, nx, ny);
         const kind = grid.edges[key];
         if (kind) {
-          closed[d.side] = kind !== 'door';
-          if (kind === 'wall') faces.push(`${x},${y},${d.side}`);
-          if (kind === 'window') windows.add(key);
-          continue;
+          closed[d.side] = !isDoorway(kind);
+          if (kind === 'wall' || kind === 'half') faces.push(`${x},${y},${d.side}`);
+          if (isWindow(kind)) windows.add(key);
+          // bloco 12: meia parede fecha o passo, mas o cômodo continua do outro lado
+          if (kind !== 'half') continue;
         }
         if (!inBounds(grid, nx, ny)) {
           border = true;
@@ -114,7 +117,7 @@ export function computeRooms(grid: Grid, catalog: Catalog): RoomMap {
 const cache = new WeakMap<Grid, { sig: string; map: RoomMap }>();
 
 function gridSig(grid: Grid): string {
-  let s = `${grid.w}x${grid.h}|`;
+  let s = `${grid.w}x${grid.h}x${grid.levels ?? 1}|`;
   for (const k in grid.edges) s += k + grid.edges[k] + ';';
   s += '|' + grid.floor.join(',') + '|';
   for (const k in grid.coverings) s += k + grid.coverings[k] + ';';

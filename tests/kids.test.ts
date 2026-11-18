@@ -411,7 +411,7 @@ describe('save v15 (bloco 11)', () => {
     delete old.world.household.expecting;
     const up = deserialize(old, { neighbors: NEIGHBORS, catalog: CATALOG });
     expect(up.version).toBe(SAVE_VERSION);
-    expect(SAVE_VERSION).toBe(15);
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(15);
     expect(up.world.household.expecting).toBeNull();
     expect(up.world.neighbors.some((n) => n.service === 'social')).toBe(true);
   });

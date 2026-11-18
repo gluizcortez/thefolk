@@ -633,8 +633,9 @@ button {
 }
 
 /* o relógio ganhou o dinheiro e ficou mais largo: em telas médias a barra
-   de câmera desce para não ficar embaixo dele */
-@media (max-width: 1260px) {
+   de câmera desce para não ficar embaixo dele (bloco 12: com o andar, ela
+   ficou mais comprida e desce mais cedo) */
+@media (max-width: 1420px) {
   .viewbar {
     top: 62px;
   }
@@ -2285,3 +2286,21 @@ button {
 .surname-row { display: flex; flex-direction: column; }
 .menu-item.surname.picked { background: #f6dfe4; font-weight: 700; }
 .menu-item.surname.picked .menu-dot { background: #c2456a; border-color: #7a2a40; }
+
+/* bloco 12: andar que se vê, entre as setas de subir e descer */
+.levelbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.level-label {
+  min-width: 72px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: var(--cream);
+  box-shadow: 0 2px 0 rgba(31, 27, 25, 0.35);
+  text-align: center;
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+}

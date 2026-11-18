@@ -471,7 +471,7 @@ embora; divórcio funciona; testes.
 **Pronto quando**: bebê nasce, é cuidado, vira criança, vai à escola com
 boletim; descaso leva a visitadora; testes.
 
-## Bloco 12 — Andares, escadas e telhado (save v16)
+## Bloco 12 — Andares, escadas e telhado (save v16) — feito em 18/11/2026
 
 **Escopo**
 - Grade por andar (`grid.floors[n]`), até 2 andares acima do térreo.
@@ -485,6 +485,10 @@ boletim; descaso leva a visitadora; testes.
 
 **Pronto quando**: dá para construir um sobrado com escada e telhado e o folk
 sobe para dormir; testes de navegação entre andares e de obra.
+
+**Como ficou**: em vez de `grid.floors[n]`, os andares moram nas linhas do
+mesmo `floor` (andar n a partir de `n * (h + 2)`), para que posições, cômodos,
+compra e IA sigam em (x, y) sem mudança. Parede diagonal ficou de fora.
 
 ## Bloco 13 — Quintal: piscina, cercas e jardim vivo (save v17)
 

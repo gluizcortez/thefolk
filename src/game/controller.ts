@@ -22,13 +22,24 @@ import {
   writeSlot,
 } from '../platform/slots';
 import { Sim, createWorld, isBuildCommand } from '../sim';
-import type { Command, FamilyDraft, Folk, Rotation, Speed, World } from '../sim';
+import type { Command, FamilyDraft, Folk, OpeningKind, Rotation, Side, Speed, World } from '../sim';
+import { MAX_LEVELS, levelOfRow } from '../sim';
 import { cleanName, familyProblem } from '../sim';
 
 export type Mode = 'live' | 'buy' | 'build';
 
-/** Ferramenta do modo construção. */
-export type BuildTool = 'wall' | 'erase' | 'door' | 'window' | 'floor' | 'paint';
+/**
+ * Ferramenta do modo construção. Bloco 12: meia parede, coluna, escada,
+ * telhado e os estilos de porta e janela (cada um é uma ferramenta).
+ */
+export type BuildTool = 'wall' | 'half' | 'erase' | 'column' | 'stairs' | OpeningKind | 'floor' | 'paint' | 'roof';
+
+/** Bloco 12: ferramentas que abrem vão numa parede. */
+export const OPENING_TOOLS: OpeningKind[] = ['door', 'doorGlass', 'doorDouble', 'arch', 'window', 'windowTall', 'windowHigh'];
+
+export function isOpeningTool(tool: BuildTool): tool is OpeningKind {
+  return (OPENING_TOOLS as string[]).includes(tool);
+}
 
 /** O que está sendo posto no chão no modo compra. */
 export interface Placing {
@@ -114,6 +125,10 @@ export class GameController {
   /** muda quando paredes, pisos ou revestimentos mudam */
   gridVersion = 0;
   buildTool: BuildTool = 'wall';
+  /** bloco 12: andar que a tela mostra (os de cima somem); só visual */
+  viewLevel = 0;
+  /** bloco 12: para onde sobe a próxima escada (R gira) */
+  stairDir: Side = 'N';
   floorId = 'wood';
   coveringId = 'stripes';
   private speedBeforeBuy: Speed = 1;
@@ -218,6 +233,7 @@ export class GameController {
 
   rotatePlacing(): void {
     if (this.placing) this.placing.rot = ((this.placing.rot + 1) % 4) as Rotation;
+    else if (this.mode === 'build' && this.buildTool === 'stairs') this.rotateStairs();
   }
 
   /** Tenta pôr o objeto em (x, y). Devolve true se deu certo. */
@@ -241,6 +257,22 @@ export class GameController {
 
   setBuildTool(tool: BuildTool): void {
     this.buildTool = tool;
+  }
+
+  /** Bloco 12: sobe (1) ou desce (-1) o andar que a tela mostra. */
+  changeLevel(dir: number): void {
+    this.viewLevel = Math.max(0, Math.min(Math.min(MAX_LEVELS, this.world.grid.levels ?? 1) - 1, this.viewLevel + dir));
+  }
+
+  /** Bloco 12: andar onde o folk está. */
+  levelOf(folk: Folk): number {
+    return Math.max(0, levelOfRow(this.world.grid, folk.y));
+  }
+
+  /** Bloco 12: gira a direção da escada que vai ser posta. */
+  rotateStairs(): void {
+    const order: Side[] = ['N', 'E', 'S', 'W'];
+    this.stairDir = order[(order.indexOf(this.stairDir) + 1) % 4];
   }
 
   /** Bloco 4: desfaz a última compra, venda ou mudança no modo compra. */
@@ -326,6 +358,7 @@ export class GameController {
     this.sim.load(world);
     this.selectedFolkId = world.folks[0].id;
     this.seenLog = world.tick;
+    this.viewLevel = 0;
     this.worldVersion++;
   }
 

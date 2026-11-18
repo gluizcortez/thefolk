@@ -2,7 +2,7 @@ import { relKey } from './relations';
 import type { Catalog, Grid, Neighbor, Vec, World, WorldObject } from './types';
 import { checkPlacement } from './economy';
 import { savingsOf } from './marriage';
-import { footprint, objectSize } from './grid';
+import { footprint, objectSize, storied } from './grid';
 import { computeRooms, lightsIn } from './rooms';
 import { START_PANTRY } from './services';
 import type { NeighborSeed, RelationSeed } from './world';
@@ -12,7 +12,7 @@ import { seedInterests } from './topics';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 15;
+export const SAVE_VERSION = 16;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -227,6 +227,14 @@ const migrations: Record<number, Migration> = {
     const world = { ...(save.world as Obj) } as unknown as World;
     world.household = { ...world.household, expecting: world.household?.expecting ?? null };
     addMissingNeighbors(world, ctx);
+    return { ...save, world: world as unknown as Obj };
+  },
+  // bloco 12: andares, escadas, colunas e telhado. O térreo fica igual (as
+  // linhas dele não mudam); os andares de cima chegam sem piso e o telhado,
+  // de quatro águas e telha de barro.
+  15: (save) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    world.grid = storied(world.grid);
     return { ...save, world: world as unknown as Obj };
   },
 };

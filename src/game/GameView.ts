@@ -17,6 +17,13 @@ import {
   roomFaces,
   wallBehind,
   wearsRing,
+  STAIR_RUN,
+  edgeLevel,
+  levelOfRow,
+  rowOn,
+  stairPlan,
+  stairStepAt,
+  strideOf,
 } from '../sim';
 import type {
   Action,
@@ -38,7 +45,8 @@ import { FolkModel } from './art/folk';
 import type { FolkAnim } from './art/folk';
 import { buildFurniture, furnitureSpec } from './art/furniture';
 import type { Anchor, FurnitureModel, FurnitureSpec } from './art/furniture';
-import { COVER_ART, FLOOR_ART, House, LOW_H, TH, WALL_H } from './art/house';
+import { COVER_ART, FLOOR_ART, HALF_H, House, LEVEL_H, LOW_H, TH, WALL_H, sceneZ } from './art/house';
+import { isOpeningTool } from './controller';
 import { texMat } from './art/build';
 import { PAINT, PAL } from './art/palette';
 import { colorOf } from '../sim/furnish';
@@ -126,6 +134,8 @@ interface ObjectEntry {
   height: number;
   /** bloco 7: notas que sobem do som ligado */
   notes?: { station: string; sprites: THREE.Sprite[] };
+  /** bloco 12: andar do objeto */
+  level: number;
 }
 
 interface FolkEntry {
@@ -242,6 +252,12 @@ export class GameView {
   private rideRoot = new THREE.Group();
   /** quem estava no trabalho no quadro anterior (para ver a volta para casa) */
   private wasAway = new Set<number>();
+  /** bloco 12: altura do alvo da câmera (sobe e desce com o andar) */
+  private aimY = 0;
+  /** bloco 12: quem estava selecionado e em que andar (a vista segue quando muda) */
+  private followKey = '';
+  /** bloco 12: degrau de cada tile de escada (índice do tile → degrau) */
+  private stairSteps = new Map<number, number>();
 
   constructor(
     private readonly container: HTMLElement,
@@ -339,6 +355,7 @@ export class GameView {
     this.syncFolks();
 
     this.target.set(grid.w / 2 + 0.3, 0, grid.h / 2 - 0.8);
+    this.followKey = '';
     this.sun.target.position.set(grid.w / 2, 0, grid.h / 2);
     this.builtVersion = this.ctrl.worldVersion;
     this.wallState = '';
@@ -371,7 +388,11 @@ export class GameView {
       for (let dy = 0; dy < size.h; dy++) for (let dx = 0; dx < size.w; dx++) occupied.add(`${obj.x + dx},${obj.y + dy}`);
     }
     const floors = this.ctrl.sim.catalog.floors;
-    this.house = new House(grid, floors);
+    this.house = new House(grid, floors, this.ctrl.sim.catalog);
+    this.stairSteps.clear();
+    for (const st of grid.stairs ?? []) {
+      stairPlan(grid, st).run.forEach((t, i) => this.stairSteps.set(t.y * grid.w + t.x, i));
+    }
     const free = (x: number, y: number) =>
       x >= 0 && y >= 0 && x < grid.w && y < grid.h && floors[grid.floor[y * grid.w + x]]?.outdoor === true && !occupied.has(`${x},${y}`);
     this.scenery = buildScenery(grid, free);
@@ -436,7 +457,9 @@ export class GameView {
       const paint = colorOf(obj, def);
       const model = buildFurniture(def.art, obj.id, paint ? PAINT[paint] : undefined);
       const size = objectSize(def, obj.rot);
-      const center = new THREE.Vector3(obj.x + size.w / 2, 0, obj.y + size.h / 2);
+      // bloco 12: o objeto vai para a altura do andar dele
+      const at = sceneZ(this.ctrl.world.grid, obj.y);
+      const center = new THREE.Vector3(obj.x + size.w / 2, at.base, at.z + size.h / 2);
       const turn = (spec.facing === 'E' ? Math.PI / 2 : 0) + obj.rot * (Math.PI / 2);
       const height = Math.max(0.3, new THREE.Box3().setFromObject(model.group).max.y);
       model.group.position.copy(center);
@@ -445,7 +468,7 @@ export class GameView {
       const fx = new WearFx(size.w, size.h, height, obj.id);
       fx.group.position.copy(center);
       this.objectsRoot.add(model.group, fx.group);
-      this.objects.set(obj.id, { obj, def, spec, model, center, turn, fx, height });
+      this.objects.set(obj.id, { obj, def, spec, model, center, turn, fx, height, level: at.level });
     }
     this.builtObjects = this.ctrl.objectsVersion;
     this.hover = {};
@@ -487,7 +510,12 @@ export class GameView {
     const along = Math.round((this.target.x * cos - this.target.z * sin) / px) * px;
     const stepDepth = px / Math.sin(ELEVATION);
     const depth = Math.round((-this.target.x * sin - this.target.z * cos) / stepDepth) * stepDepth;
-    const aim = this.tmp.set(along * cos - depth * sin, 0, -along * sin - depth * cos).clone();
+    // bloco 12: o alvo sobe e desce com o andar que se está vendo
+    const goalY = this.ctrl.viewLevel * LEVEL_H;
+    this.aimY += (goalY - this.aimY) * (1 - Math.exp(-dt * 10));
+    if (Math.abs(goalY - this.aimY) < 0.002) this.aimY = goalY;
+    const aimY = Math.round(this.aimY / px) * px;
+    const aim = this.tmp.set(along * cos - depth * sin, aimY, -along * sin - depth * cos).clone();
     cam.position
       .set(sin * Math.cos(ELEVATION), Math.sin(ELEVATION), cos * Math.cos(ELEVATION))
       .multiplyScalar(CAMERA_DISTANCE)
@@ -504,10 +532,11 @@ export class GameView {
       .multiplyScalar(30)
       .add(this.sun.target.position);
 
-    const state = `${this.ctrl.wallMode}|${Math.sin(this.azimuth) > 0}|${Math.cos(this.azimuth) > 0}`;
+    const state = `${this.ctrl.wallMode}|${Math.sin(this.azimuth) > 0}|${Math.cos(this.azimuth) > 0}|${this.ctrl.viewLevel}`;
     if (state !== this.wallState) {
       this.wallState = state;
-      this.house.update(this.ctrl.wallMode, Math.sin(this.azimuth), Math.cos(this.azimuth));
+      this.house.update(this.ctrl.wallMode, Math.sin(this.azimuth), Math.cos(this.azimuth), this.ctrl.viewLevel);
+      this.previewKey = '';
     }
   }
 
@@ -622,6 +651,15 @@ export class GameView {
         case 'KeyQ':
           this.ctrl.rotateCamera(-1);
           break;
+        // bloco 12: sobe e desce o andar que se vê
+        case 'PageUp':
+          e.preventDefault();
+          this.ctrl.changeLevel(1);
+          break;
+        case 'PageDown':
+          e.preventDefault();
+          this.ctrl.changeLevel(-1);
+          break;
         case 'KeyE':
           this.ctrl.rotateCamera(1);
           break;
@@ -678,9 +716,12 @@ export class GameView {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
+    // bloco 12: parede inteira na frente segura o clique (nada de atravessar parede)
+    const wall = this.raycaster.intersectObjects(this.house.solidWalls(), true)[0];
+    const wallAt = wall ? wall.distance : Infinity;
     // gente na frente dos móveis: o clique num folk ganha
     const people = [...this.folks.values()].filter((e) => e.model.group.visible).map((e) => e.model.group);
-    const who = this.raycaster.intersectObjects(people, true)[0];
+    const who = this.raycaster.intersectObjects(people, true).find((h) => h.distance < wallAt);
     if (who && this.ctrl.mode === 'live') {
       let o: THREE.Object3D | null = who.object;
       while (o && o.userData.folkId === undefined) o = o.parent;
@@ -688,7 +729,12 @@ export class GameView {
       if (folk) return { folk };
     }
     if (this.ctrl.mode === 'live') {
-      const hitMess = this.raycaster.intersectObjects(this.messRoot.children, true)[0];
+      const hitMess = this.raycaster
+        .intersectObjects(
+          this.messRoot.children.filter((m) => m.visible),
+          true,
+        )
+        .find((h) => h.distance < wallAt);
       if (hitMess) {
         let o: THREE.Object3D | null = hitMess.object;
         while (o && o.userData.messId === undefined) o = o.parent;
@@ -700,17 +746,32 @@ export class GameView {
     const groups = [...this.objects.values()]
       .filter((e) => e.model.group.visible && (this.ctrl.mode !== 'live' || e.def.layer !== 'floor'))
       .map((e) => e.model.group);
-    const hit = this.raycaster.intersectObjects(groups, true)[0];
+    const hit = this.raycaster.intersectObjects(groups, true).find((h) => h.distance < wallAt);
     if (hit) {
       let o: THREE.Object3D | null = hit.object;
       while (o && o.userData.objectId === undefined) o = o.parent;
       const entry = o ? this.objects.get(o.userData.objectId as number) : undefined;
       if (entry) return { entry };
     }
-    const ground = this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), this.tmp);
-    if (!ground) return {};
-    const tile = { x: Math.floor(ground.x), y: Math.floor(ground.z) };
-    return this.ctrl.sim.getNav().isFree(tile.x, tile.y) ? { tile } : {};
+    const ground = this.levelPoint();
+    if (!ground || this.raycaster.ray.origin.distanceTo(ground) > wallAt) return {};
+    const tile = this.levelTile(ground);
+    return tile && this.ctrl.sim.getNav().isFree(tile.x, tile.y) ? { tile } : {};
+  }
+
+  /** Bloco 12: onde o raio do mouse acerta o chão do andar que se está vendo. */
+  private levelPoint(): THREE.Vector3 | null {
+    const h = this.ctrl.viewLevel * LEVEL_H;
+    return this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -h), new THREE.Vector3());
+  }
+
+  /** Bloco 12: tile (em linhas do grid inteiro) de um ponto do chão do andar visto. */
+  private levelTile(p: THREE.Vector3, dx = 0, dz = 0): { x: number; y: number } | null {
+    const grid = this.ctrl.world.grid;
+    const x = Math.floor(p.x - dx);
+    const z = Math.floor(p.z - dz);
+    if (x < 0 || z < 0 || x >= grid.w || z >= grid.h) return null;
+    return { x, y: rowOn(grid, this.ctrl.viewLevel, z) };
   }
 
   /** Tile do chão sob o mouse (sem olhar para objetos), ou null fora do terreno. */
@@ -718,12 +779,14 @@ export class GameView {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
-    const ground = this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), this.tmp);
+    const ground = this.levelPoint();
     if (!ground || !this.ctrl.placing) return null;
     // o tile sob o mouse fica no centro do objeto
     const def = this.ctrl.sim.catalog.objects[this.ctrl.placing.defId];
     const size = def ? objectSize(def, this.ctrl.placing.rot) : { w: 1, h: 1 };
-    return { x: Math.floor(ground.x - (size.w - 1) / 2), y: Math.floor(ground.z - (size.h - 1) / 2) };
+    const x = Math.floor(ground.x - (size.w - 1) / 2);
+    const z = Math.floor(ground.z - (size.h - 1) / 2);
+    return { x, y: rowOn(this.ctrl.world.grid, this.ctrl.viewLevel, z) };
   }
 
   private click(clientX: number, clientY: number): void {
@@ -784,8 +847,10 @@ export class GameView {
       const stack = mess.filter((o) => o.x === m.x && o.y === m.y && o.id < m.id).length;
       const g = buildMess(m.kind, m.id, top);
       const jitter = ((m.id * 37) % 7) / 7 - 0.5;
-      g.position.set(m.x + 0.5 + jitter * 0.3, top + (m.kind === 'plate' ? stack * 0.03 : m.kind === 'paper' ? stack * 0.11 : 0), m.y + 0.5 - jitter * 0.25);
+      const at = sceneZ(world.grid, m.y);
+      g.position.set(m.x + 0.5 + jitter * 0.3, at.base + top + (m.kind === 'plate' ? stack * 0.03 : m.kind === 'paper' ? stack * 0.11 : 0), at.z + 0.5 - jitter * 0.25);
       g.userData.messId = m.id;
+      g.userData.level = at.level;
       this.messRoot.add(g);
     }
     if (this.hover.mess && !mess.includes(this.hover.mess)) this.hover = {};
@@ -797,7 +862,8 @@ export class GameView {
       new THREE.MeshBasicMaterial({ color: PAL.mustard, transparent: true, depthWrite: false, side: THREE.DoubleSide }),
     );
     mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(x + 0.5, 0.05, y + 0.5);
+    const at = sceneZ(this.ctrl.world.grid, y);
+    mesh.position.set(x + 0.5, at.base + 0.05, at.z + 0.5);
     this.scene.add(mesh);
     this.pings.push({ mesh, age: 0 });
   }
@@ -838,6 +904,7 @@ export class GameView {
       if (a?.phase === 'using' && a.objectId !== undefined && a.interactionId) using.set(a.objectId, a.interactionId);
     }
     this.syncMess();
+    for (const m of this.messRoot.children) m.visible = (m.userData.level ?? 0) <= this.ctrl.viewLevel;
     for (const entry of this.objects.values()) {
       entry.model.tick?.({
         time: this.animTime,
@@ -898,7 +965,7 @@ export class GameView {
       return {
         place: {
           x: holder.position.x + fwdX * 0.26 - fwdZ * 0.3,
-          y: 0.98 + Math.sin(this.animTime * (it.baby === 'lull' ? 2.4 : 1.2)) * 0.02,
+          y: holder.position.y + 0.98 + Math.sin(this.animTime * (it.baby === 'lull' ? 2.4 : 1.2)) * 0.02,
           z: holder.position.z + fwdZ * 0.26 + fwdX * 0.3,
           heading: h - Math.PI / 2,
         },
@@ -1014,7 +1081,7 @@ export class GameView {
     const speed = station.bpm / 120;
     entry.notes.sprites.forEach((sp, i) => {
       const k = (performance.now() / 1000 * 0.5 * speed + i / 3) % 1;
-      sp.position.set(entry.center.x + Math.sin(k * 6 + i * 2) * 0.22, entry.height + 0.15 + k * 0.9, entry.center.z);
+      sp.position.set(entry.center.x + Math.sin(k * 6 + i * 2) * 0.22, entry.center.y + entry.height + 0.15 + k * 0.9, entry.center.z);
       sp.scale.setScalar(0.3 + k * 0.1);
       sp.material.opacity = k < 0.15 ? k / 0.15 : 1 - (k - 0.15) / 0.85;
     });
@@ -1033,20 +1100,40 @@ export class GameView {
     const sin = Math.sin(entry.turn);
     return {
       x: entry.center.x + a.x * cos + a.z * sin,
-      y: a.y,
+      y: a.y + entry.center.y,
       z: entry.center.z - a.x * sin + a.z * cos,
       heading: a.heading + entry.turn,
     };
+  }
+
+  /** Bloco 12: ponto da cena onde fica o pé de quem está no tile (x, y), com a altura do degrau. */
+  private footAt(x: number, y: number): { x: number; y: number; z: number } {
+    const grid = this.ctrl.world.grid;
+    const at = sceneZ(grid, y);
+    const step = this.stairSteps.get(y * grid.w + x);
+    const lift = step === undefined ? 0 : ((step + 0.5) / STAIR_RUN) * LEVEL_H;
+    return { x: x + 0.5, y: at.base + lift, z: at.z + 0.5 };
   }
 
   private updateFolk(folk: Folk, alpha: number, dt: number): void {
     const view = this.folks.get(folk.id);
     if (!view) return;
     const selected = folk.id === this.ctrl.selectedFolkId;
-    // no trabalho, o folk não está em casa
-    view.model.group.visible = !folk.away;
-    if (folk.away) {
+    // bloco 12: a vista acompanha quem está selecionado quando ele troca de andar
+    const level = this.ctrl.levelOf(folk);
+    if (selected && !folk.away) {
+      const key = `${folk.id}:${level}`;
+      if (key !== this.followKey) {
+        if (this.ctrl.mode === 'live' || !this.followKey.startsWith(`${folk.id}:`)) this.ctrl.viewLevel = level;
+        this.followKey = key;
+      }
+    }
+    // no trabalho, o folk não está em casa; no andar de cima do que se vê, some
+    const hidden = !!folk.away || level > this.ctrl.viewLevel;
+    view.model.group.visible = !hidden;
+    if (hidden) {
       view.zzz.forEach((z) => (z.visible = false));
+      view.icon.visible = false;
       if (selected) {
         this.ring.visible = false;
         this.hud.setBubble(-1000, 0, null);
@@ -1078,9 +1165,13 @@ export class GameView {
       view.lookKey = key;
     }
 
-    const fx = folk.px + (folk.x - folk.px) * alpha + 0.5;
-    const fz = folk.py + (folk.y - folk.py) * alpha + 0.5;
-    let place = { x: fx, y: 0, z: fz, heading: Math.atan2(folk.facing.x, folk.facing.y) };
+    // bloco 12: o passo é interpolado já na cena (subindo a escada, o folk vai ganhando altura)
+    const from = this.footAt(folk.px, folk.py);
+    const to = this.footAt(folk.x, folk.y);
+    const fx = from.x + (to.x - from.x) * alpha;
+    const fy = from.y + (to.y - from.y) * alpha;
+    const fz = from.z + (to.z - from.z) * alpha;
+    let place = { x: fx, y: fy, z: fz, heading: Math.atan2(folk.facing.x, folk.facing.y) };
     let anim: FolkAnim = 'idle';
     let expr: Expression | undefined;
     let onObject = false;
@@ -1097,7 +1188,7 @@ export class GameView {
       expr = folk.thought?.kind === 'want' ? 'sad' : folk.kid?.asleep ? undefined : 'happy';
     } else if (folk.collapsed > 0) {
       anim = 'collapsed';
-      place = { x: fx, y: 0.12, z: fz + 0.8, heading: 0 };
+      place = { x: fx, y: fy + 0.12, z: fz + 0.8, heading: 0 };
     } else if (it && entry) {
       anim =
         (seatId !== undefined ? 'sit' : undefined) ??
@@ -1190,7 +1281,7 @@ export class GameView {
 
     if (selected) {
       this.ring.visible = !onObject && folk.collapsed === 0;
-      this.ring.position.set(view.model.group.position.x, 0.04, view.model.group.position.z);
+      this.ring.position.set(view.model.group.position.x, fy + 0.04, view.model.group.position.z);
       this.ring.rotation.z += dt * 1.4;
       const pulse = 1 + Math.sin(performance.now() / 300) * 0.05;
       this.ring.scale.set(pulse, pulse, 1);
@@ -1289,10 +1380,13 @@ export class GameView {
   private updateMarkers(dt: number): void {
     const { entry, tile } = this.hover;
     this.hoverTile.visible = !!tile;
-    if (tile) this.hoverTile.position.set(tile.x + 0.5, 0.035, tile.y + 0.5);
+    if (tile) {
+      const at = sceneZ(this.ctrl.world.grid, tile.y);
+      this.hoverTile.position.set(tile.x + 0.5, at.base + 0.035, at.z + 0.5);
+    }
     this.hoverPad.visible = !!entry;
     if (entry) {
-      this.hoverPad.position.set(entry.center.x, 0.03, entry.center.z);
+      this.hoverPad.position.set(entry.center.x, entry.center.y + 0.03, entry.center.z);
       const size = objectSize(entry.def, entry.obj.rot);
       this.hoverPad.scale.set(size.w + 0.14, size.h + 0.14, 1);
     }
@@ -1326,6 +1420,10 @@ export class GameView {
   /** Mostra o objeto sendo posto, com o chão verde (cabe) ou vermelho (não cabe). */
   /** Quadro em parede cortada sumiria no ar: esconde junto com a parede. */
   private shown(e: ObjectEntry): boolean {
+    // bloco 12: o que está num andar acima do que se vê some junto com ele
+    if (e.level > this.ctrl.viewLevel) return false;
+    // luminária de teto de baixo atravessaria o piso de cima
+    if (e.def.layer === 'ceiling' && e.level < this.ctrl.viewLevel) return false;
     if (e.def.layer !== 'wall' || !this.house) return true;
     return this.house.isTallEdge(wallBehind(e.obj));
   }
@@ -1337,7 +1435,10 @@ export class GameView {
     if (!placing || !def || !tile) {
       this.clearGhost();
       this.ghostPad.visible = false;
-      for (const e of this.objects.values()) e.model.group.visible = this.shown(e);
+      for (const e of this.objects.values()) {
+        e.model.group.visible = this.shown(e);
+        e.fx.group.visible = e.level <= this.ctrl.viewLevel && !(e.def.layer === 'ceiling' && e.level < this.ctrl.viewLevel);
+      }
       return;
     }
     const moving = placing.moveId !== undefined ? this.ctrl.sim.findObject(placing.moveId) : undefined;
@@ -1376,41 +1477,39 @@ export class GameView {
     const spec = furnitureSpec(def.art);
     const size = objectSize(def, placing.rot);
     const g = this.ghost.group;
-    g.position.set(tile.x + size.w / 2, 0.02, tile.y + size.h / 2);
+    const at = sceneZ(this.ctrl.world.grid, tile.y);
+    g.position.set(tile.x + size.w / 2, at.base + 0.02, at.z + size.h / 2);
     g.rotation.y = (spec.facing === 'E' ? Math.PI / 2 : 0) + placing.rot * (Math.PI / 2);
     const ok = checkPlacement(this.ctrl.world, this.ctrl.sim.catalog, placing.defId, tile.x, tile.y, placing.rot, placing.moveId).ok;
     const affordable = placing.moveId !== undefined || this.ctrl.world.household.funds >= def.price;
     this.ghostPad.visible = true;
-    this.ghostPad.position.set(tile.x + size.w / 2, 0.04, tile.y + size.h / 2);
+    this.ghostPad.position.set(tile.x + size.w / 2, at.base + 0.04, at.z + size.h / 2);
     this.ghostPad.scale.set(size.w, size.h, 1);
     (this.ghostPad.material as THREE.MeshBasicMaterial).color.setHex(ok && affordable ? 0x6fd06a : 0xe0533f);
   }
 
   // ---------- modo construção ----------
 
-  /** Ponto do chão (y = 0) sob o mouse. */
+  /** Ponto do chão do andar visto sob o mouse. */
   private groundPoint(clientX: number, clientY: number): THREE.Vector3 | null {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
-    return this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+    return this.levelPoint();
   }
 
-  /** Vértice do grid mais perto do mouse (cantos dos tiles). */
+  /** Vértice do grid mais perto do mouse (cantos dos tiles), já na linha do andar visto. */
   private vertexAt(clientX: number, clientY: number): { x: number; y: number } | null {
     const p = this.groundPoint(clientX, clientY);
     if (!p) return null;
-    const { w, h } = this.ctrl.world.grid;
-    return { x: THREE.MathUtils.clamp(Math.round(p.x), 0, w), y: THREE.MathUtils.clamp(Math.round(p.z), 0, h) };
+    const grid = this.ctrl.world.grid;
+    const z = THREE.MathUtils.clamp(Math.round(p.z), 0, grid.h);
+    return { x: THREE.MathUtils.clamp(Math.round(p.x), 0, grid.w), y: rowOn(grid, this.ctrl.viewLevel, z) };
   }
 
   private tileAt(clientX: number, clientY: number): { x: number; y: number } | null {
     const p = this.groundPoint(clientX, clientY);
-    if (!p) return null;
-    const { w, h } = this.ctrl.world.grid;
-    const x = Math.floor(p.x);
-    const y = Math.floor(p.z);
-    return x >= 0 && y >= 0 && x < w && y < h ? { x, y } : null;
+    return p ? this.levelTile(p) : null;
   }
 
   /**
@@ -1422,7 +1521,7 @@ export class GameView {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
-    const walls = this.house.pickables();
+    const walls = this.house.pickables(this.ctrl.viewLevel);
     const hit = this.raycaster.intersectObjects(
       walls.map((w) => w.object),
       true,
@@ -1433,7 +1532,9 @@ export class GameView {
       const edge = o?.userData.edge as string | undefined;
       if (edge) {
         const [xs, ys, side] = edge.split(',');
-        const front = side === 'N' ? hit.point.z > Number(ys) : hit.point.x > Number(xs);
+        const grid = this.ctrl.world.grid;
+        const local = Number(ys) - Math.max(0, edgeLevel(grid, edge)) * strideOf(grid);
+        const front = side === 'N' ? hit.point.z > local : hit.point.x > Number(xs);
         return facesOfEdge(edge)[front ? 0 : 1];
       }
     }
@@ -1441,7 +1542,7 @@ export class GameView {
     const p = this.groundPoint(clientX, clientY);
     if (!tile || !p) return null;
     const fx = p.x - tile.x;
-    const fy = p.z - tile.y;
+    const fy = p.z - Math.floor(p.z);
     const sides: [Side, number][] = [
       ['N', fy],
       ['S', 1 - fy],
@@ -1454,7 +1555,7 @@ export class GameView {
 
   private beginBuildDrag(clientX: number, clientY: number): void {
     const tool = this.ctrl.buildTool;
-    if (tool === 'wall' || tool === 'erase') {
+    if (tool === 'wall' || tool === 'half' || tool === 'erase') {
       const v = this.vertexAt(clientX, clientY);
       if (v) this.buildDrag = { start: v, cur: v };
     } else if (tool === 'floor') {
@@ -1475,7 +1576,7 @@ export class GameView {
     const tool = this.ctrl.buildTool;
     const drag = this.buildDrag;
     let cmd: BuildCommand | null = null;
-    if (tool === 'wall' || tool === 'erase') {
+    if (tool === 'wall' || tool === 'half' || tool === 'erase') {
       const v = this.vertexAt(clientX, clientY);
       if (drag && v) {
         // a linha segue o eixo em que o mouse andou mais
@@ -1483,12 +1584,21 @@ export class GameView {
         const dy = Math.abs(v.y - drag.start.y);
         drag.cur = dx >= dy ? { x: v.x, y: drag.start.y } : { x: drag.start.x, y: v.y };
         const c = { x0: drag.start.x, y0: drag.start.y, x1: drag.cur.x, y1: drag.cur.y };
-        cmd = tool === 'wall' ? { type: 'buildWalls', ...c } : { type: 'eraseWalls', ...c };
+        cmd = tool === 'wall' ? { type: 'buildWalls', ...c } : tool === 'half' ? { type: 'buildHalfWalls', ...c } : { type: 'eraseWalls', ...c };
       } else if (v) {
         this.showVertex(v);
-        this.hud.setTooltip(clientX, clientY, t(tool === 'wall' ? 'build.hint.wallStart' : 'build.hint.eraseStart'));
+        this.hud.setTooltip(clientX, clientY, t(tool === 'erase' ? 'build.hint.eraseStart' : 'build.hint.wallStart'));
         this.buildCmd = null;
         return;
+      }
+    } else if (tool === 'column') {
+      const v = this.vertexAt(clientX, clientY);
+      if (v) cmd = { type: 'toggleColumn', x: v.x, y: v.y };
+    } else if (tool === 'stairs') {
+      const tile = this.tileAt(clientX, clientY);
+      if (tile) {
+        const on = stairStepAt(this.ctrl.world.grid, tile.x, tile.y);
+        cmd = on ? { type: 'removeStairs', x: tile.x, y: tile.y } : { type: 'placeStairs', x: tile.x, y: tile.y, dir: this.ctrl.stairDir };
       }
     } else if (tool === 'floor') {
       const tile = this.tileAt(clientX, clientY);
@@ -1496,7 +1606,7 @@ export class GameView {
       const a = drag?.start ?? tile;
       const b = drag?.cur ?? tile;
       if (a && b) cmd = { type: 'paintFloor', x0: a.x, y0: a.y, x1: b.x, y1: b.y, floorId: this.ctrl.floorId };
-    } else if (tool === 'door' || tool === 'window') {
+    } else if (isOpeningTool(tool)) {
       const face = this.faceAt(clientX, clientY);
       if (face) cmd = { type: 'placeOpening', edge: edgeOfFace(face), kind: tool };
     } else if (tool === 'paint') {
@@ -1541,6 +1651,7 @@ export class GameView {
       const ok = this.ctrl.commandOrExplain(cmd);
       if (ok && cmd.type === 'placeOpening') this.addPing(...this.edgeCenter(cmd.edge));
       if (ok && tool === 'floor' && cmd.type === 'paintFloor') this.addPing(cmd.x1, cmd.y1);
+      if (ok && (cmd.type === 'placeStairs' || cmd.type === 'removeStairs')) this.addPing(cmd.x, cmd.y);
     }
     this.previewKey = '';
     this.clearBuildPreview();
@@ -1565,10 +1676,17 @@ export class GameView {
     this.buildCmd = null;
   }
 
+  /** Bloco 12: a prévia usa linhas do grid inteiro; o grupo dela sobe para o andar visto. */
+  private placePreview(): void {
+    const n = this.ctrl.viewLevel;
+    this.buildPreview.position.set(0, n * LEVEL_H, -n * strideOf(this.ctrl.world.grid));
+  }
+
   private showVertex(v: { x: number; y: number }): void {
     const key = `v|${v.x},${v.y}|${this.ctrl.buildTool}`;
     if (key === this.previewKey) return;
     this.clearBuildPreview();
+    this.placePreview();
     this.previewKey = key;
     const post = new THREE.Mesh(new THREE.BoxGeometry(TH + 0.08, 0.7, TH + 0.08), previewMat(this.ctrl.buildTool === 'erase' ? 0xe0533f : PAL.mustard, 0.85));
     post.position.set(v.x, 0.35, v.y);
@@ -1582,6 +1700,7 @@ export class GameView {
   private drawPreview(cmd: BuildCommand, ok: boolean): void {
     const keep = this.previewKey;
     this.clearBuildPreview();
+    this.placePreview();
     this.previewKey = keep;
     this.buildCmd = cmd;
     const grid = this.ctrl.world.grid;
@@ -1597,11 +1716,12 @@ export class GameView {
       this.buildPreview.add(m);
     };
 
-    if (cmd.type === 'buildWalls' || cmd.type === 'eraseWalls') {
+    if (cmd.type === 'buildWalls' || cmd.type === 'buildHalfWalls' || cmd.type === 'eraseWalls') {
       const edges = lineEdges(grid, cmd.x0, cmd.y0, cmd.x1, cmd.y1) ?? [];
+      const full = cmd.type === 'buildWalls' ? WALL_H * 0.75 : HALF_H;
       for (const e of edges) {
         const exists = !!grid.edges[e];
-        if (cmd.type === 'buildWalls') edgeBox(e, exists ? 0.5 : WALL_H * 0.75, 1, ok ? 0x6fd06a : bad, exists ? 0.3 : 0.55);
+        if (cmd.type !== 'eraseWalls') edgeBox(e, exists ? 0.5 : full, 1, ok ? 0x6fd06a : bad, exists ? 0.3 : 0.55);
         else edgeBox(e, exists ? WALL_H * 0.75 : 0.12, 1, exists ? bad : 0xffffff, exists ? 0.55 : 0.35);
       }
       for (const [vx, vy] of [
@@ -1614,15 +1734,43 @@ export class GameView {
       }
     } else if (cmd.type === 'placeOpening') {
       const exists = !!grid.edges[cmd.edge];
-      const h = cmd.kind === 'door' ? 2.1 : 1.3;
-      edgeBox(cmd.edge, exists && this.house.isTallEdge(cmd.edge) ? h : Math.max(h * 0.5, LOW_H + 0.4), cmd.kind === 'door' ? 0.8 : 0.86, ok ? 0x6fd06a : bad, 0.6);
+      const h = { door: 2.1, doorGlass: 2.1, doorDouble: 2.1, arch: 2.2, window: 1.3, windowTall: 2.0, windowHigh: 0.45 }[cmd.kind];
+      const wide = cmd.kind === 'doorDouble' || cmd.kind === 'arch' ? 0.9 : cmd.kind.startsWith('door') ? 0.8 : 0.86;
+      edgeBox(cmd.edge, exists && this.house.isTallEdge(cmd.edge) ? h : Math.max(h * 0.5, LOW_H + 0.4), wide, ok ? 0x6fd06a : bad, 0.6);
+    } else if (cmd.type === 'toggleColumn') {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, WALL_H * 0.8, 10), previewMat(ok ? 0x6fd06a : bad, 0.6));
+      post.position.set(cmd.x, WALL_H * 0.4, cmd.y);
+      this.buildPreview.add(post);
+    } else if (cmd.type === 'placeStairs' || cmd.type === 'removeStairs') {
+      // degraus fantasmas subindo na direção escolhida, e o patamar em cima
+      const st = cmd.type === 'placeStairs' ? cmd : stairStepAt(grid, cmd.x, cmd.y)?.stair;
+      if (st) {
+        const plan = stairPlan(grid, st);
+        const color = cmd.type === 'removeStairs' ? bad : ok ? 0x6fd06a : bad;
+        plan.run.forEach((tl, i) => {
+          const h = ((i + 1) / STAIR_RUN) * LEVEL_H;
+          const m = new THREE.Mesh(new THREE.BoxGeometry(0.92, h, 0.92), previewMat(color, 0.55));
+          m.position.set(tl.x + 0.5, h / 2, tl.y + 0.5);
+          m.renderOrder = 3;
+          this.buildPreview.add(m);
+        });
+        const pad = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), previewMat(PAL.mustard, 0.7));
+        pad.rotation.x = -Math.PI / 2;
+        pad.position.set(plan.landing.x + 0.5, LEVEL_H + 0.05, plan.landing.y - strideOf(grid) + 0.5);
+        const foot = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.3, 16), previewMat(PAL.mustard, 0.9));
+        foot.rotation.x = -Math.PI / 2;
+        foot.position.set(plan.entry.x + 0.5, 0.04, plan.entry.y + 0.5);
+        this.buildPreview.add(pad, foot);
+      }
     } else if (cmd.type === 'paintFloor') {
+      const upper = this.ctrl.viewLevel > 0;
       const kind = FLOOR_ART.includes(cmd.floorId) ? cmd.floorId : cmd.floorId === 'grass' ? 'grass' : 'wood';
-      const mat = ok ? previewTexMat(kind, 0.85) : previewMat(bad, 0.5);
+      const mat = ok && !(upper && cmd.floorId === 'grass') ? previewTexMat(kind, 0.85) : previewMat(ok ? 0xffffff : bad, 0.5);
+      const top = rowOn(grid, Math.max(0, levelOfRow(grid, cmd.y0)), 0);
       const xa = Math.max(0, Math.min(cmd.x0, cmd.x1));
       const xb = Math.min(grid.w - 1, Math.max(cmd.x0, cmd.x1));
-      const ya = Math.max(0, Math.min(cmd.y0, cmd.y1));
-      const yb = Math.min(grid.h - 1, Math.max(cmd.y0, cmd.y1));
+      const ya = Math.max(top, Math.min(cmd.y0, cmd.y1));
+      const yb = Math.min(top + grid.h - 1, Math.max(cmd.y0, cmd.y1));
       const pos: number[] = [];
       const uv: number[] = [];
       const idx: number[] = [];
@@ -1778,7 +1926,8 @@ export class GameView {
    * sumindo; com a câmera longe, tudo fica mais baixo.
    */
   hearing(x: number, y: number): { gain: number; pan: number } {
-    const v = this.tmp.set(x + 0.5, 0.6, y + 0.5).project(this.camera);
+    const at = sceneZ(this.ctrl.world.grid, y);
+    const v = this.tmp.set(x + 0.5, at.base + 0.6, at.z + 0.5).project(this.camera);
     const edge = Math.max(Math.abs(v.x), Math.abs(v.y));
     const off = edge <= 1 ? 1 : Math.max(0, 1 - (edge - 1) * 1.6);
     const zoom = Math.min(1, Math.max(0.45, 11 / this.viewHeight));

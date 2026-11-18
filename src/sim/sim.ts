@@ -1,6 +1,6 @@
 import { chooseAutonomous } from './ai';
 import type { BuildCommand, BuildProblem, GridChange } from './build';
-import { applyChange, checkGrid, invertChange, isBuildCommand, planBuild } from './build';
+import { applyChange, checkGrid, invertChange, isBuildCommand, planBuild, touchesNav } from './build';
 import {
   AWAY_DECAY,
   CALL_AHEAD,
@@ -821,7 +821,7 @@ export class Sim {
     const last = this.undoStack[this.undoStack.length - 1];
     if (!last) return this.fail('undoEmpty');
     const after = applyChange(this.world.grid, last.back);
-    if (Object.keys(last.back.edges).length > 0 && checkGrid(this.world, this.catalog, after)) {
+    if (touchesNav(last.back) && checkGrid(this.world, this.catalog, after)) {
       return this.fail('undoBlocked');
     }
     this.undoStack.pop();
@@ -1633,7 +1633,10 @@ export class Sim {
     if (this.giveWay(folk, next)) return 'waiting';
     folk.blocked = 0;
     folk.path.shift();
-    folk.facing = { x: next.x - folk.x, y: next.y - folk.y };
+    // bloco 12: no passo da escada para o andar de cima, a frente é a da escada
+    let dy = next.y - folk.y;
+    if (Math.abs(dy) > 1) dy -= Math.sign(dy) * this.nav.stride;
+    folk.facing = { x: next.x - folk.x, y: dy };
     folk.x = next.x;
     folk.y = next.y;
     return 'moved';
@@ -4135,9 +4138,7 @@ function avoiding(nav: Nav, busy: Set<number>): Nav {
   if (!busy.size) return nav;
   const isFree = (x: number, y: number) => nav.isFree(x, y) && !busy.has(y * nav.w + x);
   return {
-    w: nav.w,
-    h: nav.h,
-    blocked: nav.blocked,
+    ...nav,
     isFree,
     canStep: (ax, ay, bx, by) => nav.canStep(ax, ay, bx, by) && !busy.has(by * nav.w + bx),
   };

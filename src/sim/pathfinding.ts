@@ -20,7 +20,16 @@ export function findPath(nav: Nav, from: Vec, to: Vec): Vec[] | null {
   const closed = new Uint8Array(size);
   const start = from.y * nav.w + from.x;
   const goal = to.y * nav.w + to.x;
-  const h = (i: number) => Math.abs((i % nav.w) - to.x) + Math.abs(Math.floor(i / nav.w) - to.y);
+  // bloco 12: a distância conta a linha dentro do andar e um passo por andar,
+  // para não superestimar quem precisa da escada
+  const level = (y: number) => Math.floor(y / nav.stride);
+  const toLevel = level(to.y);
+  const toLocal = to.y - toLevel * nav.stride;
+  const h = (i: number) => {
+    const y = Math.floor(i / nav.w);
+    const l = level(y);
+    return Math.abs((i % nav.w) - to.x) + Math.abs(y - l * nav.stride - toLocal) + Math.abs(l - toLevel);
+  };
 
   // lista aberta simples: o grid é pequeno, então uma busca linear basta
   const open: { i: number; f: number; h: number; n: number }[] = [];
@@ -51,9 +60,11 @@ export function findPath(nav: Nav, from: Vec, to: Vec): Vec[] | null {
 
     const cx = cur.i % nav.w;
     const cy = Math.floor(cur.i / nav.w);
-    for (let d = 0; d < 4; d++) {
-      const nx = cx + DX[d];
-      const ny = cy + DY[d];
+    const via = nav.links.get(cur.i);
+    const n = 4 + (via?.length ?? 0);
+    for (let d = 0; d < n; d++) {
+      const nx = d < 4 ? cx + DX[d] : via![d - 4] % nav.w;
+      const ny = d < 4 ? cy + DY[d] : Math.floor(via![d - 4] / nav.w);
       if (nx < 0 || ny < 0 || nx >= nav.w || ny >= nav.h) continue;
       if (!nav.canStep(cx, cy, nx, ny)) continue;
       const ni = ny * nav.w + nx;

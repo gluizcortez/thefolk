@@ -6,6 +6,7 @@ import { ensureRelation } from './relations';
 import { START_PANTRY } from './services';
 import { freshState } from './upkeep';
 import { NEUTRAL_TEMPER, fullLook } from './temper';
+import { storied } from './grid';
 import type { EdgeKind, Folk, Grid, Look, Neighbor, Needs, Outfit, Rotation, Temper, Vec, World } from './types';
 
 export interface RoomStyle {
@@ -250,7 +251,8 @@ export function createWorld(seed: WorldSeed): World {
     speed: 1,
     rngState: seed.seed | 0,
     nextId,
-    grid: seed.grid,
+    // bloco 12: todo lote já nasce com os andares de cima (sem piso)
+    grid: storied(seed.grid),
     objects,
     folks,
     household: { ...freshHousehold(seed.pantry ?? START_PANTRY), funds: seed.funds, nextBills: firstBillAfter(seed.startTick) },

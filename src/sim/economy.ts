@@ -1,5 +1,5 @@
 import type { Nav } from './grid';
-import { buildNav, edgeKey, footprint, inBounds, objectSize, useTiles, wallBehind } from './grid';
+import { buildNav, edgeKey, footprint, inBounds, objectSize, onStairs, stepNeighbors, useTiles, wallBehind } from './grid';
 import { roomAt, roomsOf } from './rooms';
 import { freshState } from './upkeep';
 import { currentValue, resaleValue } from './furnish';
@@ -46,6 +46,7 @@ export type PlaceProblem =
   | 'occupied'
   | 'folk'
   | 'wall'
+  | 'noFloor'
   | 'blocksWay'
   | 'unreachable'
   | 'inUse'
@@ -58,22 +59,21 @@ export interface PlaceCheck {
   problem?: PlaceProblem;
 }
 
+/** Bloco 12: tile sem piso (vão do andar de cima)? */
+function noFloor(world: World, catalog: Catalog, x: number, y: number): boolean {
+  return !!catalog.floors[world.grid.floor[y * world.grid.w + x]]?.void;
+}
+
 /** Tiles alcançáveis a pé a partir de um ponto (busca em largura). */
 export function reachable(nav: Nav, from: Vec): Set<number> {
   const seen = new Set<number>();
-  if (!nav.isFree(from.x, from.y)) return seen;
+  // bloco 12: quem está no meio da escada também alcança os dois andares
+  if (!nav.isFree(from.x, from.y) && !onStairs(nav, from.x, from.y)) return seen;
   const queue: Vec[] = [from];
   seen.add(from.y * nav.w + from.x);
   while (queue.length > 0) {
     const cur = queue.shift()!;
-    for (const [dx, dy] of [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ]) {
-      const nx = cur.x + dx;
-      const ny = cur.y + dy;
+    for (const { x: nx, y: ny } of stepNeighbors(nav, cur.x, cur.y)) {
       const key = ny * nav.w + nx;
       if (seen.has(key) || !nav.canStep(cur.x, cur.y, nx, ny)) continue;
       seen.add(key);
@@ -120,6 +120,7 @@ export function checkPlacement(
 
   for (const t of tiles) {
     if (!inBounds(world.grid, t.x, t.y)) return { ok: false, problem: 'outside' };
+    if (noFloor(world, catalog, t.x, t.y)) return { ok: false, problem: 'noFloor' };
     if (!before.isFree(t.x, t.y)) return { ok: false, problem: 'occupied' };
     // a calçada de onde sai a condução fica sempre livre
     if (t.x === world.exit.x && t.y === world.exit.y) return { ok: false, problem: 'blocksWay' };
@@ -181,6 +182,7 @@ function checkLayered(
   }
   for (const t of tiles) {
     if (!inBounds(world.grid, t.x, t.y)) return { ok: false, problem: 'outside' };
+    if (noFloor(world, catalog, t.x, t.y)) return { ok: false, problem: 'noFloor' };
     if (taken.has(`${t.x},${t.y}`)) return { ok: false, problem: 'occupied' };
   }
   const size = objectSize(def, rot);

@@ -449,6 +449,23 @@ npm run preview  # serve o dist/ localmente
   do outro. Aos domingos, quem mais cuidou da criança na semana (colo,
   mamadeira, conversa, lição) passa para ela um ponto do eixo em que mais
   diferem.
+- **Andares e escada (bloco 12)**: todo lote tem térreo e mais dois andares.
+  Os botões ▾ e ▴ ao lado de "Paredes" (ou PageUp e PageDown) trocam o andar
+  que se vê; os de cima somem e os de baixo ficam com as paredes inteiras. A
+  vista acompanha o morador selecionado quando ele sobe ou desce. Piso de
+  cima só vai em cima de cômodo de baixo; parede de cima precisa de piso de
+  um dos lados ou de parede embaixo. A escada (650 ⟡, aba Paredes, R gira)
+  ocupa três tiles, abre o vão no andar de cima e precisa de piso livre no
+  patamar; clicar numa escada com a ferramenta a tira. No andar de cima,
+  "Sem piso" no lugar da grama tira o piso.
+- **Telhado (bloco 12)**: aparece com "Paredes: inteiras" e se monta sozinho
+  sobre todo cômodo fechado que não tem cômodo fechado em cima (o térreo sob
+  um quarto não ganha telhado; a varanda ao lado, sim). Aba Telhado: quatro
+  águas ou duas águas (com oitões nas pontas) e seis cores de telha; trocar
+  custa 2 ⟡ por tile coberto.
+- **Peças novas (bloco 12)**: meia parede (fecha o passo sem dividir o
+  cômodo), coluna nos cantos, porta de vidro, porta dupla, arco (passagem sem
+  folha), janela alta (+6 de ambiente) e basculante (+2).
 
 ## Deploy na Vercel
 
@@ -663,6 +680,18 @@ Decisões principais do núcleo:
   por `audio/cues.ts`. As vagas ficam em `platform/slots.ts` (atrás de
   `SaveBackend`; o IndexedDB é `idbBackend` em `saveStore.ts`), com
   exportar/importar; os cartões Jogos e Som estão em `ui/system.ts`.
+- **Andares (bloco 12)**: o `Grid` continua com `h` = fundura do lote; o
+  andar n ocupa as linhas `[n * (h + LEVEL_GAP), ... + h)` do mesmo `floor`,
+  e as duas linhas do vão entre andares ficam fora do terreno (`inBounds`
+  devolve false). Assim posições de folks e objetos seguem sendo (x, y) e
+  todo o resto (cômodos, compra, IA) funciona em qualquer andar; o andar sai
+  de `levelOfRow`. Piso `void` é o vão (ninguém pisa). Escadas em
+  `grid.stairs` (`stairPlan`: pé, três degraus, patamar e vão em cima) viram
+  `nav.links`; o A* (`findPath`), `reachable` e `canStep` andam por elas, e do
+  degrau só se sai pela escada. `grid.columns` e `grid.roof`; o telhado sai de
+  `sim/roof.ts` (`roofMask`, `roofHeights`). Na tela, cada andar é um grupo em
+  `House` (subido `LEVEL_H` e trazido de volta para cima do térreo) e
+  `sceneZ` converte linha do grid em posição de cena.
 - **Bebês e crianças (bloco 11)** moram em `sim/kids.ts` (regras puras:
   necessidades do bebê, herança, horário da escola, nota). `Folk` ganhou
   `age` ('baby' | 'child'; adulto não tem) e `kid` (nascimento, quando cresce,
@@ -855,7 +884,22 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
   mamadeira, fralda, colo e ninar, choro que acorda, visitadora social,
   criança menor com escola, ônibus, lição, boletim e colégio interno,
   brinquedos e temperamento herdado e aprendido (save v15).
-- Próximo: bloco 12, andares, escadas e telhado.
+- **Bloco 12 (feito)**: térreo e dois andares, escada com caminho entre
+  andares, piso e paredes de cima com apoio, telhado automático de duas ou
+  quatro águas com cor, meia parede, coluna, porta de vidro, porta dupla,
+  arco, janela alta e basculante, botões de andar e clique que não atravessa
+  parede (save v16).
+- Próximo: bloco 13, quintal: piscina, cercas e jardim vivo.
+
+## Limitações conhecidas do bloco 12
+
+- Paredes só retas (sem parede diagonal) e escada só reta, de três tiles.
+- O telhado é um só estilo e cor para a casa inteira, sem mansarda nem
+  telhado plano, e cobre também um cercado de paredes no quintal.
+- Derrubar parede de baixo não confere se tem parede em cima apoiada nela.
+- Ninguém cai do andar de cima: o vão não tem perigo, só não se pisa nele.
+- Com o telhado à vista, os balões de quem está dentro aparecem por cima.
+- Sem porão e sem terreno com desnível.
 
 ## Limitações conhecidas do bloco 11
 
@@ -1027,7 +1071,7 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
 
 ### Ainda valem da fatia 4
 
-- Um andar só, sem telhado, escada, porão, cercas, piscina ou terreno com
+- (bloco 12 trouxe andares, telhado e escada) Sem porão, cercas, piscina ou terreno com
   desnível. O lote tem o tamanho fixo de sempre (17 × 14).
 - Só um modelo de porta e um de janela, sempre do mesmo tamanho (1 m). Não há
   porta dupla, arco, janela alta, portão nem porta trancada; portas continuam

@@ -1025,6 +1025,20 @@ const roof: Painter = (c, w, h) => {
   }
 };
 
+/** Bloco 12: telha clara, tingida pela cor do telhado escolhida. */
+const roofTile: Painter = (c, w, h, rnd) => {
+  fill(c, 0xd2d2d2);
+  for (let y = 0; y < h; y += 8) {
+    for (let x = (y / 8) % 2 ? 0 : 4; x < w + 8; x += 8) {
+      fill(c, 0xffffff, x - 4 + 1, y + 1, 6, 3, 0.18);
+      line(c, x + 0.5, y, x + 0.5, y + 8, 0x6a6a6a, 0.55);
+    }
+    line(c, 0, y + 7.5, w, y + 7.5, 0x5a5a5a, 0.85);
+    line(c, 0, y + 6.5, w, y + 6.5, 0x8a8a8a, 0.5);
+  }
+  speckle(c, w, h, rnd, 90, [0xbcbcbc, 0xe6e6e6, 0xa0a0a0], 0.5);
+};
+
 const stone: Painter = (c, w, h, rnd) => {
   fill(c, 0xa9a494);
   speckle(c, w, h, rnd, 120, [0x8f8a7b, 0xc0bbab, 0x7d786a], 0.7);
@@ -1814,6 +1828,7 @@ const SPECS: Record<string, Spec> = {
   'houseWall:1': { w: 128, h: 96, paint: scaled(houseWall(0xa9c29a), 2), grain: 7 },
   'houseWall:2': { w: 128, h: 96, paint: scaled(houseWall(0xd9c486), 2), grain: 7 },
   roof: { w: 64, h: 64, paint: scaled(roof, 2), repeat: true, grain: 9 },
+  roofTile: { w: 32, h: 32, paint: roofTile, repeat: true, grain: 8 },
   stone: { w: 32, h: 32, paint: stone, grain: 8 },
   door: { w: 48, h: 128, paint: door, grain: 4 },
   'painting:0': { w: 64, h: 48, paint: painting(0), grain: 5 },

@@ -824,6 +824,8 @@ export interface FloorDef {
   ambience?: number;
   /** bloco 3: revestimento que a parede usa quando o jogador não escolheu */
   cover?: string;
+  /** bloco 12: sem piso (vão de andar de cima): ninguém pisa, não aparece no catálogo */
+  void?: boolean;
 }
 
 /** Revestimento de uma face de parede (papel, azulejo, tijolo...). */
@@ -836,16 +838,23 @@ export interface CoveringDef {
   ambience?: number;
 }
 
-/** Peças de parede: preço por trecho de parede, porta e janela. */
-export interface BuildParts {
-  wall: { price: number };
-  door: { price: number };
-  window: {
-    price: number;
-    /** quanto cada janela por perto soma ao ambiente */
-    ambience: number;
-  };
+/** Uma peça de obra: preço e, nas janelas, quanto somam ao ambiente. */
+export interface PartDef {
+  price: number;
+  /** quanto cada janela por perto soma ao ambiente */
+  ambience?: number;
 }
+
+/**
+ * Peças de parede: preço por trecho de parede, porta e janela (e, no bloco
+ * 12, os outros estilos de borda, a escada, a coluna e o telhado por tile).
+ */
+export type BuildParts = Record<EdgeKind, PartDef> & {
+  window: PartDef & { ambience: number };
+  stairs: PartDef;
+  column: PartDef;
+  roof: PartDef;
+};
 
 export interface Catalog {
   needs: Record<NeedId, NeedDef>;
@@ -872,8 +881,34 @@ export interface Catalog {
 
 // ---------- Estado ----------
 
-/** Janela fecha a passagem como parede; porta deixa passar. */
-export type EdgeKind = 'wall' | 'door' | 'window';
+/**
+ * Janela fecha a passagem como parede; porta deixa passar. Bloco 12: meia
+ * parede (fecha a passagem mas não divide cômodo), porta de vidro, porta
+ * dupla, arco (passagem sem folha), janela alta e basculante.
+ */
+export type EdgeKind = 'wall' | 'half' | 'door' | 'doorGlass' | 'doorDouble' | 'arch' | 'window' | 'windowTall' | 'windowHigh';
+
+/** Bloco 12: o que vai num vão de parede já levantada. */
+export type OpeningKind = Exclude<EdgeKind, 'wall' | 'half'>;
+
+/**
+ * Bloco 12: escada. Sobe do andar `level` para o de cima, na direção `dir`
+ * (o lado para onde se sobe). (x, y) é o primeiro degrau, já nas linhas do
+ * andar de baixo; os degraus ocupam STAIR_RUN tiles seguidos.
+ */
+export interface Stair {
+  x: number;
+  y: number;
+  dir: Side;
+  level: number;
+}
+
+/** Bloco 12: telhado automático (duas águas ou quatro águas) e a cor. */
+export type RoofStyle = 'gable' | 'hip';
+export interface Roof {
+  style: RoofStyle;
+  color: string;
+}
 
 export interface Grid {
   w: number;
@@ -891,6 +926,19 @@ export interface Grid {
    * usa o acabamento padrão (pelo piso do tile, ou tijolo do lado de fora).
    */
   coverings: Record<string, string>;
+  /**
+   * Bloco 12: andares. `h` continua sendo a fundura do lote; o andar n ocupa
+   * as linhas [n * (h + LEVEL_GAP), n * (h + LEVEL_GAP) + h) do mesmo `floor`
+   * (as linhas do vão entre andares são 'void' e ficam fora do terreno).
+   * Sem campo = só o térreo.
+   */
+  levels?: number;
+  /** bloco 12: escadas entre andares */
+  stairs?: Stair[];
+  /** bloco 12: colunas nos vértices ("x,y", y já na linha do andar) */
+  columns?: string[];
+  /** bloco 12: telhado */
+  roof?: Roof;
 }
 
 /** 0 = frente para o sul; cada passo gira um quarto de volta (S → E → N → W). */
@@ -1376,7 +1424,13 @@ export type Command =
   // modo construção: linhas de paredes vão de vértice a vértice do grid
   | { type: 'buildWalls'; x0: number; y0: number; x1: number; y1: number }
   | { type: 'eraseWalls'; x0: number; y0: number; x1: number; y1: number }
-  | { type: 'placeOpening'; edge: string; kind: 'door' | 'window' }
+  | { type: 'placeOpening'; edge: string; kind: OpeningKind }
+  // bloco 12: meia parede, escada, coluna e telhado
+  | { type: 'buildHalfWalls'; x0: number; y0: number; x1: number; y1: number }
+  | { type: 'placeStairs'; x: number; y: number; dir: Side }
+  | { type: 'removeStairs'; x: number; y: number }
+  | { type: 'toggleColumn'; x: number; y: number }
+  | { type: 'setRoof'; style: RoofStyle; color: string }
   | { type: 'paintFloor'; x0: number; y0: number; x1: number; y1: number; floorId: string }
   | { type: 'paintWalls'; faces: string[]; coveringId: string }
   | { type: 'undoBuild' };
