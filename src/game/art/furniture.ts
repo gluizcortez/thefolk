@@ -8,6 +8,7 @@ import { KID_ART } from './kids';
 import { YARD_ART, livingPot } from './yard';
 import { PERIL_ART } from './peril';
 import type { PlantState } from '../../sim';
+import { easelCanvas, HOBBY_ART } from './hobbies';
 import { getTexture } from './textures';
 
 // Modelos 3D dos objetos. As formas são arredondadas, com esmalte, vinil e
@@ -41,6 +42,10 @@ export interface TickInfo {
   plant?: PlantState;
   /** bloco 14: alarme disparado (fumaça ou gatuno) */
   alarm?: boolean;
+  /** plano 2, bloco 7: o que aparece na tela do computador (sem isso, desligada) */
+  screen?: string;
+  /** plano 2, bloco 7: quadro no cavalete (semente e 0..100 pintado) */
+  canvas?: { seed: number; progress: number };
 }
 
 export interface FurnitureModel {
@@ -708,40 +713,28 @@ const desk: FurnitureSpec = {
 };
 
 const easel: FurnitureSpec = {
-  build(seed) {
+  build() {
     const pine = texMat('pine', { gloss: 0.2 });
-    const canvas = colorMat(0xf6f0e0);
+    // plano 2, bloco 7: a tela mostra o quadro de verdade, pincelada a pincelada
+    const art = easelCanvas();
+    const paints = [0xc9382f, 0x2c55a6, 0xe8b830, 0x3f9455, 0xe07a2c, 0x7d55ad];
     const g = group(
       rod([-0.28, 0, 0.12], [-0.06, 1.7, -0.05], 0.022, pine, 6),
       rod([0.28, 0, 0.12], [0.06, 1.7, -0.05], 0.022, pine, 6),
       rod([0, 0, -0.42], [0, 1.6, -0.06], 0.02, pine, 6),
       box(0.66, 0.04, 0.08, pine, 0, 0.66, 0.04),
-      box(0.62, 0.5, 0.03, canvas, 0, 0.7, 0.02),
+      box(0.62, 0.5, 0.03, fronted(colorMat(0xf6f0e0), art.mat), 0, 0.7, 0.02),
       // banquinho com paleta e potes de tinta
       cyl(0.16, 0.16, 0.035, 12, pine, 0.42, 0.44, 0.22),
       rod([0.32, 0, 0.12], [0.36, 0.44, 0.18], 0.014, pine, 6),
       rod([0.52, 0, 0.12], [0.48, 0.44, 0.18], 0.014, pine, 6),
       rod([0.42, 0, 0.36], [0.42, 0.44, 0.26], 0.014, pine, 6),
     );
-    // pinceladas no quadro: cada cavalete tem a sua pintura
-    const rnd = seeded(seed + 7);
-    const paints = [0xc9382f, 0x2c55a6, 0xe8b830, 0x3f9455, 0xe07a2c, 0x7d55ad];
-    const strokes: THREE.Mesh[] = [];
-    for (let i = 0; i < 9; i++) {
-      const w = 0.08 + rnd() * 0.22;
-      const m = box(w, 0.04 + rnd() * 0.12, 0.006, colorMat(paints[Math.floor(rnd() * paints.length)]), (rnd() - 0.5) * (0.56 - w), 0.73 + rnd() * 0.36, 0.037);
-      strokes.push(m);
-      g.add(m);
-    }
     for (let i = 0; i < 3; i++) g.add(cyl(0.03, 0.03, 0.05, 8, colorMat(paints[i], { gloss: 0.6 }), 0.36 + i * 0.06, 0.475, 0.2 + (i % 2) * 0.05));
     return {
       group: g,
-      tick({ time, using }) {
-        // enquanto alguém pinta, as manchas mudam devagar de tamanho
-        strokes.forEach((m, i) => {
-          const k = using ? 1 + Math.sin(time * 1.3 + i * 1.7) * 0.18 : 1;
-          m.scale.set(k, 1, 1);
-        });
+      tick({ canvas }) {
+        art.set(canvas?.seed, canvas?.progress ?? 0);
       },
     };
   },
@@ -1376,7 +1369,7 @@ const SPECS: Record<string, FurnitureSpec> = {
 };
 
 export function furnitureSpec(art: string): FurnitureSpec {
-  return SPECS[art] ?? FURNITURE4[art] ?? REWARD_ART[art] ?? KID_ART[art] ?? YARD_ART[art] ?? PERIL_ART[art] ?? DOWNTOWN_ART[art] ?? fallback;
+  return SPECS[art] ?? HOBBY_ART[art] ?? FURNITURE4[art] ?? REWARD_ART[art] ?? KID_ART[art] ?? YARD_ART[art] ?? PERIL_ART[art] ?? DOWNTOWN_ART[art] ?? fallback;
 }
 
 export function buildFurniture(art: string, seed: number, paint?: number): FurnitureModel {

@@ -747,6 +747,132 @@ const chrome: Painter = (c, w, h) => {
   c.fillRect(0, 0, w, h);
 };
 
+// ---------- plano 2, bloco 7: tela do computador e quadro no cavalete ----------
+
+/** Tela do computador por modo (navegar, jogo, texto, código, conversa, empregos), em dois quadros. */
+function pcScreen(mode: string, frame: number): Painter {
+  return (c, w, h, rnd) => {
+    fill(c, 0x101418);
+    const x0 = 2;
+    const y0 = 2;
+    const sw = w - 4;
+    const sh = h - 4;
+    if (mode === 'off') {
+      fill(c, 0x1a262c, x0, y0, sw, sh);
+      return;
+    }
+    if (mode === 'web') {
+      fill(c, 0xf2f0ea, x0, y0, sw, sh);
+      fill(c, 0x2c55a6, x0, y0, sw, 5);
+      fill(c, 0xffffff, x0 + 2, y0 + 1, sw * 0.5, 3);
+      const off = frame * 4;
+      for (let i = 0; i < 6; i++) {
+        const y = y0 + 8 + i * 6 - off;
+        if (y < y0 + 6 || y > y0 + sh - 4) continue;
+        if (i % 3 === 1) fill(c, [0xe07a2c, 0x3f9455, 0x7d55ad][i % 3], x0 + 3, y, 10, 5);
+        fill(c, 0x9aa0a6, x0 + (i % 3 === 1 ? 15 : 3), y + 1, sw - (i % 3 === 1 ? 19 : 8), 1);
+        fill(c, 0x9aa0a6, x0 + (i % 3 === 1 ? 15 : 3), y + 3, (sw - 20) * 0.7, 1);
+      }
+      fill(c, 0x1b1c20, x0 + sw * 0.6 + frame * 3, y0 + sh * 0.55, 2, 3);
+      return;
+    }
+    if (mode === 'game') {
+      fill(c, 0x2c3e8a, x0, y0, sw, sh);
+      for (let i = 0; i < 6; i++) fill(c, 0xffffff, x0 + rnd() * sw, y0 + rnd() * sh * 0.5, 1, 1);
+      fill(c, 0x3f9455, x0, y0 + sh * 0.72, sw, sh * 0.28);
+      fill(c, 0x8a5a2a, x0, y0 + sh * 0.72, sw, 2);
+      for (let i = 0; i < 3; i++) fill(c, 0xa06a3a, x0 + ((i * 14 + frame * 5) % sw), y0 + sh * 0.5, 8, 3);
+      const px = x0 + 8 + frame * 6;
+      fill(c, 0xc9382f, px, y0 + sh * 0.72 - 7 - frame * 3, 4, 4);
+      fill(c, 0xe0ab7f, px + 1, y0 + sh * 0.72 - 10 - frame * 3, 3, 3);
+      disc(c, x0 + sw - 10, y0 + sh * 0.4 + frame, 2, 0xffe36b);
+      fill(c, 0xffffff, x0 + 2, y0 + 2, 12, 2);
+      return;
+    }
+    if (mode === 'text' || mode === 'jobs') {
+      fill(c, 0x2a2e36, x0, y0, sw, sh);
+      fill(c, 0xf6f2e6, x0 + 4, y0 + 2, sw - 8, sh - 2);
+      if (mode === 'jobs') {
+        fill(c, 0x2c55a6, x0 + 4, y0 + 2, sw - 8, 5);
+        for (let i = 0; i < 4; i++) {
+          const y = y0 + 9 + i * 6;
+          fill(c, i === (frame % 4) ? 0xffe36b : 0xe6e1d2, x0 + 6, y, sw - 12, 5);
+          fill(c, 0x5a5e64, x0 + 8, y + 1, 10 + ((i * 7) % 9), 1);
+          fill(c, 0x3f9455, x0 + sw - 16, y + 1, 6, 2);
+        }
+        return;
+      }
+      const lines = 5 + frame;
+      for (let i = 0; i < lines; i++) {
+        const lw = i === lines - 1 ? (sw - 14) * 0.45 : (sw - 14) * (0.7 + ((i * 37) % 30) / 100);
+        fill(c, 0x5a5e64, x0 + 7, y0 + 5 + i * 3, lw, 1);
+      }
+      fill(c, 0x1b1c20, x0 + 7 + (sw - 14) * 0.45 + 1, y0 + 4 + (lines - 1) * 3, 1, 3);
+      return;
+    }
+    if (mode === 'code') {
+      fill(c, 0x14181e, x0, y0, sw, sh);
+      const cols = [0x6fd06f, 0xe8d040, 0x7ec8e3, 0xd77ad8, 0xc8ccd2];
+      const n = 7 + frame;
+      for (let i = 0; i < n; i++) {
+        const ind = ((i * 5) % 3) * 3;
+        const y = y0 + 3 + i * 3;
+        if (y > y0 + sh - 2) break;
+        fill(c, cols[i % cols.length], x0 + 3 + ind, y, 6 + ((i * 11) % 12), 1);
+        fill(c, 0xc8ccd2, x0 + 11 + ind + ((i * 11) % 12), y, 4 + ((i * 7) % 10), 1);
+      }
+      fill(c, 0xffffff, x0 + 4, y0 + 3 + n * 3, 2, 2);
+      return;
+    }
+    // conversa: balões dos dois lados
+    fill(c, 0xe8eef2, x0, y0, sw, sh);
+    fill(c, 0x3f9455, x0, y0, sw, 4);
+    for (let i = 0; i < 4 + frame; i++) {
+      const mine = i % 2 === 1;
+      const bw = 14 + ((i * 9) % 10);
+      const y = y0 + 6 + i * 5;
+      if (y > y0 + sh - 4) break;
+      fill(c, mine ? 0x9ad08a : 0xffffff, mine ? x0 + sw - bw - 3 : x0 + 3, y, bw, 4);
+    }
+  };
+}
+
+/**
+ * Quadro no cavalete: uma paisagem (ou natureza-morta) que sai da semente e
+ * aparece pincelada a pincelada; `stage` vai de 0 (tela em branco) a 10.
+ */
+function easelPainting(seed: number, stage: number): Painter {
+  return (c, w, h) => {
+    const r = seeded(seed * 7919 + 13);
+    fill(c, 0xf6f0e0);
+    const strokes: (() => void)[] = [];
+    const sky = [0x7cc4f2, 0xf0a13c, 0x2c3e8a, 0xe8b0c0, 0x9ad0e0][Math.floor(r() * 5)];
+    const land = [0x58a84a, 0x8a9a3a, 0xc9a66b, 0x3f6f8a][Math.floor(r() * 4)];
+    strokes.push(() => fill(c, sky, 0, 0, w, h * 0.55));
+    strokes.push(() => fill(c, sky, 0, h * 0.4, w, h * 0.2, 0.6));
+    strokes.push(() => oval(c, w * (0.2 + r() * 0.6), h * 0.62, w * 0.5, h * 0.18, land));
+    strokes.push(() => fill(c, land, 0, h * 0.62, w, h * 0.38));
+    strokes.push(() => disc(c, w * (0.15 + r() * 0.7), h * (0.15 + r() * 0.2), 3 + r() * 3, 0xffe36b));
+    strokes.push(() => oval(c, w * (0.6 + r() * 0.3), h * 0.66, w * 0.3, h * 0.12, land, 0.75));
+    strokes.push(() => {
+      const tx = w * (0.1 + r() * 0.8);
+      fill(c, 0x6b4a2a, tx - 1, h * 0.45, 2, h * 0.2);
+      disc(c, tx, h * 0.42, 5 + r() * 3, 0x3f7f3a);
+    });
+    strokes.push(() => {
+      for (let i = 0; i < 5; i++) disc(c, w * r(), h * (0.75 + r() * 0.2), 1.2, [0xc9382f, 0xe8b830, 0xffffff][i % 3]);
+    });
+    strokes.push(() => {
+      for (let i = 0; i < 3; i++) oval(c, w * r(), h * (0.08 + r() * 0.25), 4 + r() * 4, 1.5, 0xffffff, 0.8);
+    });
+    strokes.push(() => fill(c, 0x000000, 0, h * 0.62, w, 1, 0.15));
+    const k = Math.max(0, Math.min(10, stage));
+    for (let i = 0; i < k; i++) strokes[i]();
+    // a mão de quem pinta: rabiscos de lápis antes da tinta
+    if (k === 0) for (let i = 0; i < 4; i++) fill(c, 0x9aa0a6, w * 0.15, h * (0.3 + i * 0.12), w * 0.7, 0.5);
+  };
+}
+
 function tvFront(channel: number): Painter {
   return (c, w, h, rnd) => {
     fill(c, PAL.plastic);
@@ -2359,6 +2485,11 @@ function specFor(name: string): Spec | undefined {
       const st: FaceState = { expr: parts[12] as Expression, closed: parts[13] === '1', talk: Number(parts[14]) as 0 | 1 | 2, gaze: Number(parts[15]) as -1 | 0 | 1 };
       return { w: 256, h: 128, paint: face(look, st), grain: 3 };
     }
+    // plano 2, bloco 7: pc:modo:quadro e easel:semente:etapa
+    case 'pc':
+      return { w: 96, h: 72, paint: scaled(pcScreen(parts[1], Number(parts[2]) || 0), 2), grain: 4 };
+    case 'easel':
+      return { w: 128, h: 96, paint: scaled(easelPainting(n, Number(parts[2]) || 0), 2), grain: 5 };
     case 'uni': {
       const part = parts[1];
       const big = part === 'torso';

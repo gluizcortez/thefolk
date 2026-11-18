@@ -37,7 +37,7 @@ export function interactionState(world: World, catalog: Catalog, folk: Folk, obj
     return grey('age');
   }
   // de contexto: só aparece quando muda alguma coisa
-  if (it.care || it.baby || it.tune || it.light || it.special === 'kindle' || it.channel === 'off') {
+  if (it.care || it.baby || it.tune || it.light || it.special === 'kindle' || it.channel === 'off' || it.canvas === 'sell' || it.canvas === 'scrap') {
     if (!interactionOpen(obj, it)) return HIDE;
   }
   if (it.special === 'douse' || it.special === 'callFire' || it.special === 'callPolice') {

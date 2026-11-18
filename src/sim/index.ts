@@ -42,3 +42,4 @@ export * from './life';
 export * from './pace';
 export * from './feelings';
 export * from './kitchen';
+export * from './hobbies';

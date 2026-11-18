@@ -45,6 +45,7 @@ const ORDER_TYPES = new Set<Command['type']>([
   'planWedding',
   'seated',
   'watchTogether',
+  'lookOut',
 ]);
 
 export type Mode = 'live' | 'buy' | 'build';

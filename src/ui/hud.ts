@@ -2051,7 +2051,12 @@ export class Hud {
     const folk = this.ctrl.folk;
     const world = this.ctrl.world;
     const p = folk.posture;
-    if (!p) return;
+    // plano 2, bloco 7: de pé, clicar em si mesmo oferece olhar pela janela
+    const window: RingItem = { label: t('act.lookOut'), icon: 'fun', run: () => this.order({ type: 'lookOut', folkId: folk.id }) };
+    if (!p) {
+      this.showRing(x, y, this.ringHead(folk.name, [], folk.look, t('menu.self')), [window]);
+      return;
+    }
     const seat = world.objects.find((o) => o.id === p.objectId);
     const sdef = seat && this.ctrl.sim.defOf(seat);
     const notes: { text: string; warn?: boolean }[] = [{ text: t('menu.seatedOn', { object: sdef ? t(sdef.name) : '?' }) }];
@@ -2063,6 +2068,7 @@ export class Hud {
       { label: t('act.standUp'), icon: 'walk', run: () => this.order({ type: 'seated', folkId: folk.id, what: 'stand' }) },
       { label: t('act.seatRead'), icon: 'book', run: () => this.order({ type: 'seated', folkId: folk.id, what: 'read' }) },
       { label: t('act.seatCall'), icon: 'phone', extra: '›', run: () => this.openSeatCallMenu(x, y) },
+      window,
     ];
     this.showRing(x, y, this.ringHead(folk.name, notes, folk.look, t('menu.seated')), items);
   }

@@ -6,6 +6,7 @@ import { JOINTS, blendPose, rest, smoothstep } from './pose';
 import type { Joint, Pose } from './pose';
 import { SOCIAL } from './social';
 import { CHORES } from './chores';
+import { HOBBIES, SOCIAL_MORE } from './hobbies';
 
 // Plano 2, bloco 5: biblioteca de animações. Junta as animações (dados) e
 // sabe tocá-las: lê cada canal num instante, põe a camada de postura (humor,
@@ -16,7 +17,7 @@ export { HIPS_Y, JOINTS, blendPose, rest, smoothstep, poseDistance } from './pos
 export type { Joint, Pose } from './pose';
 export type { Clip, Track } from './clip';
 
-export const CLIPS = { ...GESTURES, ...LOCOMOTION, ...SOCIAL, ...ACTIVITY, ...CHORES } satisfies Record<string, Clip>;
+export const CLIPS = { ...GESTURES, ...LOCOMOTION, ...SOCIAL, ...ACTIVITY, ...CHORES, ...HOBBIES, ...SOCIAL_MORE } satisfies Record<string, Clip>;
 
 export type FolkAnim = keyof typeof CLIPS;
 

@@ -40,6 +40,23 @@ const list: SocialDef[] = [
     // bloco 9: o papo tem assunto; quem ouve reage ao gosto dele
     topic: true,
   },
+  // plano 2, bloco 7: chama para sentar junto e conversar
+  {
+    id: 'sitTalk',
+    label: 'soc.sitTalk',
+    category: 'friendly',
+    duration: 2,
+    effects: { social: 0.4 },
+    accept: 0.8,
+    traitAccept: {},
+    toTarget: { friendship: 1 },
+    toSelf: { friendship: 1 },
+    rejectTarget: {},
+    rejectSelf: { friendship: -1 },
+    anim: 'talk',
+    special: 'sitTalk',
+    autonomous: false,
+  },
   {
     id: 'joke',
     label: 'soc.joke',
@@ -53,7 +70,7 @@ const list: SocialDef[] = [
     rejectTarget: { friendship: -3 },
     rejectSelf: { friendship: -1 },
     skill: { id: 'charisma', xpPerMinute: 0.2 },
-    anim: 'talk',
+    anim: 'joke',
     targetAnim: 'laugh',
   },
   {
@@ -149,7 +166,7 @@ const list: SocialDef[] = [
     memory: { target: 'gotGift' },
     autonomous: false,
     special: 'gift',
-    anim: 'talk',
+    anim: 'handOver',
     targetAnim: 'laugh',
   },
   {
@@ -166,7 +183,7 @@ const list: SocialDef[] = [
     rejectTarget: { friendship: -3, romance: -3 },
     rejectSelf: { romance: -5 },
     rejectMemory: { self: 'rebuffed' },
-    anim: 'talk',
+    anim: 'flirt',
   },
   {
     id: 'kiss',
@@ -218,7 +235,7 @@ const list: SocialDef[] = [
     rejectTarget: { friendship: -6, respect: -1 },
     rejectSelf: { friendship: -2 },
     rejectMemory: { target: 'insulted' },
-    anim: 'laugh',
+    anim: 'tease',
   },
   {
     id: 'argue',
@@ -302,7 +319,7 @@ const list: SocialDef[] = [
     rejectTarget: { friendship: -1 },
     rejectSelf: { friendship: -2 },
     memory: { target: 'apologized' },
-    anim: 'talk',
+    anim: 'apologize',
   },
   {
     id: 'breakUp',
@@ -334,8 +351,8 @@ const list: SocialDef[] = [
     toTarget: { friendship: 4 },
     toSelf: { friendship: 4 },
     rejectSelf: { friendship: -2 },
-    anim: 'laugh',
-    targetAnim: 'laugh',
+    anim: 'highFive',
+    targetAnim: 'highFive',
   },
   {
     id: 'handshake',
@@ -350,8 +367,8 @@ const list: SocialDef[] = [
     toSelf: { friendship: 3 },
     rejectTarget: { friendship: -1 },
     rejectSelf: { friendship: -2 },
-    anim: 'wave',
-    targetAnim: 'laugh',
+    anim: 'handshake',
+    targetAnim: 'handshake',
   },
   {
     id: 'snub',
@@ -369,7 +386,7 @@ const list: SocialDef[] = [
     rejectTarget: { friendship: -6, respect: -2 },
     rejectSelf: { friendship: -2 },
     rejectMemory: { target: 'insulted' },
-    anim: 'argue',
+    anim: 'fingerWag',
   },
   {
     id: 'kickOut',
@@ -403,8 +420,8 @@ const list: SocialDef[] = [
     rejectTarget: { romance: -2 },
     rejectSelf: { romance: -4 },
     rejectMemory: { self: 'rebuffed' },
-    anim: 'hug',
-    targetAnim: 'hug',
+    anim: 'cuddle',
+    targetAnim: 'cuddle',
   },
   {
     id: 'sweetTalk',
@@ -435,7 +452,7 @@ const list: SocialDef[] = [
     toTarget: { romance: 4, friendship: 4 },
     toSelf: { romance: 2, friendship: 1 },
     rejectSelf: { romance: -3 },
-    anim: 'hug',
+    anim: 'backRub',
     targetAnim: 'talk',
   },
   {
@@ -451,8 +468,8 @@ const list: SocialDef[] = [
     toSelf: { romance: 6, friendship: 2 },
     rejectSelf: { romance: -4 },
     rejectMemory: { self: 'rebuffed' },
-    anim: 'kiss',
-    targetAnim: 'kiss',
+    anim: 'slowDance',
+    targetAnim: 'slowDance',
   },
   {
     // o pedido: precisa de um estojo de aliança na casa (o sim leva o estojo)
@@ -472,7 +489,7 @@ const list: SocialDef[] = [
     rejectMemory: { self: 'proposalRefused', target: 'refusedProposal' },
     special: 'engage',
     autonomous: false,
-    anim: 'talk',
+    anim: 'kneel',
     targetAnim: 'kiss',
   },
   {
@@ -581,8 +598,8 @@ const list: SocialDef[] = [
     rejectTarget: { friendship: -1 },
     rejectSelf: { friendship: -2 },
     skill: { id: 'fitness', xpPerMinute: 0.3 },
-    anim: 'laugh',
-    targetAnim: 'laugh',
+    anim: 'tag',
+    targetAnim: 'tag',
   },
 ];
 

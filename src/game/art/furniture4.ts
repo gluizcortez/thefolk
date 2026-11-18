@@ -932,29 +932,46 @@ const chessboard: FurnitureSpec = {
       stool(0.62, texMat('fabric', { color: 0x3a2414 })),
       stool(-0.62, texMat('fabric', { color: 0x3a2414 })),
     );
-    // algumas peças no tabuleiro
+    // algumas peças no tabuleiro; plano 2, bloco 7: durante a partida, uma peça anda de casa em casa
     const rnd = seeded(seed + 21);
+    const pieces: { mesh: THREE.Mesh; home: [number, number] }[] = [];
     for (let i = 0; i < 10; i++) {
       const white = i % 2 === 0;
       const px = (Math.floor(rnd() * 8) - 3.5) * 0.0625;
       const pz = (white ? 1 : -1) * (0.12 + rnd() * 0.1);
-      g.add(
-        lathe(
-          [
-            [0.018, 0],
-            [0.014, 0.02],
-            [0.008, 0.04],
-            [0.012, 0.05],
-          ],
-          8,
-          colorMat(white ? 0xf3efe2 : 0x1b1a1c, { gloss: 0.7 }),
-          px,
-          0.715,
-          pz,
-        ),
+      const mesh = lathe(
+        [
+          [0.018, 0],
+          [0.014, 0.02],
+          [0.008, 0.04],
+          [0.012, 0.05],
+        ],
+        8,
+        colorMat(white ? 0xf3efe2 : 0x1b1a1c, { gloss: 0.7 }),
+        px,
+        0.715,
+        pz,
       );
+      pieces.push({ mesh, home: [px, pz] });
+      g.add(mesh);
     }
-    return { group: g };
+    return {
+      group: g,
+      tick({ time, using }) {
+        if (!using) return;
+        // a cada lance (8 s, o mesmo compasso da mão na animação), uma peça vai para outra casa
+        const move = Math.floor(time / 8);
+        const k = Math.min(1, Math.max(0, ((time / 8) % 1 - 0.68) / 0.14));
+        const p = pieces[move % pieces.length];
+        const r = seeded(move * 31 + seed)();
+        const tx = Math.max(-0.22, Math.min(0.22, p.home[0] + (r < 0.5 ? -1 : 1) * 0.0625));
+        const tz = Math.max(-0.22, Math.min(0.22, p.home[1] + (p.home[1] > 0 ? -0.0625 : 0.0625)));
+        p.mesh.position.x = p.home[0] + (tx - p.home[0]) * k;
+        p.mesh.position.z = p.home[1] + (tz - p.home[1]) * k;
+        p.mesh.position.y = 0.715 + Math.sin(k * Math.PI) * 0.04;
+        if (k >= 1) p.home = [tx, tz];
+      },
+    };
   },
 };
 

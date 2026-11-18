@@ -125,6 +125,10 @@ export function interactionOpen(obj: WorldObject, it: InteractionDef): boolean {
   if (it.special === 'kindle') return !obj.lit && !stateOf(obj).broken;
   if (it.blaze) return !!obj.lit;
   if (it.special === 'honor') return !!obj.memorial;
+  // plano 2, bloco 7: quadro pronto não se pinta mais; só vende ou começa outro
+  if (it.canvas === 'paint') return (obj.canvas?.progress ?? 0) < 100 && !stateOf(obj).broken;
+  if (it.canvas === 'sell') return (obj.canvas?.progress ?? 0) >= 100;
+  if (it.canvas === 'scrap') return !!obj.canvas;
   // bloco 9: só dá para beliscar com petisco na mesa
   if (it.snacks === 'eat') return (obj.snacks ?? 0) > 0 && !stateOf(obj).broken;
   return !stateOf(obj).broken;
@@ -151,7 +155,7 @@ export function breakChance(s: ObjectState): number {
 
 /** O que encadear depois de uma ação (lavar o prato, levar o saco à calçada). */
 /** plano 2, bloco 6: lavar as mãos depois da privada e arrumar a cama ao levantar */
-export type Chain = 'dishes' | 'dump' | 'washHands' | 'makeBed' | null;
+export type Chain = 'dishes' | 'dump' | 'washHands' | 'makeBed' | 'returnBook' | null;
 
 /**
  * Fim de um uso normal: o objeto pode quebrar, o folk pode deixar um prato
@@ -356,7 +360,7 @@ export function afterCare(obj: WorldObject, it: InteractionDef): Chain {
 
 /** Minutos para recolher cada tipo de bagunça, pelo Capricho. */
 export function tidyMinutes(kind: MessKind, folk: Folk): number {
-  const base = kind === 'meal' ? 2 : kind === 'plate' ? 2 : kind === 'puddle' ? 8 : kind === 'paper' ? 3 : kind === 'ash' ? 10 : 5;
+  const base = kind === 'meal' ? 2 : kind === 'plate' || kind === 'book' ? 2 : kind === 'puddle' ? 8 : kind === 'paper' ? 3 : kind === 'ash' ? 10 : 5;
   return Math.max(1, Math.round(base * (1 - 0.06 * skillLevel(folk, TIDINESS))));
 }
 
@@ -400,6 +404,8 @@ export function finishTidy(world: World, catalog: Catalog, log: Logger, folk: Fo
     }
   }
   if (mess.kind === 'plate') return hasCare(world, catalog, 'dishes') ? 'dishes' : null;
+  // plano 2, bloco 7: livro largado volta para a estante
+  if (mess.kind === 'book') return 'returnBook';
   // plano 2, bloco 6: a travessa (estragada ou jogada fora) vai para a lixeira
   if (mess.kind === 'meal') {
     const bin = nearestBin(world, catalog, folk);
@@ -424,7 +430,7 @@ export function finishTidy(world: World, catalog: Catalog, log: Logger, folk: Fo
 // ---------- ambiente ----------
 
 /** Quanto a bagunça de cada tipo pesa no ambiente em volta. */
-export const MESS_AMBIENCE: Record<MessKind, number> = { plate: -5, puddle: -6, trash: -9, paper: -2, ash: -8, meal: 0 };
+export const MESS_AMBIENCE: Record<MessKind, number> = { plate: -5, puddle: -6, trash: -9, paper: -2, ash: -8, meal: 0, book: -2 };
 
 /** Plano 2, bloco 6: o quanto a bagunça pesa agora (a travessa só pesa estragada). */
 export function messAmbience(mess: Mess, tick: number): number {

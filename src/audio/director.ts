@@ -9,7 +9,7 @@ import type { Folk, World } from '../sim/types';
 import { playedNote } from './compose';
 import { onCue } from './cues';
 import type { AudioEngine, SfxName } from './engine';
-import { toneOf, utterance, utteranceLength, voiceOf } from './folkes';
+import { sayLive, toneOf, utterance, utteranceLength, voiceOf } from './folkes';
 import type { Tone } from './folkes';
 import { MusicPlayer } from './player';
 import type { Voicing } from './player';
@@ -213,7 +213,11 @@ export class AudioDirector {
       if (ear.talkIn <= 0) {
         const voice = voiceOf(folk);
         const sylls = utterance(voice, tone.tone, folk.id * 7919 + this.talkSeed++);
-        if (tone.speaks) this.engine.speak(sylls, voice, 0.9 * h.gain, h.pan);
+        if (tone.speaks) {
+          this.engine.speak(sylls, voice, 0.9 * h.gain, h.pan);
+          // plano 2, bloco 7: a boca na tela acompanha estas sílabas
+          sayLive(folk.id, sylls, performance.now() / 1000);
+        }
         ear.talkIn = utteranceLength(sylls) + 0.5 + Math.random() * (tone.speaks ? 0.9 : 2.4);
       }
     }

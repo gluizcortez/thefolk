@@ -203,10 +203,17 @@ export class TestPlayer {
       for (const it of def.interactions) {
         if (it.hidden || !pick(it) || !interactionOpen(obj, it) || !interactionReady(world, it)) continue;
         if ((it.cost ?? 0) > world.household.funds) continue;
+        // como quem olha a casa: não manda deitar numa cama que já tem gente
+        if (isSleep(it) && this.busy(folk, obj, def.slots ?? 1)) continue;
         out.push({ obj, it, d: Math.abs(obj.x - folk.x) + Math.abs(obj.y - folk.y), r: rank ? rank(it) : 0 });
       }
     }
     return out.sort((a, b) => a.r - b.r || a.d - b.d);
+  }
+
+  private busy(folk: Folk, obj: WorldObject, slots: number): boolean {
+    const using = this.sim.world.folks.filter((f) => f !== folk && f.queue[0]?.objectId === obj.id && f.queue[0]?.phase === 'using');
+    return using.length >= slots;
   }
 }
 

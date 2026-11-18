@@ -16,7 +16,7 @@ import type { TownPlan } from './town';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 26;
+export const SAVE_VERSION = 27;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -406,6 +406,20 @@ const migrations: Record<number, Migration> = {
       if (out.carry?.interactionId === 'cook') delete out.carry;
       return out;
     });
+    return { ...save, world: world as unknown as Obj };
+  },
+  /**
+   * Plano 2, bloco 7: livros, trabalhos que avançam e quadro no cavalete são
+   * campos novos e opcionais. Quem estava lendo da estante em pé segue lendo
+   * ali (já com o livro na mão, sem a etapa de pegar).
+   */
+  26: (save) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    const SHELF = new Set(['read', 'study', 'recipes', 'manual']);
+    world.folks = (world.folks ?? []).map((f) => ({
+      ...f,
+      queue: (f.queue ?? []).map((a) => (a.kind === 'use' && a.phase === 'using' && SHELF.has(a.interactionId ?? '') ? { ...a, picked: true } : a)),
+    }));
     return { ...save, world: world as unknown as Obj };
   },
 };

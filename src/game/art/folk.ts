@@ -51,6 +51,8 @@ export interface FolkFrame {
   lookAt?: { x: number; z: number };
   /** plano 2, bloco 5: falando (a boca abre e fecha) */
   speaking?: boolean;
+  /** plano 2, bloco 7: abertura da boca na sílaba da vez (sem isso, o ritmo antigo) */
+  mouth?: 0 | 1 | 2;
   /** plano 2, bloco 5: semente das variações do laço (o id do folk) */
   seed?: number;
 }
@@ -160,6 +162,8 @@ export class FolkModel {
   /** plano 2, bloco 6: panela nas duas mãos e prato sujo, na frente do corpo */
   private pot = new THREE.Group();
   private plateDirty = new THREE.Group();
+  /** plano 2, bloco 7: violão no colo (preso ao peito, não à mão) */
+  private guitar = new THREE.Group();
   private faceMat: THREE.MeshPhongMaterial;
   private faceKey = '';
   private faceLook: FaceLook;
@@ -298,6 +302,26 @@ export class FolkModel {
     this.neck.add(cyl(0.044, 0.05, 0.09, 10, skin, 0, 0, 0));
     this.chest.add(this.neck);
     this.spine.add(this.chest);
+    // plano 2, bloco 7: violão atravessado na frente do corpo, o braço para a esquerda
+    {
+      const spruce = colorMat(0xd9a45a, { gloss: 0.6 });
+      const rim = colorMat(0x6b3a1e, { gloss: 0.5 });
+      const body = new THREE.Group();
+      body.add(
+        cyl(0.13, 0.13, 0.07, 14, rim, 0.05, -0.035, 0),
+        cyl(0.1, 0.1, 0.07, 14, rim, -0.12, -0.035, 0),
+        cyl(0.125, 0.125, 0.072, 14, [rim, spruce, rim], 0.05, -0.036, 0),
+        cyl(0.095, 0.095, 0.072, 14, [rim, spruce, rim], -0.12, -0.036, 0),
+        cyl(0.035, 0.035, 0.074, 12, colorMat(0x1b1310), -0.03, -0.037, 0),
+        box(0.36, 0.022, 0.045, colorMat(0x3a2414, { gloss: 0.4 }), -0.38, 0.0, 0),
+        box(0.08, 0.026, 0.06, colorMat(0x2a1a10), -0.6, 0.0, 0),
+      );
+      body.rotation.set(Math.PI / 2, 0, -0.35);
+      body.position.set(0.02, 0.06, 0.16);
+      this.guitar.add(body);
+      this.guitar.visible = false;
+      this.chest.add(this.guitar);
+    }
     // gola da camisa: duas abas abertas sobre o peito
     for (const sx of [-1, 1]) {
       if (kind) break; // só a camisa do dia tem gola de abas
@@ -536,6 +560,22 @@ export class FolkModel {
           rod([0, F + 0.25, -0.1], [0, F - 0.9, 0.42], 0.014, wood, 6),
           cyl(0.07, 0.11, 0.08, 8, colorMat(0xe9e4d6), 0, F - 0.97, 0.46),
         );
+        // plano 2, bloco 7: pincel, controle de videogame, cartas, presente e bloco de brinquedo
+        tool('brush', rod([0, F - 0.04, 0.0], [0, F - 0.12, 0.17], 0.007, wood, 5), cyl(0.008, 0.004, 0.04, 6, colorMat(0xc9382f), 0, F - 0.13, 0.19));
+        tool(
+          'gamepad',
+          rbox(0.15, 0.03, 0.07, 0.015, colorMat(0x3a3d44, { gloss: 0.5 }), -0.04, F - 0.08, 0.06),
+          box(0.02, 0.008, 0.02, colorMat(0xc9382f), 0.0, F - 0.06, 0.06),
+          box(0.02, 0.008, 0.02, colorMat(0x2c55a6), -0.08, F - 0.06, 0.06),
+        );
+        tool(
+          'cards',
+          box(0.06, 0.09, 0.004, colorMat(0xf4f2ea), -0.02, F - 0.09, 0.05),
+          box(0.06, 0.09, 0.004, colorMat(0xf4f2ea), 0.01, F - 0.085, 0.054),
+          box(0.06, 0.09, 0.004, colorMat(0xc9382f), 0.04, F - 0.08, 0.058),
+        );
+        tool('gift', rbox(0.16, 0.12, 0.14, 0.01, colorMat(0x7d55ad, { gloss: 0.5 }), -0.03, F - 0.1, 0.07), box(0.165, 0.02, 0.145, colorMat(0xe8b830), -0.03, F - 0.05, 0.07));
+        tool('block', box(0.06, 0.06, 0.06, colorMat(0xe8b830, { gloss: 0.4 }), 0, F - 0.07, 0.04));
         tool(
           'broom',
           rod([0, F + 0.25, -0.1], [0, F - 0.86, 0.4], 0.014, wood, 6),
@@ -797,6 +837,7 @@ export class FolkModel {
     this.pot.visible = hold === 'pot';
     this.plateDirty.visible = hold === 'dirtyPlate';
     for (const [id, g] of this.tools) g.visible = hold === id;
+    this.guitar.visible = hold === 'guitar';
     this.ring.visible = !!f.ring;
 
     // mãos: segurar algo fecha a mão em volta; o indicador aponta quando pedido
@@ -831,7 +872,7 @@ export class FolkModel {
     this.setFace({
       expr: lying ? 'neutral' : expr,
       closed: lying || (blinking && expr !== 'laugh' && expr !== 'cry'),
-      talk: speaking && !lying ? mouthFrame(this.clock) : 0,
+      talk: speaking && !lying ? (f.mouth ?? mouthFrame(this.clock)) : 0,
       gaze: lying ? 0 : gaze,
     });
   }

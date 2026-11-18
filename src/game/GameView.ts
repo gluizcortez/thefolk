@@ -66,6 +66,8 @@ import { thoughtOf } from '../sim/will';
 import { reactionTo } from '../sim/topics';
 import { stationDef } from '../sim/music';
 import { isWatch, spotCell, spotFace, spotsOf, stagesOf } from '../sim/activity';
+import { speechMouth, toneOf as speechTone, voiceOf } from '../audio/folkes';
+import type { Tone } from '../audio/folkes';
 import type { Age, Look, UniformDef, Wear } from '../sim/types';
 import { SCHOOL_BUS, ridesWaiting, uniformOf, vehicleOf } from '../sim/career';
 import { cribOf } from '../sim/kids';
@@ -147,6 +149,22 @@ const ANIMS: Record<string, FolkAnim> = {
   'spintop:spinTop': 'reach',
 };
 
+/** Plano 2, bloco 7: gestos de toque, e quanto cada um chega mais perto do outro. */
+const CLOSE_ANIMS: Partial<Record<string, number>> = {
+  hug: 0.3,
+  kiss: 0.3,
+  cuddle: 0.3,
+  slowDance: 0.33,
+  backRub: 0.25,
+  handshake: 0.18,
+  highFive: 0.18,
+  joke: 0.14,
+  handOver: 0.15,
+};
+
+/** Plano 2, bloco 7: gestos de conversa em que a boca fala. */
+const TALKING_ANIMS = new Set<string>(['talk', 'argue', 'joke', 'fingerWag', 'apologize', 'flirt', 'tease', 'handOver', 'kneel', 'backRub']);
+
 /** Cuidados com a casa: a mesma animação em qualquer objeto. */
 const CARE_ANIMS: Record<string, FolkAnim> = {
   clean: 'scrub',
@@ -168,6 +186,7 @@ const TIDY_LOOK: Partial<Record<MessKind, { anim: FolkAnim; hold?: HeldProp }>> 
   ash: { anim: 'sweep', hold: 'broom' },
   plate: { anim: 'reach_low', hold: 'dirtyPlate' },
   paper: { anim: 'reach_low' },
+  book: { anim: 'reach_low', hold: 'book' },
   meal: { anim: 'serve', hold: 'pot' },
 };
 
@@ -251,7 +270,10 @@ interface Hover {
 
 /** Plano 2, bloco 5: cara de cada gesto de conversa (romance dá cara de apaixonado). */
 function socialExpr(anim: FolkAnim, category: SocialCategory): Expression | undefined {
-  if (anim === 'argue') return 'angry';
+  if (anim === 'argue' || anim === 'fingerWag') return 'angry';
+  if (anim === 'apologize') return 'sad';
+  if (anim === 'tease' || anim === 'highFive' || anim === 'tag' || anim === 'joke') return 'laugh';
+  if (anim === 'slowDance' || anim === 'cuddle' || anim === 'kneel' || anim === 'flirt') return 'love';
   if (anim === 'laugh') return 'laugh';
   if (category === 'romantic' && (anim === 'kiss' || anim === 'hug' || anim === 'talk')) return 'love';
   if (anim === 'talk') return undefined;
@@ -1053,7 +1075,8 @@ export class GameView {
       this.hud.setTooltip(0, 0, null);
       if (hit.folk.id !== folk.id) this.hud.openSocialMenu(clientX, clientY, hit.folk);
       // plano 2, bloco 4: clicar em si mesmo sentado mostra o que dá para fazer dali
-      else if (folk.posture) this.hud.openSelfMenu(clientX, clientY);
+      // plano 2, bloco 7: de pé, também (olhar pela janela)
+      else this.hud.openSelfMenu(clientX, clientY);
       return;
     }
     if (hit.mess) {
@@ -1240,9 +1263,15 @@ export class GameView {
 
     // quem está usando o quê
     const using = new Map<number, string>();
+    // plano 2, bloco 7: o que aparece na tela do computador de quem está usando
+    const screens = new Map<number, string>();
     for (const folk of world.folks) {
       const a = folk.queue[0];
-      if (a?.phase === 'using' && a.objectId !== undefined && a.interactionId) using.set(a.objectId, a.interactionId);
+      if (a?.phase === 'using' && a.objectId !== undefined && a.interactionId) {
+        using.set(a.objectId, a.interactionId);
+        const sc = a.stage === undefined ? this.ctrl.sim.interactionOf(a)?.screen : undefined;
+        if (sc) screens.set(a.objectId, sc);
+      }
     }
     this.syncMess();
     for (const m of this.messRoot.children) m.visible = (m.userData.level ?? 0) <= this.ctrl.viewLevel;
@@ -1259,6 +1288,8 @@ export class GameView {
         stock: entry.obj.snacks,
         plant: entry.obj.plant,
         alarm: this.alarmFor(entry.def.safety),
+        screen: entry.obj.state?.broken ? undefined : screens.get(entry.obj.id),
+        canvas: entry.obj.canvas ? { seed: entry.obj.canvas.seed, progress: entry.obj.canvas.progress } : undefined,
       });
       if (entry.obj.state) entry.fx.update(entry.obj.state, !!entry.def.upkeep?.bin && entry.obj.state.fill >= 100, this.animTime);
       this.updateNotes(entry);
@@ -1752,6 +1783,65 @@ export class GameView {
   }
 
   /** Bloco 12: ponto da cena onde fica o pé de quem está no tile (x, y), com a altura do degrau. */
+  /** Plano 2, bloco 7: o meio do tile, no chão da cena (para onde olhar pela janela). */
+  private tileCenter(x: number, y: number): { x: number; z: number } {
+    const a = this.footAt(x, y);
+    return { x: a.x, z: a.z };
+  }
+
+  /**
+   * Plano 2, bloco 7: o olhar puxado pelo que acontece em volta. Vendo (ou
+   * sentado de frente para) a TV, o fogo ou o som, olha para lá; parado,
+   * de vez em quando olha a TV ligada por perto ou quem passa andando.
+   */
+  private gazeOf(folk: Folk, anim: string): { x: number; z: number } | undefined {
+    const sim = this.ctrl.sim;
+    const shown = sim.watchedBy(folk);
+    const at = (id: number) => {
+      const e = this.objects.get(id);
+      return e?.center ? { x: e.center.x, z: e.center.z } : undefined;
+    };
+    if (shown) return at(shown.id);
+    const idle = anim === 'idle' || anim.startsWith('g_') || anim === 'sit' || anim.startsWith('sit_');
+    if (!idle) return undefined;
+    // olhadinha, não encarar: uma parte do tempo só
+    const k = Math.sin(this.animTime * 0.35 + folk.id * 1.9);
+    if (k < 0.25) return undefined;
+    let best: { x: number; z: number; d: number } | undefined;
+    for (const obj of sim.world.objects) {
+      if (!obj.channel) continue;
+      const d = Math.abs(obj.x - folk.x) + Math.abs(obj.y - folk.y);
+      if (d > 7 || (best && d >= best.d)) continue;
+      const p = at(obj.id);
+      if (p) best = { ...p, d };
+    }
+    if (best) return best;
+    for (const other of sim.world.folks) {
+      if (other === folk || other.away || (other.px === other.x && other.py === other.y)) continue;
+      const d = Math.abs(other.x - folk.x) + Math.abs(other.y - folk.y);
+      if (d > 4 || (best && d >= best.d)) continue;
+      const v = this.folks.get(other.id);
+      if (v) best = { x: v.model.group.position.x, z: v.model.group.position.z, d };
+    }
+    return best;
+  }
+
+  /** Plano 2, bloco 7: tom da fala de agora (para a boca seguir o ritmo certo). */
+  private toneFor(folk: Folk): Tone {
+    const sim = this.ctrl.sim;
+    const a = folk.queue[0];
+    if (a?.kind === 'social') {
+      const def = sim.catalog.socials[a.socialId ?? ''];
+      return speechTone(def?.category, def?.anim, a.accepted === false && a.elapsed > 1);
+    }
+    if (a?.kind === 'listen' && a.otherId !== undefined) {
+      const theirs = sim.findFolk(a.otherId)?.queue[0];
+      const def = theirs?.kind === 'social' ? sim.catalog.socials[theirs.socialId ?? ''] : undefined;
+      return speechTone(def?.category, def?.targetAnim ?? def?.anim);
+    }
+    return 'calm';
+  }
+
   private footAt(x: number, y: number): { x: number; y: number; z: number } {
     const grid = this.ctrl.world.grid;
     const at = sceneZ(grid, y);
@@ -1824,6 +1914,8 @@ export class GameView {
     let held: HeldProp | undefined;
     // plano 2, bloco 5: boca falando e para onde olhar
     let speaking = false;
+    // plano 2, bloco 7: para onde olhar quando não é quem fala (TV, rua, quem acompanha)
+    let gaze: { x: number; z: number } | undefined;
     const social = it ? undefined : this.socialLook(folk);
 
     if (folk.age === 'baby') {
@@ -1866,7 +1958,8 @@ export class GameView {
         (it.pose === 'sit' ? 'sit' : it.pose === 'lie' ? 'sleep' : it.pose === 'dance' ? 'dance' : 'reach');
       if (it.onObject || seatId !== undefined) {
         let anchor: Anchor | undefined;
-        if (anim === 'sleep') anchor = (action?.slot !== undefined ? entry.spec.lies?.[action.slot] : undefined) ?? entry.spec.lie ?? couchLie(entry.spec);
+        // plano 2, bloco 7: deitado fazendo outra coisa (ler na cama) também vai para o lugar de deitar
+        if (anim === 'sleep' || it.pose === 'lie') anchor = (action?.slot !== undefined ? entry.spec.lies?.[action.slot] : undefined) ?? entry.spec.lie ?? couchLie(entry.spec);
         else if (anim === 'sit' && entry.spec.sit && action?.slot !== undefined && entry.spec.sit[action.slot]) {
           anchor = entry.spec.sit[action.slot];
         } else if (anim === 'sit' && entry.spec.sit) {
@@ -1908,6 +2001,16 @@ export class GameView {
       const how = kind ? TIDY_LOOK[kind] : undefined;
       anim = how?.anim ?? 'scrub';
       held = how?.hold;
+    } else if (action?.kind === 'window' && action.phase === 'using') {
+      // plano 2, bloco 7: debruçado na janela, olhando a rua
+      anim = 'gazeOut';
+      const out = action.route?.[0];
+      if (out) gaze = this.tileCenter(out.x, out.y);
+    } else if (action?.kind === 'gesture') {
+      // plano 2, bloco 7: tchau da porta para a visita que vai embora
+      anim = action.gesture && isAnim(action.gesture) ? action.gesture : 'wave';
+      const guest = action.escort !== undefined ? this.folks.get(action.escort) : undefined;
+      if (guest) gaze = { x: guest.model.group.position.x, z: guest.model.group.position.z };
     } else if (action?.kind === 'meal' && action.phase === 'using') {
       // plano 2, bloco 6: servir-se, chamar a família, esquentar e jogar fora
       const look = MEAL_LOOK[action.mealAct ?? 'serve'];
@@ -1918,16 +2021,26 @@ export class GameView {
       anim = 'walk';
       // plano 2, bloco 6: levando o prato servido até a mesa
       if (action?.served) held = 'plate';
+      // plano 2, bloco 7: acompanhando a visita até a porta, conversando
+      if (action?.escort !== undefined) {
+        const guest = this.folks.get(action.escort);
+        if (guest) {
+          gaze = { x: guest.model.group.position.x, z: guest.model.group.position.z };
+          speaking = Math.sin(this.animTime * 0.8 + folk.id) > -0.2;
+        }
+      }
     } else if (social) {
       anim = social.anim;
       expr = social.expr;
       speaking = !!social.speaking;
       // abraço e beijo: os dois chegam mais perto do meio
-      if (anim === 'hug' || anim === 'kiss') {
+      // plano 2, bloco 7: e os gestos de toque (aperto de mão, tapinha, dança lenta, massagem)
+      const close = CLOSE_ANIMS[anim];
+      if (close) {
         const dx = social.other.x - folk.x;
         const dz = social.other.y - folk.y;
-        place.x += dx * 0.3;
-        place.z += dz * 0.3;
+        place.x += dx * close;
+        place.z += dz * close;
         place.heading = Math.atan2(dx, dz);
       }
     }
@@ -2041,7 +2154,9 @@ export class GameView {
     if (!expr && it?.skill && family !== 'talk' && family !== 'dance') expr = 'focused';
     if (family === 'phone' || (it && family === 'talk')) speaking = true;
     const otherView = social && social.other !== folk ? this.folks.get(social.other.id) : undefined;
-    const lookAt = otherView ? { x: otherView.model.group.position.x, z: otherView.model.group.position.z } : undefined;
+    const lookAt = otherView ? { x: otherView.model.group.position.x, z: otherView.model.group.position.z } : (gaze ?? this.gazeOf(folk, anim));
+    // plano 2, bloco 7: a boca segue as sílabas da fala inventada
+    const mouth = speaking ? speechMouth(folk.id, voiceOf(folk), this.toneFor(folk), performance.now() / 1000) : undefined;
     // plano 2, bloco 6: o casal na mesma cama dorme virado um para o outro
     let shown: FolkAnim = anim;
     if (anim === 'sleep' && action?.slot !== undefined && entry && (entry.spec.lies?.length ?? 0) > 1) {
@@ -2063,6 +2178,7 @@ export class GameView {
       ring: wearsRing(sim.world, folk.id),
       seated,
       speaking,
+      mouth,
       lookAt,
       seed: folk.id,
     });
@@ -2141,7 +2257,7 @@ export class GameView {
         expr: rejected ? 'sad' : socialExpr(def.anim, def.category),
         other,
         icon: `soc:${def.category}`,
-        speaking: !rejected && (def.anim === 'talk' || def.anim === 'argue'),
+        speaking: !rejected && TALKING_ANIMS.has(def.anim),
       };
     }
     if (a.kind === 'listen') {
@@ -2151,7 +2267,7 @@ export class GameView {
       if (!def) return undefined;
       if (theirs.accepted === false) return { anim: 'listen', expr: def.category === 'mean' ? 'angry' : 'neutral', other };
       const anim = def.targetAnim ?? 'listen';
-      return { anim, expr: anim === 'listen' ? undefined : socialExpr(anim, def.category), other, speaking: anim === 'argue' };
+      return { anim, expr: anim === 'listen' ? undefined : socialExpr(anim, def.category), other, speaking: anim === 'argue' || anim === 'fingerWag' };
     }
     return undefined;
   }

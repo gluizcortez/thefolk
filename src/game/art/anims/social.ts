@@ -134,6 +134,8 @@ export const SOCIAL = {
     },
   },
   hug: {
+    variants: ['hug', 'hug_pat'],
+    every: 3,
     tracks: {
       torsoX: 0.12,
       armsX: -1.35,
@@ -144,6 +146,11 @@ export const SOCIAL = {
       headZ: 0.18,
       torsoZ: { a: 0.03, f: 1.5 },
     },
+  },
+  /** abraço com tapinhas nas costas */
+  hug_pat: {
+    base: 'hug',
+    tracks: { elbowR: { b: -0.85, a: 0.22, f: 10 }, wristR: { a: 0.25, f: 10 }, torsoZ: { a: 0.05, f: 1.5 } },
   },
   kiss: {
     tracks: {
@@ -156,8 +163,10 @@ export const SOCIAL = {
       grips: 0.25,
     },
   },
-  /** aponta o dedo com uma mão, a outra na cintura */
+  /** aponta o dedo com uma mão, a outra na cintura (e às vezes sacode o dedo em riste) */
   argue: {
+    variants: ['argue', 'fingerWag'],
+    every: 5,
     tracks: {
       armRX: { b: -1.2, a: 0.4, f: 7 },
       armROut: 0.1,

@@ -111,6 +111,19 @@ export function buildMess(kind: MessKind, seed: number, top: number): THREE.Grou
     fork.rotation.y = 0.5;
     g.add(plate, food, sauce, fork);
     if (top < 0.1) g.add(flat(stainTex(), 0.36, 0.36, 0.008 - top));
+  } else if (kind === 'book') {
+    // plano 2, bloco 7: livro largado aberto, de capa para cima
+    const covers = [0x8a2f2a, 0x2c55a6, 0x3f7f3a, 0x7d55ad];
+    const cover = colorMat(covers[Math.floor(rnd() * covers.length)], { gloss: 0.4 });
+    const book = new THREE.Group();
+    for (const sx of [-1, 1]) {
+      const half = box(0.11, 0.02, 0.16, cover, sx * 0.058, 0, 0);
+      half.rotation.z = sx * 0.12;
+      book.add(half);
+    }
+    book.add(box(0.012, 0.024, 0.155, colorMat(0xf4efdf), 0, 0.004, 0));
+    book.rotation.y = rnd() * Math.PI;
+    g.add(book);
   } else if (kind === 'paper') {
     // jornal enrolado com elástico, do jeito que o entregador joga na calçada
     const roll = cyl(0.06, 0.06, 0.34, 10, colorMat(0xe6e0cc), 0, 0);

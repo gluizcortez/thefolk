@@ -174,6 +174,54 @@ export interface InteractionDef {
   phases?: PhaseDef[];
   /** plano 2, bloco 6: o que vem depois, sozinho (lavar as mãos depois da privada) */
   after?: 'washHands';
+  /**
+   * plano 2, bloco 7: livro de habilidade (id em BOOKS, sim/hobbies.ts): o
+   * progresso fica salvo no folk e, lido até o fim, rende um bônus.
+   */
+  book?: string;
+  /** plano 2, bloco 7: pega o livro na estante e procura onde sentar para ler */
+  browse?: boolean;
+  /** plano 2, bloco 7: trabalho que avança e fica salvo (romance, programa, música) */
+  project?: ProjectKind;
+  /** plano 2, bloco 7: tela do cavalete ('paint' pinta, 'sell' vende o quadro pronto, 'scrap' começa outra) */
+  canvas?: 'paint' | 'sell' | 'scrap';
+  /** plano 2, bloco 7: o que aparece na tela do computador */
+  screen?: ScreenMode;
+  /** plano 2, bloco 7: corre pela calçada, ida e volta (usa o objeto só como ponto de partida) */
+  jog?: boolean;
+  /** plano 2, bloco 7: procura emprego (no fim, pega a vaga que mais combina) */
+  jobHunt?: boolean;
+  /** plano 2, bloco 7: conversa à distância (o amigo mais próximo ganha também) */
+  online?: boolean;
+}
+
+/** Plano 2, bloco 7: tela do computador. */
+export type ScreenMode = 'web' | 'game' | 'text' | 'code' | 'chat' | 'jobs';
+
+/** Plano 2, bloco 7: trabalhos de casa que avançam aos poucos. */
+export type ProjectKind = 'novel' | 'program' | 'song';
+
+/** Plano 2, bloco 7: um trabalho em andamento. */
+export interface Project {
+  /** minutos de trabalho feitos (já com o ganho da habilidade) */
+  done: number;
+  /** soma do nível da habilidade em cada minuto (qualidade = média) */
+  quality: number;
+  /** minutos trabalhados de fato (para a média) */
+  minutes: number;
+}
+
+/** Plano 2, bloco 7: quadro no cavalete. */
+export interface Canvas {
+  /** 0 a 100 */
+  progress: number;
+  /** soma do nível de criatividade por minuto pintado */
+  quality: number;
+  minutes: number;
+  /** quem pinta (id do folk) */
+  by: number;
+  /** semente das pinceladas */
+  seed: number;
 }
 
 /** Plano 2, bloco 6: etapas do cozinhar, cada uma num objeto. */
@@ -287,7 +335,14 @@ export type HeldProp =
   | 'toothbrush'
   | 'comb'
   | 'mop'
-  | 'broom';
+  | 'broom'
+  // plano 2, bloco 7: lazer, estudo e convívio
+  | 'brush'
+  | 'guitar'
+  | 'gamepad'
+  | 'cards'
+  | 'gift'
+  | 'block';
 
 // ---------- Bloco 11: bebês, crianças e escola ----------
 
@@ -475,7 +530,7 @@ export type CareKind =
 
 /** Bagunça solta: prato sujo, poça, lixo no chão. */
 /** Plano 2, bloco 6: 'meal' = prato pronto servido (travessa com porções), que não é sujeira até estragar. */
-export type MessKind = 'plate' | 'puddle' | 'trash' | 'paper' | 'ash' | 'meal';
+export type MessKind = 'plate' | 'puddle' | 'trash' | 'paper' | 'ash' | 'meal' | 'book';
 
 /** Plano 2, bloco 6: a travessa que saiu do fogão. */
 export interface MealInfo {
@@ -870,7 +925,28 @@ export type SocialCategory = 'friendly' | 'romantic' | 'professional' | 'mean';
 export type RelAxis = 'friendship' | 'romance' | 'respect';
 export type RelDelta = Partial<Record<RelAxis, number>>;
 
-export type SocialAnim = 'talk' | 'laugh' | 'wave' | 'hug' | 'kiss' | 'argue';
+export type SocialAnim =
+  | 'talk'
+  | 'laugh'
+  | 'wave'
+  | 'hug'
+  | 'kiss'
+  | 'argue'
+  // plano 2, bloco 7: gestos por tipo de conversa
+  | 'handshake'
+  | 'joke'
+  | 'backPat'
+  | 'fingerWag'
+  | 'apologize'
+  | 'kneel'
+  | 'slowDance'
+  | 'backRub'
+  | 'handOver'
+  | 'flirt'
+  | 'tease'
+  | 'highFive'
+  | 'cuddle'
+  | 'tag';
 
 /** Lembranças guardadas por quem viveu o momento (chave em `memories` de data/). */
 export interface MemoryDef {
@@ -942,7 +1018,7 @@ export interface SocialDef {
   rejectMemory?: { self?: string; target?: string };
   /** a IA pode escolher sozinha (padrão: true) */
   autonomous?: boolean;
-  special?: 'date' | 'moveIn' | 'sendHome' | 'breakUp' | 'gossip' | 'engage' | 'wed' | 'divorce' | 'moveOut' | 'tryBaby' | 'helpHomework' | 'gift';
+  special?: 'date' | 'moveIn' | 'sendHome' | 'breakUp' | 'gossip' | 'engage' | 'wed' | 'divorce' | 'moveOut' | 'tryBaby' | 'helpHomework' | 'gift' | 'sitTalk';
   /** bloco 10: não aparece no menu nem para a IA (votos, só na cerimônia) */
   hidden?: boolean;
   /** bloco 9: a conversa tem assunto (quem ouve reage ao gosto dele) */
@@ -1341,6 +1417,8 @@ export interface WorldObject {
   dishes?: number;
   /** plano 2, bloco 6: cama desfeita (alguém levantou e não arrumou) */
   unmade?: boolean;
+  /** plano 2, bloco 7: quadro no cavalete (pintando ou pronto) */
+  canvas?: Canvas;
 }
 
 /** Bloco 14: de que se morre (e quase se morre). */
@@ -1469,7 +1547,11 @@ export type ActionKind =
   | 'douse'
   | 'panic'
   // plano 2, bloco 6: mexer na travessa servida (servir-se, chamar a família, esquentar, jogar fora)
-  | 'meal';
+  | 'meal'
+  // plano 2, bloco 7: olhar pela janela (o tile de dentro é `target`; `route[0]` é o tile do outro lado)
+  | 'window'
+  // plano 2, bloco 7: um gesto parado por alguns minutos (dar tchau da porta)
+  | 'gesture';
 
 /** Plano 2, bloco 6: o que fazer com a travessa. */
 export type MealAct = 'serve' | 'call' | 'reheat' | 'scrap';
@@ -1549,6 +1631,18 @@ export interface Action {
   served?: ServedPlate;
   /** plano 2, bloco 6: o que fazer com a travessa (kind 'meal', a travessa é `messId`) */
   mealAct?: MealAct;
+  /** plano 2, bloco 7: já pegou o livro na estante (agora vai sentar, ou lê ali) */
+  picked?: boolean;
+  /** plano 2, bloco 7: caminho da corrida (ida e volta pela calçada) e onde está nele */
+  route?: Vec[];
+  leg?: number;
+  /** plano 2, bloco 7: conversa marcada para sentar junto (espera o outro sentar) */
+  sitWith?: boolean;
+  /** plano 2, bloco 7: acompanhando a visita até a porta (id dela) */
+  escort?: number;
+  /** plano 2, bloco 7: gesto da ação 'gesture' (animação) e por quantos minutos */
+  gesture?: string;
+  minutes?: number;
   phase: ActionPhase;
   elapsed: number;
 }
@@ -1642,6 +1736,12 @@ export interface Folk {
   carry?: Carry;
   /** plano 2, bloco 4: reação ao que vê na TV (ri, torce, chora) */
   react?: Reaction2;
+  /** plano 2, bloco 7: minutos lidos de cada livro de habilidade (id em BOOKS) */
+  books?: Record<string, number>;
+  /** plano 2, bloco 7: trabalhos de casa em andamento (romance, programa, música) */
+  projects?: Partial<Record<ProjectKind, Project>>;
+  /** plano 2, bloco 7: quantos de cada já terminou (romances, programas, músicas, quadros) */
+  works?: Partial<Record<ProjectKind | 'painting', number>>;
 }
 
 /** Aparência: índices nas paletas da arte. */
@@ -2125,6 +2225,8 @@ export type Command =
   | { type: 'seated'; folkId: number; what: 'read' | 'call' | 'stand'; neighborId?: number; append?: boolean }
   /** plano 2, bloco 4: chama `otherId` para assistir junto o que o folk está vendo */
   | { type: 'watchTogether'; folkId: number; otherId: number; append?: boolean }
+  /** plano 2, bloco 7: vai até a janela mais perto e fica olhando lá fora */
+  | { type: 'lookOut'; folkId: number; append?: boolean }
   /** plano 2, bloco 2: arrastar na fila; `to` é a nova posição (1 em diante, a atual não sai do lugar) */
   | { type: 'moveQueued'; folkId: number; actionId: number; to: number }
   | { type: 'setSpeed'; speed: Speed }

@@ -216,10 +216,11 @@ describe('luz, dia e noite (bloco 3)', () => {
     const folk = sim.world.folks[0];
     const shelf = sim.world.objects.find((o) => o.defId === 'bookshelf')!;
     expect(sim.dispatch({ type: 'queueUse', folkId: folk.id, objectId: shelf.id, interactionId: 'read' })).toBe(true);
-    run(sim, 40);
+    run(sim, 60);
+    // plano 2, bloco 7: pega o livro e vai ler sentado; a luz que acende é a de onde ele lê
     const map = roomsOf(sim.world, CATALOG);
-    const bedroom = roomAt(map, 6, 3)!;
-    expect(lightsIn(sim.world, CATALOG, map, bedroom).some((l) => l.lit)).toBe(true);
+    const here = roomAt(map, folk.x, folk.y)!;
+    expect(lightsIn(sim.world, CATALOG, map, here).some((l) => l.lit)).toBe(true);
     expect(folk.queue[0]?.interactionId).toBe('read');
     expect(folk.queue[0]?.phase).toBe('using');
   });

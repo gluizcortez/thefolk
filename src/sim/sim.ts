@@ -20,11 +20,13 @@ import {
   sitFriendly,
   sitsOn,
   spotOwner,
+  spotPlaces,
   stagesOf,
   viewArea,
   viewOf,
 } from './activity';
 import { SKIP_SPEED, canSkip } from './pace';
+import { BOOKS, WINDOW_MINUTES, canvasQuality, jogRoute, paintTick, paintingPrice, projectTick, readFactor, readTick, returnsBook } from './hobbies';
 import {
   DISH_BY_ID,
   FETCH_MINUTES,
@@ -191,7 +193,7 @@ import {
   workRelationTerm,
   workplaceShift,
 } from './work';
-import { MINUTES_PER_DAY, clockOf } from './clock';
+import { MINUTES_PER_DAY, clockOf, daylightAt } from './clock';
 import type { PlaceProblem } from './economy';
 import { billAmount, checkPlacement, formatMoney, objectBusy, sellValue } from './economy';
 import type { Nav } from './grid';
@@ -426,6 +428,9 @@ export type CommandProblem =
   | 'invalid'
   | 'notSeated'
   | 'noBook'
+  // plano 2, bloco 7
+  | 'noWindow'
+  | 'canvasDone'
   | 'visitor'
   | 'socialNotNow'
   | 'noPhone'
@@ -530,6 +535,8 @@ const VISIT_CURFEW = 23;
 const REJECT_MINUTES = 3;
 /** minutos esperando alguém ou um objeto ficar livre antes de desistir */
 const WAIT_LIMIT = 30;
+/** plano 2, bloco 7: até quantos passos procura assento para ler */
+const READ_REACH = 10;
 /** minutos que alguém fica esperando quem vem puxar conversa */
 const LISTEN_LIMIT = 60;
 /** hora em que as relações sem contato esfriam */
@@ -564,7 +571,7 @@ const COLLAPSE_ENERGY_PER_MINUTE = 0.3;
 
 type ActionSeed = Pick<
   Action,
-  'kind' | 'objectId' | 'interactionId' | 'target' | 'otherId' | 'socialId' | 'messId' | 'serviceId' | 'welcome' | 'circleId' | 'topic' | 'guests' | 'wedding' | 'armed' | 'slot' | 'mealAct'
+  'kind' | 'objectId' | 'interactionId' | 'target' | 'otherId' | 'socialId' | 'messId' | 'serviceId' | 'welcome' | 'circleId' | 'topic' | 'guests' | 'wedding' | 'armed' | 'slot' | 'mealAct' | 'route'
 >;
 
 /** minutos de conversa na porta antes de decidir */
@@ -736,6 +743,14 @@ export class Sim {
         if (cmd.neighborId !== undefined && !relationOf(this.world, folk.id, cmd.neighborId)) return this.fail('invalid');
         return this.enqueuePlayer(folk, { kind: 'use', objectId: p.objectId, interactionId: 'seatCall', slot: p.spot, otherId: cmd.neighborId });
       }
+      case 'lookOut': {
+        const folk = this.findFolk(cmd.folkId);
+        if (!folk || folk.age === 'baby') return false;
+        if (folk.visit) return this.fail('visitor');
+        const spot = this.windowSpot(folk);
+        if (!spot) return this.fail('noWindow');
+        return this.enqueuePlayer(folk, { kind: 'window', target: spot.at, route: [spot.out] });
+      }
       case 'watchTogether': {
         const folk = this.findFolk(cmd.folkId);
         const other = this.findFolk(cmd.otherId);
@@ -785,7 +800,7 @@ export class Sim {
         }
         // plano 2, bloco 6: prato acima da Cozinha do folk
         if (it.cook && DISH_BY_ID[it.cook] && !knowsDish(folk, DISH_BY_ID[it.cook])) return this.fail('skillTooLow');
-        if (!interactionOpen(obj, it)) return this.fail(it.care || it.light || it.baby ? 'nothingToDo' : 'broken');
+        if (!interactionOpen(obj, it)) return this.fail(it.canvas ? 'canvasDone' : it.care || it.light || it.baby ? 'nothingToDo' : 'broken');
         if (!interactionReady(this.world, it)) {
           return this.fail(it.special === 'payBills' ? 'noBills' : it.special === 'fair' ? 'closed' : it.night ? 'daytime' : 'noFood');
         }
@@ -1906,6 +1921,11 @@ export class Sim {
       this.standUp(folk);
       return false;
     }
+    // plano 2, bloco 7: sentou para conversar e o outro ainda está vindo sentar do lado
+    if (head?.sitWith && head.phase === 'queued' && this.waitSeatMate(folk, head)) {
+      this.seatedTick(folk, undefined);
+      return true;
+    }
     if (head && !keepsPosture(this.world, this.catalog, this.nav, folk, head, this.interactionOf(head))) {
       // fogo, porta, trabalho e escola: levanta num pulo
       if (head.kind === 'panic' || head.kind === 'douse' || head.kind === 'work' || head.kind === 'school' || head.kind === 'leave' || head.kind === 'door') {
@@ -2255,6 +2275,11 @@ export class Sim {
       this.processPanic(folk, action);
       return;
     }
+    // plano 2, bloco 7: olhar pela janela e dar tchau da porta
+    if (action.kind === 'window' || action.kind === 'gesture') {
+      this.processStill(folk, action);
+      return;
+    }
 
     // plano 2, bloco 6: cozinhar começa pela geladeira
     if (action.phase === 'queued' && action.kind === 'use' && !action.cook && this.interactionOf(action)?.cook) {
@@ -2356,7 +2381,8 @@ export class Sim {
       const it = this.interactionOf(action);
       if (obj && odef && it && !interactionOpen(obj, it)) {
         // quebrou (ou já limparam) enquanto vinha
-        if (!it.care && !it.snacks) this.log('log.foundBroken', { name: folk.name, object: odef.name });
+        if (it.canvas) this.log(it.canvas === 'paint' ? 'log.canvasDone' : 'log.noCanvas', { name: folk.name });
+        else if (!it.care && !it.snacks) this.log('log.foundBroken', { name: folk.name, object: odef.name });
         this.finish(folk);
         return;
       }
@@ -2444,7 +2470,8 @@ export class Sim {
           this.faceObject(folk, action);
         }
         // plano 2, bloco 4: etapa de entrada (deitar) e a TV ligando no canal
-        const enter = it && stagesOf(it).enter;
+        const enter = it && !action.picked && stagesOf(it).enter;
+        if (it?.jog && !this.startJog(folk, action)) return;
         if (enter && action.stage === undefined) {
           action.stage = 'enter';
           action.stageLeft = enter.minutes;
@@ -2484,6 +2511,8 @@ export class Sim {
         }
         return;
       }
+      // plano 2, bloco 7: pegou o livro na estante; agora procura onde sentar para ler
+      if (it.browse && !action.picked && this.goRead(folk, action)) return;
       // bloco 16: no restaurante, só come depois que o prato chega
       if (it.special === 'dine' && this.dineWait(folk, action, it)) return;
       // plano 2, bloco 6: a porção servida rende pelo prato, pelo ponto e pela temperatura
@@ -2542,7 +2571,9 @@ export class Sim {
         }
         workBusiness(this.catalog, this.logger, folk);
       }
-      this.trainCare(folk, it);
+      // plano 2, bloco 7: livro, trabalho que avança, quadro, corrida e conversa à distância
+      if (this.hobbyTick(folk, action, it, used)) return;
+      this.trainCare(folk, it.book ? this.bookTraining(folk, it) : it);
       action.elapsed++;
       // plano 2, bloco 6: etapa do cozinhar acabou: passa para a próxima (em outro objeto)
       if (action.cook && it.step) {
@@ -2572,6 +2603,16 @@ export class Sim {
           next = it.care ? afterCare(used, it) : afterUse(this.world, this.catalog, this.logger, folk, used, usedDef, it);
         }
         if (action.served) this.ateServed(folk, action.served);
+        // plano 2, bloco 7: vender o quadro, começar outro, procurar emprego
+        if (used && it.canvas) this.canvasDone(folk, used, it);
+        if (it.jobHunt) this.jobHunt(folk);
+        if (it.browse && !folk.visit && !next && used && this.putBookBack(folk, action)) {
+          // o caprichoso leva o livro de volta para a estante de onde tirou
+          this.finish(folk);
+          folk.queue.unshift(this.makeAction({ kind: 'use', objectId: used.id, interactionId: 'returnBook' }, action.source));
+          folk.path = [];
+          return;
+        }
         // plano 2, bloco 6: depois da privada lava as mãos; quem é caprichoso arruma a cama ao levantar
         if (!next && it.after && !folk.visit) next = it.after;
         if (!next && !folk.visit && used && usedDef?.category === 'beds' && used.unmade && it.pose === 'lie' && tidyOf(this.catalog, folk) >= 1.2) next = 'makeBed';
@@ -2715,7 +2756,7 @@ export class Sim {
       if (mess.x !== folk.x || mess.y !== folk.y) folk.facing = { x: mess.x - folk.x, y: mess.y - folk.y };
       return;
     }
-    if (mess.kind !== 'plate' && mess.kind !== 'paper') folk.needs.hygiene = Math.max(0, folk.needs.hygiene - 0.08);
+    if (mess.kind !== 'plate' && mess.kind !== 'paper' && mess.kind !== 'book') folk.needs.hygiene = Math.max(0, folk.needs.hygiene - 0.08);
     if (mess.kind !== 'paper') this.trainCare(folk, TIDY_GAIN);
     action.elapsed++;
     if (action.elapsed < tidyMinutes(mess.kind, folk)) return;
@@ -2777,6 +2818,19 @@ export class Sim {
         }
       }
       return findPathToAny(this.nav, folk, useTiles(this.world, this.nav, seat, sdef)) ?? [];
+    }
+    if (action.kind === 'window') return action.target ? findPath(this.nav, folk, action.target) : null;
+    // plano 2, bloco 7: com o livro na mão, vai até o assento escolhido
+    if (action.picked && action.seatAt !== undefined) {
+      const seat = this.findObject(action.seatAt);
+      const sd = seat && this.defOf(seat);
+      const fs = seat && sd ? freeSeatSpot(this.world, this.nav, folk, seat, sd) : null;
+      if (fs) {
+        action.slot = fs.place.index;
+        return fs.path;
+      }
+      delete action.seatAt;
+      return [];
     }
     const obj = action.objectId !== undefined ? this.findObject(action.objectId) : undefined;
     const def = obj && this.defOf(obj);
@@ -3120,7 +3174,12 @@ export class Sim {
     } else if (special === 'breakUp') {
       breakUp(this.world, this.catalog, this.logger, folk.id, other.id, 'asked');
     } else if (special === 'sendHome') {
-      if (other.visit) this.startLeaving(other);
+      if (other.visit) {
+        this.startLeaving(other);
+        this.escort(folk, other);
+      }
+    } else if (special === 'sitTalk') {
+      this.sitTogether(folk, other);
     } else if (special === 'moveIn') {
       this.moveIn(other, folk);
     } else if (special === 'engage') {
@@ -6684,6 +6743,303 @@ export class Sim {
     } else {
       this.log('log.scared', { name: folk.name, other: this.departedName(s.personId) });
     }
+  }
+
+  // ---------- plano 2, bloco 7: lazer, estudo e trabalho em casa ----------
+
+  /**
+   * Com o livro na mão (a etapa de pegar na estante acabou), procura um
+   * assento livre perto e vai sentar para ler. Sem assento, lê ali mesmo.
+   * Devolve true quando saiu andando.
+   */
+  private goRead(folk: Folk, action: Action): boolean {
+    action.picked = true;
+    if (folk.age === 'baby') return false;
+    const seat = couchSeat(this.world, this.catalog, this.nav, folk, READ_REACH) ?? this.chairSeat(folk);
+    if (!seat) return false;
+    action.seatAt = seat.seat.id;
+    action.slot = seat.place.index;
+    action.phase = 'queued';
+    action.lightChecked = false;
+    folk.path = [];
+    return true;
+  }
+
+  /** Cadeira livre (de mesa também) a até READ_REACH passos. */
+  private chairSeat(folk: Folk): { seat: WorldObject; place: { index: number } } | null {
+    let best: { seat: WorldObject; place: { index: number }; d: number } | null = null;
+    for (const seat of this.world.objects) {
+      const def = this.defOf(seat);
+      if (!def || def.category !== 'seating' || !isSeat(def)) continue;
+      const fs = freeSeatSpot(this.world, this.nav, folk, seat, def);
+      if (!fs || fs.path.length > READ_REACH) continue;
+      if (!best || fs.path.length < best.d) best = { seat, place: fs.place, d: fs.path.length };
+    }
+    return best;
+  }
+
+  /** Releitura de livro já terminado rende menos. */
+  private bookTraining(folk: Folk, it: InteractionDef): InteractionDef {
+    const k = readFactor(folk, it.book!);
+    return k === 1 || !it.skill ? it : { ...it, skill: { ...it.skill, xpPerMinute: it.skill.xpPerMinute * k } };
+  }
+
+  /**
+   * Um minuto das atividades do bloco 7. Devolve true quando a ação acabou
+   * ali (trabalho pronto, quadro pronto, sem caminho para correr).
+   */
+  private hobbyTick(folk: Folk, action: Action, it: InteractionDef, used: WorldObject | undefined): boolean {
+    if (it.book && !folk.visit && readTick(folk, it.book) === 'finished') {
+      const def = BOOKS[it.book];
+      this.log('log.bookFinished', { name: folk.name, book: `book.${it.book}`, skill: this.catalog.skills[def.skill]?.name ?? def.skill });
+    }
+    if (it.project && !folk.visit) {
+      const done = projectTick(folk, it.project);
+      if (done) {
+        this.world.household.funds += done.pay;
+        this.log(`log.projectDone.${it.project}`, { name: folk.name, money: formatMoney(done.pay), count: done.count });
+        this.trainCare(folk, it);
+        this.finish(folk);
+        return true;
+      }
+    }
+    if (it.canvas === 'paint' && used) {
+      if (paintTick(used, folk, this.world.tick + folk.id * 31)) {
+        folk.works = { ...(folk.works ?? {}), painting: (folk.works?.painting ?? 0) + 1 };
+        this.log('log.paintingDone', { name: folk.name, money: formatMoney(paintingPrice(used.canvas)) });
+        this.trainCare(folk, it);
+        this.finish(folk);
+        return true;
+      }
+    }
+    if (it.jog) this.jogStep(folk, action);
+    if (it.online) this.chatOnline(folk);
+    return false;
+  }
+
+  /** Fim de vender o quadro ou de começar outro. */
+  private canvasDone(folk: Folk, obj: WorldObject, it: InteractionDef): void {
+    if (it.canvas === 'sell' && obj.canvas && obj.canvas.progress >= 100) {
+      const price = paintingPrice(obj.canvas);
+      this.world.household.funds += price;
+      this.log(canvasQuality(obj.canvas) >= 6 ? 'log.paintingSoldWell' : 'log.paintingSold', { name: folk.name, money: formatMoney(price) });
+      delete obj.canvas;
+    } else if (it.canvas === 'scrap' && obj.canvas) {
+      delete obj.canvas;
+      this.log('log.canvasScrapped', { name: folk.name });
+    }
+  }
+
+  /** Procurar emprego no computador: pega a vaga que mais combina com o que sabe. */
+  private jobHunt(folk: Folk): void {
+    if (folk.job) {
+      this.log('log.jobHuntHasJob', { name: folk.name });
+      return;
+    }
+    let best: { id: string; score: number } | null = null;
+    for (const c of Object.values(this.catalog.careers)) {
+      const score = c.skills.reduce((s, k) => s + (folk.skills[k] ?? 0), 0);
+      if (!best || score > best.score) best = { id: c.id, score };
+    }
+    if (best) this.run({ type: 'takeJob', folkId: folk.id, careerId: best.id });
+  }
+
+  /**
+   * Fim da leitura longe da estante: devolve true se o folk vai devolver o
+   * livro; senão o livro fica largado ali (bagunça 'book').
+   */
+  private putBookBack(folk: Folk, action: Action): boolean {
+    if (!action.picked || action.seatAt === undefined) return false;
+    if (returnsBook(tidyOf(this.catalog, folk), nextFloat(this.world))) return true;
+    addMess(this.world, 'book', folk.x, folk.y, folk.id);
+    return false;
+  }
+
+  /** Corrida: monta o caminho pela calçada (ida e volta). Sem caminho, desiste. */
+  private startJog(folk: Folk, action: Action): boolean {
+    const world = this.world;
+    const outdoor = (x: number, y: number) => {
+      const f = this.catalog.floors[floorAt(world.grid, x, y)];
+      return !!f?.outdoor && !f.water;
+    };
+    const route = jogRoute(this.nav, { x: folk.x, y: folk.y }, outdoor);
+    if (route.length === 0) {
+      this.log('log.noJogRoute', { name: folk.name });
+      this.finish(folk);
+      return false;
+    }
+    action.route = route;
+    action.leg = 0;
+    return true;
+  }
+
+  /** Um minuto de corrida: um passo pelo caminho (no fim, volta a correr dali). */
+  private jogStep(folk: Folk, action: Action): void {
+    const route = action.route;
+    if (!route || route.length === 0) return;
+    const at = route[(action.leg ?? 0) % route.length];
+    action.leg = ((action.leg ?? 0) + 1) % route.length;
+    if (!this.nav.isFree(at.x, at.y)) return;
+    if (at.x !== folk.x || at.y !== folk.y) folk.facing = { x: Math.sign(at.x - folk.x), y: Math.sign(at.y - folk.y) };
+    folk.x = at.x;
+    folk.y = at.y;
+  }
+
+  /** Conversa à distância: o melhor amigo (de casa ou do bairro) do outro lado. */
+  private chatOnline(folk: Folk): void {
+    let best: { id: number; f: number } | null = null;
+    for (const [k, rel] of Object.entries(this.world.relations)) {
+      const [from, to] = k.split('>').map(Number);
+      if (from !== folk.id || to === folk.id) continue;
+      if (!best || rel.friendship > best.f) best = { id: to, f: rel.friendship };
+    }
+    if (!best) return;
+    const other = this.findFolk(best.id) ?? this.world.neighbors.find((n) => n.id === best!.id);
+    if (!other) return;
+    const who = { id: other.id, traits: other.traits ?? [] };
+    applyDelta(this.world, this.catalog, folk, who, { friendship: 0.03 });
+    applyDelta(this.world, this.catalog, who, folk, { friendship: 0.03 });
+  }
+
+  /** Janela mais perto: o tile de dentro, de frente para a janela, e o tile do outro lado. */
+  private windowSpot(folk: Folk): { at: Vec; out: Vec } | null {
+    const grid = this.world.grid;
+    const WINDOWS = new Set(['window', 'windowTall', 'windowHigh']);
+    const options: { at: Vec; out: Vec }[] = [];
+    for (const [key, kind] of Object.entries(grid.edges)) {
+      if (!WINDOWS.has(kind)) continue;
+      const [xs, ys, side] = key.split(',');
+      const x = Number(xs);
+      const y = Number(ys);
+      const other = side === 'N' ? { x, y: y - 1 } : { x: x - 1, y };
+      const here = { x, y };
+      const inside = (v: Vec) => v.x >= 0 && v.y >= 0 && v.x < grid.w && v.y < grid.h && !this.catalog.floors[floorAt(grid, v.x, v.y)]?.outdoor;
+      if (inside(here) && this.nav.isFree(here.x, here.y)) options.push({ at: here, out: other });
+      if (inside(other) && this.nav.isFree(other.x, other.y)) options.push({ at: other, out: here });
+    }
+    if (options.length === 0) return null;
+    const path = findPathToAny(this.nav, folk, options.map((o) => o.at));
+    if (!path) return null;
+    const end = path.length > 0 ? path[path.length - 1] : { x: folk.x, y: folk.y };
+    return options.find((o) => o.at.x === end.x && o.at.y === end.y) ?? null;
+  }
+
+  /** Olhar pela janela ('window') ou um gesto parado ('gesture', o tchau da porta). */
+  private processStill(folk: Folk, action: Action): void {
+    if (action.kind === 'gesture') {
+      action.phase = 'using';
+      action.elapsed++;
+      if (action.elapsed >= (action.minutes ?? 2)) this.finish(folk);
+      return;
+    }
+    if (action.phase === 'queued') {
+      const path = this.planPath(folk, action);
+      if (!path) {
+        this.log('log.noPath', { name: folk.name });
+        this.finish(folk);
+        return;
+      }
+      folk.path = path;
+      action.phase = 'walking';
+    }
+    if (action.phase === 'walking') {
+      const moved = this.stepAlong(folk, action);
+      if (moved !== 'arrived') return;
+      action.phase = 'using';
+      const out = action.route?.[0];
+      if (out) folk.facing = { x: Math.sign(out.x - folk.x), y: Math.sign(out.y - folk.y) };
+      return;
+    }
+    // olhando lá fora: descansa a cabeça; de dia diverte mais, com chuva acalma
+    const night = daylightAt(this.world.tick) < 0.5;
+    applyEffects(folk, { effects: { fun: night ? 0.35 : 0.6, comfort: 0.5 } } as InteractionDef);
+    action.elapsed++;
+    if (action.elapsed >= WINDOW_MINUTES) {
+      if (!folk.visit) this.log(night ? 'log.windowNight' : 'log.windowDay', { name: folk.name });
+      this.finish(folk);
+    }
+  }
+
+  /** Acompanha a visita até a porta conversando e dá tchau de lá. */
+  private escort(host: Folk, guest: Folk): void {
+    const path = findPath(this.nav, guest, this.streetDoor(guest.id));
+    if (!path || path.length < 2) return;
+    // até o primeiro tile de fora (a porta), ou meio caminho se for tudo aberto
+    let stop = path.findIndex((p) => !!this.catalog.floors[floorAt(this.world.grid, p.x, p.y)]?.outdoor);
+    if (stop < 0) stop = Math.floor(path.length / 2);
+    stop = Math.max(0, Math.min(path.length - 1, stop + 1));
+    const target = path[stop];
+    const walk = this.makeAction({ kind: 'goto', target: { ...target } }, 'player');
+    walk.escort = guest.id;
+    const wave = this.makeAction({ kind: 'gesture' }, 'player');
+    wave.gesture = 'wave';
+    wave.minutes = 2;
+    wave.escort = guest.id;
+    host.queue.splice(1, 0, walk, wave);
+  }
+
+  /**
+   * Sentar junto para conversar: acha um assento com dois lugares livres
+   * lado a lado (sofá, ou duas cadeiras vizinhas), cada um senta no seu e a
+   * conversa começa sentada.
+   */
+  private sitTogether(folk: Folk, other: Folk): void {
+    const pair = this.seatPair(folk, other);
+    if (!pair) {
+      this.log('log.noSeatPair', { name: folk.name });
+      return;
+    }
+    const mine = this.makeAction({ kind: 'use', objectId: pair.a.seat, interactionId: 'sit', slot: pair.a.spot }, 'player');
+    const chat = this.makeAction({ kind: 'social', otherId: other.id, socialId: 'chat' }, 'player');
+    chat.sitWith = true;
+    folk.queue.splice(1, 0, mine, chat);
+    // quem ouvia larga o ouvir (sem passar pelo abandono, que encerraria a conversa dos dois) e vai sentar
+    const rest = other.queue.filter((a) => a.kind !== 'listen' && a.source === 'player');
+    other.queue = [this.makeAction({ kind: 'use', objectId: pair.b.seat, interactionId: 'sit', slot: pair.b.spot }, 'auto'), ...rest];
+    other.path = [];
+  }
+
+  /** Dois lugares livres lado a lado (no mesmo assento ou em assentos vizinhos). */
+  private seatPair(folk: Folk, other: Folk): { a: { seat: number; spot: number }; b: { seat: number; spot: number } } | null {
+    type Free = { seat: number; spot: number; cell: Vec; steps: number };
+    const free: Free[] = [];
+    for (const seat of this.world.objects) {
+      const def = this.defOf(seat);
+      if (!def || def.category !== 'seating' || !isSeat(def)) continue;
+      for (const place of spotPlaces(this.world, this.nav, seat, def)) {
+        if (place.spot.kind !== 'sit' || place.from.length === 0) continue;
+        if (spotOwner(this.world, seat.id, place.index, folk) && spotOwner(this.world, seat.id, place.index, other)) continue;
+        const owner = spotOwner(this.world, seat.id, place.index, folk);
+        if (owner && owner !== other) continue;
+        const path = findPathToAny(this.nav, folk, place.from);
+        if (!path || path.length > READ_REACH * 2) continue;
+        free.push({ seat: seat.id, spot: place.index, cell: place.cell, steps: path.length });
+      }
+    }
+    let best: { a: Free; b: Free; score: number } | null = null;
+    for (const a of free) {
+      for (const b of free) {
+        if (a === b || Math.abs(a.cell.x - b.cell.x) + Math.abs(a.cell.y - b.cell.y) !== 1) continue;
+        const score = a.steps + b.steps;
+        if (!best || score < best.score) best = { a, b, score };
+      }
+    }
+    return best ? { a: { seat: best.a.seat, spot: best.a.spot }, b: { seat: best.b.seat, spot: best.b.spot } } : null;
+  }
+
+  /** O outro ainda está indo sentar do lado? (espera até WAIT_LIMIT minutos) */
+  private waitSeatMate(folk: Folk, head: Action): boolean {
+    const other = head.otherId !== undefined ? this.findFolk(head.otherId) : undefined;
+    if (!other) return false;
+    const seated = !!other.posture && other.posture.rising === undefined && Math.abs(other.x - folk.x) + Math.abs(other.y - folk.y) <= 1;
+    const going = other.queue[0]?.kind === 'use' && other.queue[0]?.interactionId === 'sit';
+    if (seated && !(going && other.queue[0]?.stage === 'enter')) return false;
+    head.waited = (head.waited ?? 0) + 1;
+    if (head.waited > WAIT_LIMIT * 2) {
+      delete head.sitWith;
+      return false;
+    }
+    return going || !seated;
   }
 
   private faceObject(folk: Folk, action: Action): void {

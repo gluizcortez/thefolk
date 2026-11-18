@@ -182,3 +182,56 @@ export function phraseText(sylls: Syllable[], tone: Tone): string {
   const mark = tone === 'argue' ? '!' : tone === 'happy' ? '!' : tone === 'sad' ? '...' : '.';
   return text.charAt(0).toUpperCase() + text.slice(1) + mark;
 }
+
+// ---------- plano 2, bloco 7: a boca acompanha as sílabas ----------
+
+/** Abertura da boca numa vogal: 2 = bem aberta (a, o), 1 = meio (e, i, u). */
+export function mouthOfVowel(v: Vowel): 1 | 2 {
+  return v === 'a' || v === 'o' ? 2 : 1;
+}
+
+/**
+ * Abertura da boca `t` segundos depois do começo da fala: fechada na
+ * consoante e na pausa entre palavras, aberta na vogal. Depois do fim, -1.
+ */
+export function mouthAt(sylls: Syllable[], t: number): -1 | 0 | 1 | 2 {
+  if (t < 0) return 0;
+  let at = 0;
+  for (const s of sylls) {
+    const cons = s.c ? Math.min(0.06, s.dur * 0.3) : 0;
+    if (t < at + cons) return 0;
+    if (t < at + s.dur * 0.92) return mouthOfVowel(s.v);
+    if (t < at + s.dur + s.gap) return 0;
+    at += s.dur + s.gap;
+  }
+  return -1;
+}
+
+/** Falas que estão tocando agora, por folk (o som as registra; a boca lê daqui). */
+const live = new Map<number, { start: number; sylls: Syllable[] }>();
+
+/** O som começou a falar `sylls` no instante `start` (segundos, relógio da tela). */
+export function sayLive(folkId: number, sylls: Syllable[], start: number): void {
+  live.set(folkId, { start, sylls });
+}
+
+/**
+ * Boca do folk agora: segue a fala que o som está tocando; sem som (mudo,
+ * ou o áudio ainda não começou), inventa falas no mesmo ritmo, com pausas
+ * entre uma e outra, para a boca nunca bater sem compasso.
+ */
+export function speechMouth(folkId: number, voice: Voice, tone: Tone, now: number): 0 | 1 | 2 {
+  const cur = live.get(folkId);
+  if (cur) {
+    const m = mouthAt(cur.sylls, now - cur.start);
+    if (m >= 0) return m as 0 | 1 | 2;
+    if (now - cur.start < utteranceLength(cur.sylls) + 1.2) return 0;
+    live.delete(folkId);
+  }
+  // sem fala registrada: frases de ~3 s com respiro, sorteadas pelo compasso
+  const SLOT = 3.2;
+  const slot = Math.floor(now / SLOT + (folkId % 7) * 0.13);
+  const sylls = utterance(voice, tone, folkId * 7919 + slot * 31);
+  const m = mouthAt(sylls, now - (slot - (folkId % 7) * 0.13) * SLOT);
+  return m < 0 ? 0 : (m as 0 | 1 | 2);
+}

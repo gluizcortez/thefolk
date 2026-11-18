@@ -509,6 +509,21 @@ npm run preview  # serve o dist/ localmente
   chuveiro em fases e toalha; escovar os dentes e se arrumar no espelho. O
   casal dorme de lados opostos sob a coberta, a cama fica desfeita até alguém
   arrumar, e dá para cochilar deitado no sofá.
+- **Lazer, estudo e convívio (plano 2, bloco 7)**: computador de mesa novo
+  (navegar, jogar, conversar pela rede, procurar emprego, escrever romance,
+  programar, frilas e negócio), com a tela mostrando o que se faz. Livros de
+  habilidade (lógica, receitas, manual, arte, oratória e treino) com o
+  progresso salvo no folk e bônus no fim; pega o livro na estante, lê sentado
+  ou deitado na cama e devolve, ou deixa largado se for desleixado. Romance,
+  programa e música andam aos poucos e rendem quando ficam prontos; o quadro
+  aparece no cavalete conforme a pintura avança, e dá para vender ou
+  descartar. Violão, piano com dedilhado, ioga no tapete, abdominais,
+  alongar, correr pela calçada, caixa de blocos para as crianças, peças do
+  xadrez que mexem. Conversas com gesto por tipo (aperto de mão, piada com
+  tapa nas costas, dedo em riste, abraço com tapinha, ajoelhar no pedido,
+  dança lenta), "Sentar e conversar" no menu de outra pessoa, acompanhar a
+  visita até a porta. Fala com sílabas que mexem a boca, olhar puxado pela TV
+  e por quem passa, e "Olhar pela janela" no menu do próprio folk.
 - **Peças novas (bloco 12)**: meia parede (fecha o passo sem dividir o
   cômodo), coluna nos cantos, porta de vidro, porta dupla, arco (passagem sem
   folha), janela alta (+6 de ambiente) e basculante (+2).
@@ -620,6 +635,7 @@ src/
     pace.ts         plano 2: quando dá para pular e os gestos de quem espera ordem
     activity.ts     plano 2: lugares nos objetos, área de visão, postura, etapas e canais da TV
     kitchen.ts      plano 2: pratos da casa, etapas do cozinhar, travessa com porções, esfriar e estragar
+    hobbies.ts      plano 2: livros com progresso, romance/programa/música, quadro no cavalete, corrida e janela
     rng.ts          RNG com seed (mulberry32)
     world.ts        criação do mundo a partir de um mapa em texto
     save.ts         formato de save versionado e migrações
@@ -685,6 +701,13 @@ Decisões principais do núcleo:
   objeto (`retarget`) sem mexer na fila; a travessa é uma `Mess` do tipo
   `meal` com `MealInfo`, e servir transforma a ação em `eatServed` com o
   `ServedPlate` na mão. Regras puras em `sim/kitchen.ts`.
+- **Lazer a fundo** (plano 2, bloco 7): `data/hobbies.ts` traz o computador,
+  o violão, o tapete de ioga e a caixa de blocos, e acrescenta aos objetos
+  antigos as interações com `book`, `project`, `canvas`, `screen` e `jog`.
+  O progresso dos livros fica em `Folk.books`, os trabalhos em andamento em
+  `Folk.projects` (prontos contam em `Folk.works`) e o quadro em
+  `WorldObject.canvas`. Livro largado é uma `Mess` do tipo `book`, que a
+  arrumação devolve à estante (`returnBook`). Regras puras em `sim/hobbies.ts`.
 - **Jogador de teste** (`tests/helpers/player.ts`): as semanas inteiras dos
   testes rodam com um roteiro que manda como um jogador atento (atende porta
   e telefone, apaga fogo, cuida do bebê, manda dormir às 23h e comer com fome
@@ -1167,6 +1190,19 @@ traços e cidade aberta com o bairro dentro dela).
   textura com o dobro da resolução, onze expressões, piscar, olhar para quem
   fala e boca mexendo com a fala; peças do rosto no criador e herdadas dos
   pais (save v25).
+- **Bloco 7 (feito)**: atividades a fundo II. Computador com telas, livros de
+  habilidade com progresso salvo, romance, programa e música que rendem
+  prontos, quadro que aparece no cavalete, instrumentos, exercícios, gestos
+  de conversa por tipo, sentar junto para conversar, acompanhar até a porta,
+  fala com sílabas na boca, olhar puxado pela TV e janela (save v27).
+
+## Limitações conhecidas do bloco 7 (plano 2)
+
+- Videogame a dois no sofá usa o videogame que já existia (duo), sem a tela
+  dividida na TV.
+- Conversar pela rede não acha gente nova no bairro; só sobe o social.
+- A corrida vai e volta pela calçada da casa; não passa pela cidade.
+- Os quadros vendidos não viram objeto de parede (enfeites chegam no bloco 8).
 
 ## Limitações conhecidas do bloco 5 (plano 2)
 

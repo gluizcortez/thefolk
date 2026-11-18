@@ -6,6 +6,7 @@ import { admire, clean, dishes, lightOff, lightOn, repair, service, tuning } fro
 import { FURNITURE } from './furniture';
 import { withActivities } from './activities';
 import { withChores } from './chores';
+import { HOBBY_OBJECTS, withHobbies } from './hobbies';
 import { REWARDS } from './rewards';
 import { KID_OBJECTS, homework } from './kids';
 import { YARD_OBJECTS, replantPlant, waterPlant } from './yard';
@@ -937,4 +938,4 @@ const list: ObjectDef[] = [
   },
 ];
 
-export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries([...list, ...FURNITURE, ...REWARDS, ...KID_OBJECTS, ...YARD_OBJECTS, ...PERIL_OBJECTS, ...DOWNTOWN_OBJECTS].map((o) => [o.id, withChores(withActivities(o))]));
+export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries([...list, ...FURNITURE, ...REWARDS, ...KID_OBJECTS, ...YARD_OBJECTS, ...PERIL_OBJECTS, ...DOWNTOWN_OBJECTS, ...HOBBY_OBJECTS].map((o) => [o.id, withHobbies(withChores(withActivities(o)))]));

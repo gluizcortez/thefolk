@@ -386,6 +386,28 @@ esquenta no lugar).
 Pronto: tiras animadas de computador, leitura, instrumento e abraço; testes
 de progresso salvo em livro e quadro.
 
+**Feito em 18/11/2026** (save v27, uma casa a menos que o plano). Computador
+de mesa novo (navegar, jogar, conversar pela rede, procurar emprego, que
+escolhe a carreira pela habilidade, escrever romance, programar, frilas e
+negócio), com a tela de tubo trocando de imagem pelo que se faz. Seis livros
+de habilidade com o progresso salvo no folk, bônus ao terminar e releitura
+que rende menos; pegar na estante, ler sentado ou deitado na cama, devolver
+ou deixar largado (bagunça do tipo livro, que a arrumação devolve).
+Romance, programa e música andam aos poucos, ficam salvos e pagam pela
+qualidade média quando prontos; o cavalete mostra o quadro aparecendo e
+oferece vender ou descartar. Violão no suporte, piano e teclado com
+dedilhado, ioga, alongar e abdominais no tapete, correr pela calçada (ida e
+volta), saco de pancada, bicicleta, xadrez com peças que mexem, cartas,
+videogame a dois e caixa de blocos para crianças. Gestos de conversa por
+tipo (aperto de mão, piada e risada, tapa nas costas, dedo em riste, pedir
+desculpas, ajoelhar no pedido, dança lenta, massagem, entregar presente,
+paquera, provocar, toca aqui, aconchego, pega-pega), "Sentar e conversar"
+(os dois sentam lado a lado), acompanhar a visita até a porta e acenar. Do
+bloco 5: fala com sílabas que mexem a boca e olhar puxado pela TV ligada e
+por quem passa; do bloco 4: "Olhar pela janela". Ficou para depois:
+videogame com tela dividida, conversa pela rede que acha gente nova,
+corrida pela cidade e quadros que viram enfeite de parede (bloco 8).
+
 ## Bloco 8 — Objetos modulares (save v29)
 
 - **Objeto como peças**: cada `FurnitureSpec` passa a ser montado de partes
