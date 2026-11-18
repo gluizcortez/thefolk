@@ -23,7 +23,10 @@ export type ThoughtIcon =
   | 'grave'
   | 'swim';
 
-export type IconId = NeedId | 'sleep' | ThoughtIcon;
+/** Plano 2, bloco 2: ícones da HUD (modos, fila, abas). */
+export type HudIcon = 'map' | 'gear' | 'walk' | 'work' | 'gift' | 'bell' | 'hand' | 'back';
+
+export type IconId = NeedId | 'sleep' | ThoughtIcon | HudIcon;
 
 // Ícones próprios, em SVG gerado por código (24x24, usa a cor do texto).
 // Os mesmos desenhos viram balão em 3D (game/art/textures.ts, via Path2D).
@@ -58,10 +61,19 @@ export const ICON_PATHS: Record<IconId, string> = {
   burglar: 'M12 3.500a8 8 0 1 0 0.010 0zM4.300 10h15.400M4.300 14h15.400M8.500 12h1.200M14.300 12h1.200',
   grave: 'M7 20V9a5 5 0 0 1 10 0v11zM4 20h16M12 10.500v5M10 12.500h4',
   swim: 'M12 4a2 2 0 1 0 0.010 0zM8 11l4-2.500 4 2.500M3 14.500c2-2 4-2 6 0s4 2 6 0 4-2 6 0M3 19c2-2 4-2 6 0s4 2 6 0 4-2 6 0',
+  // plano 2, bloco 2
+  map: 'M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14',
+  gear: 'M12 9a3 3 0 1 0 0.010 0zM12 2v3M12 19v3M2 12h3M19 12h3M4.900 4.900l2.100 2.100M17 17l2.100 2.100M4.900 19.100L7 17M17 7l2.100-2.100',
+  walk: 'M13 4a1.800 1.800 0 1 0 0.010 0zM10 21l2-6 3 3v3M12 15l-1-5 4 2 3 1M11 10l-3 2-1 3',
+  work: 'M3 8h18v11H3zM9 8V5h6v3M3 13h18',
+  gift: 'M4 10h16v10H4zM3 7h18v3H3zM12 7v13M12 7c-2-4-6-3-4 0M12 7c2-4 6-3 4 0',
+  bell: 'M6 17v-6a6 6 0 0 1 12 0v6l2 2H4zM10 21h4',
+  hand: 'M7 12V6a1.500 1.500 0 0 1 3 0v5M10 11V4.500a1.500 1.500 0 0 1 3 0V11M13 11V5.500a1.500 1.500 0 0 1 3 0V12M16 12V8.500a1.500 1.500 0 0 1 3 0V15a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-3l-3-5a1.500 1.500 0 0 1 2.500-1.500L7 13',
+  back: 'M10 6l-6 6 6 6M4 12h16',
 };
 
 /** Ícones desenhados só com traço (sem preenchimento). */
-export const STROKED = new Set<IconId>(['sleep', 'yes', 'no', 'mood', 'mess', 'miss', 'broom', 'coin', 'skill', 'alarm', 'book', 'burglar', 'grave', 'swim']);
+export const STROKED = new Set<IconId>(['sleep', 'yes', 'no', 'mood', 'mess', 'miss', 'broom', 'coin', 'skill', 'alarm', 'book', 'burglar', 'grave', 'swim', 'map', 'gear', 'walk', 'work', 'gift', 'bell', 'hand', 'back']);
 
 export function iconSvg(id: IconId, size = 18): string {
   const stroked = STROKED.has(id);

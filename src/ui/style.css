@@ -1496,7 +1496,7 @@ button {
 
 .rel-mem-day {
   flex: none;
-  color: #8a7a6a;
+  color: #6a5a4c;
   min-width: 82px;
 }
 
@@ -1981,7 +1981,7 @@ button {
 
 .wish-none {
   font-size: 11.5px;
-  color: #8a7a6a;
+  color: #6a5a4c;
 }
 
 .wish {
@@ -2115,7 +2115,7 @@ button {
 
 .notice-time {
   font-size: 10.5px;
-  color: #8a7a6a;
+  color: #6a5a4c;
 }
 
 @media (max-width: 900px) {
@@ -2392,7 +2392,7 @@ button {
 
 /* ---------- bloco 15: bairro ---------- */
 
-body.town-open #ui > *:not(.town):not(.creator):not(.toasts):not(.notices):not(.system) {
+body.town-open #ui > *:not(.town):not(.creator):not(.toasts):not(.notices-col) {
   display: none !important;
 }
 
@@ -2694,4 +2694,992 @@ body.town-open #ui > *:not(.town):not(.creator):not(.toasts):not(.notices):not(.
   padding: 0 4px;
   min-height: 0;
   font-size: 10px;
+}
+
+/* ==========================================================================
+   Plano 2, bloco 2: HUD nova. Painel do folk com abas no canto inferior
+   esquerdo, retratos da família em coluna, fila em ícones, barra do relógio
+   e modos embaixo, avisos com histórico no canto de cima e menu em anel.
+   (Vem por último: estas regras valem sobre as antigas de mesmo nome.)
+   ========================================================================== */
+
+#ui {
+  --muted: #5f5145;
+}
+
+.viewbar {
+  top: 14px;
+  left: 14px;
+}
+
+.help {
+  top: 60px;
+  left: 14px;
+  max-width: 380px;
+  padding: 10px 12px 12px;
+  background: var(--cream);
+  color: var(--ink);
+  font-size: 12.5px;
+  border-radius: 16px;
+  display: grid;
+  gap: 6px;
+}
+
+.keys {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  align-items: baseline;
+}
+
+.key {
+  justify-self: start;
+  padding: 1px 6px;
+  border: 1.5px solid var(--ink);
+  border-radius: 6px;
+  background: var(--paper);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.key-do {
+  font-size: 12px;
+}
+
+/* ---------- retratos da família ---------- */
+
+.household {
+  left: 14px;
+  bottom: 14px;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.member {
+  flex-direction: column;
+  width: 58px;
+  padding: 4px 3px 5px;
+  gap: 2px;
+  border-radius: 14px;
+  font-size: 10.5px;
+  line-height: 1.1;
+}
+
+.member-face {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  box-shadow: 0 0 0 2px var(--moss);
+}
+
+.member-face.m1 {
+  box-shadow: 0 0 0 2px var(--mustard);
+}
+
+.member-face.m0 {
+  box-shadow: 0 0 0 2px var(--terracotta);
+}
+
+.member-place {
+  max-width: 54px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: var(--teal);
+  color: var(--cream);
+  font-size: 9.5px;
+}
+
+.member.away {
+  opacity: 0.75;
+}
+
+/* ---------- painel do folk ---------- */
+
+.fp-wrap {
+  position: absolute;
+  left: 84px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.fp {
+  position: relative;
+  display: grid;
+  grid-template-columns: 128px 296px;
+  gap: 12px;
+  padding: 12px;
+}
+
+.fp-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  text-align: center;
+}
+
+.folk-face {
+  width: 84px;
+  height: 84px;
+  border-radius: 20px;
+  margin-bottom: 4px;
+  transition: background 0.4s;
+}
+
+.folk-face[data-mood='1'] {
+  background: #9b4a35;
+}
+
+.folk-face[data-mood='2'] {
+  background: #a8803a;
+}
+
+.folk-face[data-mood='5'] {
+  background: #3f7d55;
+}
+
+.folk-name {
+  font-size: 14.5px;
+  line-height: 1.15;
+}
+
+.folk-traits {
+  font-size: 11px;
+  margin-bottom: 2px;
+  color: var(--muted);
+}
+
+.fp-side .mood {
+  width: 100%;
+}
+
+.fp-side .mood-line {
+  font-size: 11px;
+}
+
+.folk-doing {
+  margin-top: 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--teal);
+}
+
+.folk-doing.idle {
+  color: #a8321f;
+}
+
+.fp-side .kid-line {
+  font-size: 10.5px;
+}
+
+.fp-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fp-tabs {
+  display: flex;
+  gap: 3px;
+}
+
+.fp-tab {
+  position: relative;
+  flex: 1;
+  height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.fp-tab:hover {
+  background: #fff7e6;
+}
+
+.fp-tab.on {
+  background: var(--terracotta);
+  color: var(--cream);
+}
+
+.fp-tab.alert::after {
+  content: '';
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: #e0442c;
+}
+
+.fp-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.fp-content {
+  height: 222px;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding-right: 4px;
+}
+
+.needs {
+  position: static;
+  width: auto;
+  padding: 0;
+  gap: 5px;
+}
+
+.need {
+  grid-template-columns: 18px 76px 1fr;
+}
+
+/* ---------- fila ---------- */
+
+.queue {
+  position: static;
+  display: block;
+}
+
+.queue-list {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: flex-end;
+  max-width: 460px;
+}
+
+.qicon {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--teal);
+  box-shadow: 3px 3px 0 rgba(20, 14, 10, 0.45);
+  touch-action: none;
+  transition: transform 0.12s;
+}
+
+.qicon:hover {
+  background: #fff7e6;
+}
+
+.qicon.current {
+  width: 58px;
+  height: 58px;
+  border: 3px solid var(--terracotta);
+  background: var(--cream);
+}
+
+.qicon.current.timed {
+  background: conic-gradient(var(--mustard) var(--p, 0%), var(--cream) 0);
+}
+
+.qicon.current .qicon-img {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--cream);
+  border: 1.5px solid rgba(42, 35, 32, 0.4);
+}
+
+.qicon.auto {
+  border-style: dashed;
+}
+
+.qicon-x {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 18px;
+  height: 18px;
+  display: none;
+  place-items: center;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--terracotta);
+  color: var(--cream);
+  font-size: 9px;
+  line-height: 1;
+}
+
+.qicon:hover .qicon-x,
+.qicon:focus-visible .qicon-x {
+  display: grid;
+}
+
+.qicon.dragging {
+  z-index: 3;
+  cursor: grabbing;
+  transition: none;
+  box-shadow: 6px 8px 0 rgba(20, 14, 10, 0.4);
+}
+
+.qicon.dragging .qicon-x {
+  display: none;
+}
+
+/* ---------- barra de baixo: relógio e modos ---------- */
+
+.dock {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.timewrap {
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.timebar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 14px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.clock-when {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.clock-day {
+  font-size: 11.5px;
+}
+
+.clock-time {
+  min-width: 54px;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.clock-time.paused {
+  color: #a8321f;
+  animation: paused-blink 1.4s steps(2) infinite;
+}
+
+@keyframes paused-blink {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.speed {
+  position: relative;
+  min-width: 36px;
+  height: 34px;
+}
+
+.speed-key {
+  position: absolute;
+  right: -4px;
+  bottom: -7px;
+  padding: 0 3px;
+  border-radius: 5px;
+  background: var(--ink);
+  color: var(--cream);
+  font-size: 9px;
+  line-height: 12px;
+  letter-spacing: 0;
+}
+
+.party-pill {
+  position: static;
+  transform: none;
+  margin: 0;
+  pointer-events: auto;
+}
+
+@keyframes ring-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
+}
+
+.modes {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 54px);
+  gap: 4px;
+  padding: 6px;
+  border-radius: 16px;
+}
+
+.mode {
+  height: 42px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border: 2px solid var(--ink);
+  border-radius: 11px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.mode:hover {
+  background: #fff7e6;
+}
+
+.mode-label {
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.mode.on {
+  background: var(--terracotta);
+  color: var(--cream);
+}
+
+.mode.hot {
+  background: var(--mustard);
+}
+
+/* comprar e construir: sem painel do folk; o catálogo ocupa a parte de baixo */
+#ui[data-mode='buy'] .fp-wrap,
+#ui[data-mode='build'] .fp-wrap,
+#ui[data-mode='buy'] .household,
+#ui[data-mode='build'] .household,
+#ui[data-mode='buy'] .timewrap,
+#ui[data-mode='build'] .timewrap {
+  display: none !important;
+}
+
+.catalog {
+  left: 14px;
+  right: 190px;
+  bottom: 14px;
+}
+
+/* ---------- cartões do canto ---------- */
+
+.pop,
+.syscard {
+  top: auto;
+  right: 14px;
+  bottom: 126px;
+  width: 350px;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  padding: 10px 12px 12px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  z-index: 6;
+}
+
+.pop[data-pop='family'] {
+  width: 400px;
+}
+
+.pop-body {
+  display: grid;
+  gap: 8px;
+}
+
+.fin-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 0;
+  border-bottom: 1px dashed rgba(60, 40, 20, 0.22);
+  font-size: 12.5px;
+}
+
+.fin-value {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fin-row.bad .fin-value {
+  color: #a8321f;
+}
+
+.fin-row.good .fin-value {
+  color: #2f6b3a;
+}
+
+.opt-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.opt-grid.one {
+  grid-template-columns: 1fr;
+}
+
+.btn-hot {
+  background: var(--mustard);
+}
+
+/* ---------- avisos ---------- */
+
+.notices-col {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 290px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.notices {
+  position: static;
+  width: 100%;
+}
+
+.notice.go {
+  cursor: pointer;
+}
+
+.notice.go:hover {
+  background: #fff7e6;
+}
+
+.history-btn {
+  position: relative;
+}
+
+.history-n {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  padding: 0 4px;
+  border: 2px solid var(--ink);
+  border-radius: 9px;
+  background: var(--mustard);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.history {
+  display: grid;
+  gap: 6px;
+}
+
+.notice.old {
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 2px solid rgba(42, 35, 32, 0.5);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.toasts {
+  top: 14px;
+}
+
+/* ---------- menu em anel ---------- */
+
+.ring {
+  position: absolute;
+  width: 0;
+  height: 0;
+  z-index: 7;
+}
+
+.ring-hub {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  min-width: 150px;
+  max-width: 220px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 3px;
+  text-align: center;
+  border-radius: 18px;
+}
+
+.ring-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.ring-note {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.ring-hint {
+  min-height: 1.3em;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--teal);
+}
+
+.ring-back {
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ring-item {
+  position: absolute;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 0 4px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--cream);
+  box-shadow: 3px 3px 0 rgba(20, 14, 10, 0.45);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  animation: ring-in 0.16s ease-out backwards;
+}
+
+@keyframes ring-in {
+  from {
+    transform: translate(var(--dx), var(--dy)) scale(0.3);
+    opacity: 0;
+  }
+}
+
+.ring-item:hover,
+.ring-item:focus-visible {
+  background: var(--mustard);
+  outline: none;
+}
+
+.ring-icon {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--teal);
+}
+
+.ring-extra {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.ring-more {
+  font-size: 11px;
+  font-weight: 800;
+  color: #a8321f;
+}
+
+.ring-item.group {
+  background: var(--paper);
+}
+
+.ring-item.off {
+  background: #ddd3c2;
+  color: #5f564d;
+  border-style: dashed;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.ring-item.off .ring-icon {
+  color: #7d7369;
+}
+
+.ring-item.reluctant {
+  border-color: #a8321f;
+}
+
+.ring-item.ringing {
+  background: #dcefd2;
+}
+
+.ring-item.cat-romantic .ring-icon {
+  color: #b23a62;
+}
+
+.ring-item.cat-mean .ring-icon {
+  color: #8a2f2f;
+}
+
+.ring-item.cat-professional .ring-icon,
+.ring-item.cat-learn .ring-icon {
+  color: #6b4a9a;
+}
+
+.ring-item.cat-care .ring-icon,
+.ring-item.cat-shop .ring-icon {
+  color: #7a5a1a;
+}
+
+/* ---------- conteúdo das abas ---------- */
+
+.feel-list,
+.wish-list,
+.trait-list {
+  display: grid;
+  gap: 6px;
+}
+
+.feel,
+.wish-card,
+.trait-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.trait-card {
+  display: grid;
+  gap: 2px;
+}
+
+.feel.bad {
+  background: #f6dccf;
+}
+
+.feel.good,
+.wish-card.done {
+  background: #e2ecd2;
+}
+
+.feel-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--ink);
+  border-radius: 9px;
+  background: var(--cream);
+  color: var(--teal);
+}
+
+.feel.bad .feel-icon {
+  color: #a8321f;
+}
+
+.feel.good .feel-icon {
+  color: #2f6b3a;
+}
+
+.feel-body,
+.wish-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.feel-name,
+.wish-text,
+.trait-name {
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.feel-why,
+.trait-hint {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.feel-time {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.wish-card {
+  align-items: center;
+}
+
+.wish-sub {
+  font-size: 11px;
+  font-weight: 700;
+  color: #2f6b3a;
+}
+
+.inv-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.inv-item {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  background: var(--paper);
+  font-size: 11px;
+  text-align: center;
+}
+
+.inv-icon {
+  color: var(--teal);
+}
+
+.inv-n {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  padding: 0 4px;
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  background: var(--mustard);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.panel-note,
+.menu-note,
+.menu-sub,
+.menu-extra,
+.pill-note,
+.folk-traits {
+  color: var(--muted);
+}
+
+/* ---------- telas menores ---------- */
+
+@media (max-width: 1180px) {
+  .fp {
+    grid-template-columns: 104px 270px;
+  }
+  .folk-face {
+    width: 68px;
+    height: 68px;
+  }
+  .timebar {
+    gap: 8px;
+  }
+  .clock-sky {
+    display: none;
+  }
+}
+
+#ui[data-scale='l'] .dock {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+#ui[data-scale='l'] .timewrap {
+  margin: 0;
+  align-items: flex-end;
+}
+
+@media (max-width: 980px) {
+  .dock {
+    flex-direction: column;
+    align-items: flex-end;
+  }
+  .timewrap {
+    margin: 0;
+    align-items: flex-end;
+  }
+  .help {
+    max-width: 300px;
+  }
+}
+
+@media (max-width: 760px) {
+  .household {
+    flex-direction: row;
+    bottom: auto;
+    top: 60px;
+  }
+  .fp-wrap {
+    left: 14px;
+  }
+  .fp {
+    grid-template-columns: 1fr;
+  }
+  .fp-side {
+    flex-direction: row;
+    flex-wrap: wrap;
+    text-align: left;
+  }
+  .folk-face {
+    width: 48px;
+    height: 48px;
+  }
+  .fp-content {
+    height: 150px;
+  }
+  .dock {
+    bottom: auto;
+    top: 60px;
+    right: 14px;
+  }
+  .notices-col {
+    top: auto;
+    bottom: 14px;
+  }
 }

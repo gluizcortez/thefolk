@@ -1,6 +1,6 @@
-import { PAINT, SHIRT, SKIN, css } from '../game/art/palette';
+import { HAIR, PAINT, SHIRT, SKIN, css } from '../game/art/palette';
 import { COVER_ART, FLOOR_ART } from '../game/art/house';
-import type { BuildTool, GameController } from '../game/controller';
+import type { BuildTool, FocusTarget, GameController } from '../game/controller';
 import { OPENING_TOOLS, isOpeningTool } from '../game/controller';
 import { ROOF_COLORS } from '../data/build';
 import { hasText, t } from '../i18n';
@@ -12,7 +12,6 @@ import {
   roomKind,
   roomScore,
   roomsOf,
-  availableSocials,
   friendshipLabel,
   relationOf,
   DATE_MIN_MINUTES,
@@ -59,7 +58,6 @@ import {
   thoughtOf,
   wakeTime,
   wishParams,
-  refusal,
   skillLevel,
   RAISE_COOLDOWN,
   bossBlocks,
@@ -78,8 +76,6 @@ import {
   reputationOf,
   transferLevel,
   DIRTY_AT,
-  careAvailable,
-  interactionOpen,
   isStereo,
   stationDef,
   favoriteStation,
@@ -110,7 +106,6 @@ import {
   rivalPairs,
   favoriteTopics,
   hatedTopics,
-  sharedTopics,
   bondOf,
   ringOnLot,
   surname,
@@ -118,12 +113,16 @@ import {
   NEGLECT_VISIT,
   gradeBand,
   gradeText,
-  kidAllows,
   SKIP_SPEED,
   canSkip,
+  feelingsOf,
+  socialAllowed,
 } from '../sim';
 import type {
   OpeningKind,
+  Catalog,
+  Command,
+  World,
   RoofStyle,
   Action,
   CareerDef,
@@ -141,6 +140,8 @@ import type {
   WorldObject,
 } from '../sim';
 import { iconSvg, topicSvg } from './icons';
+import { interactionState, objectGroup, ringCenter, ringPoints, ringRadius, ringSlots, socialState } from './ring';
+import { GIFTS } from '../data/downtown';
 import { SystemCards } from './system';
 import { cue } from '../audio/cues';
 import type { AudioEngine } from '../audio/engine';
@@ -177,7 +178,88 @@ const CATEGORIES: (ObjectCategory | 'all')[] = [
 /** Bloco 4: filtro de faixa de preço no catálogo. */
 const TIERS: ('all' | 0 | 1 | 2)[] = ['all', 0, 1, 2];
 
-type Panel = 'skills' | 'job' | 'relations' | 'family' | null;
+/** Plano 2, bloco 2: abas do painel do folk. */
+type Tab = 'needs' | 'feelings' | 'skills' | 'job' | 'relations' | 'temper' | 'wishes' | 'inventory';
+const TABS: Tab[] = ['needs', 'feelings', 'skills', 'job', 'relations', 'temper', 'wishes', 'inventory'];
+const TAB_ICON: Record<Tab, IconId> = {
+  needs: 'hunger',
+  feelings: 'mood',
+  skills: 'skill',
+  job: 'work',
+  relations: 'heart',
+  temper: 'spark',
+  wishes: 'yes',
+  inventory: 'gift',
+};
+/** Plano 2, bloco 2: cartões que abrem por cima do canto inferior direito. */
+type Pop = 'family' | 'finance' | 'options' | 'city' | 'history' | null;
+/** Ícone de cada grupo do anel. */
+const GROUP_ICON: Record<string, IconId> = {
+  use: 'mood',
+  care: 'hand',
+  learn: 'skill',
+  phone: 'phone',
+  shop: 'coin',
+  talk: 'social',
+  friendly: 'social',
+  professional: 'work',
+  romantic: 'heart',
+  mean: 'no',
+};
+const HISTORY_MAX = 40;
+
+interface NoticeEntry {
+  text: string;
+  icon: string;
+  target: FocusTarget | null;
+  tick: number;
+}
+
+/** Uma fatia do menu em anel. */
+interface RingItem {
+  label: string;
+  icon?: IconId;
+  face?: Folk['look'];
+  extra?: string;
+  /** motivo de estar em cinza */
+  why?: string;
+  /** dá, mas ele vai reclamar */
+  reluctant?: string;
+  group?: string;
+  tone?: string;
+  run: () => void;
+}
+
+/** Plano 2, bloco 2: preferências de interface, fora do save (valem para todos os jogos). */
+type UiScale = 's' | 'm' | 'l';
+const UI_SCALES: Record<UiScale, number> = { s: 0.88, m: 1, l: 1.18 };
+interface UiPrefs {
+  scale: UiScale;
+  tab: Tab;
+  help: boolean;
+}
+const PREFS_KEY = 'thefolk.ui';
+
+function loadUiPrefs(): UiPrefs {
+  const base: UiPrefs = { scale: 'm', tab: 'needs', help: false };
+  try {
+    const raw = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<UiPrefs>;
+    if (raw.scale && raw.scale in UI_SCALES) base.scale = raw.scale;
+    if (raw.tab && TABS.includes(raw.tab)) base.tab = raw.tab;
+    if (typeof raw.help === 'boolean') base.help = raw.help;
+  } catch {
+    // sem armazenamento (janela privada): fica no padrão
+  }
+  return base;
+}
+
+function saveUiPrefs(p: UiPrefs): void {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(p));
+  } catch {
+    // sem armazenamento: só vale nesta sessão
+  }
+}
 /** Bloco 17: abas do painel da família. */
 type FamilyTab = 'tree' | 'album';
 type JobTab = 'job' | 'gigs' | 'business';
@@ -228,17 +310,52 @@ function hex(n: number): string {
   return `#${n.toString(16).padStart(6, '0')}`;
 }
 
-/** Rostinho do folk em SVG, na cor de pele e com a camisa dele. */
-function faceSvg(look: Folk['look'], size: number, mood = 60): string {
+type FaceState = 'calm' | 'sleep' | 'talk' | 'upset';
+
+/** Plano 2, bloco 2: o que o retrato mostra agora (dormindo, conversando, aflito ou tranquilo). */
+function faceState(catalog: Catalog, folk: Folk): FaceState {
+  const a = folk.queue[0];
+  if (folk.collapsed > 0 || (a && a.phase !== 'walking' && a.interactionId === 'sleep') || folk.kid?.asleep) return 'sleep';
+  if (a && a.phase !== 'walking' && (a.kind === 'social' || a.kind === 'listen' || a.kind === 'circle')) return 'talk';
+  if (moodOf(catalog, folk.needs) < 28 || (folk.frightened !== undefined && folk.frightened > 0 && folk.scorch)) return 'upset';
+  return 'calm';
+}
+
+/** Cabelo do retrato: quatro cortes, na cor do cabelo do folk. */
+const HAIR_PATHS = [
+  'M5 10 Q4.6 3 12 3 Q19.4 3 19 10 Q17 6.2 12 6.2 Q7 6.2 5 10Z',
+  'M5 12.5 Q4 3 12 3 Q20 3 19 12.5 L18 9 Q16 6 12 6 Q8 6 6 9Z',
+  'M5.2 9.5 Q5 3.4 12 3.4 Q19 3.4 18.8 9.5 Q15 5.5 9 7 Q6.5 7.6 5.2 9.5ZM10 3.6 Q12 0.6 14 3.6Z',
+  'M5 10 L6 4 L8.5 6 L10 2.6 L12 5.4 L14 2.6 L15.5 6 L18 4 L19 10 Q16 6.4 12 6.4 Q8 6.4 5 10Z',
+];
+
+/** Rostinho do folk em SVG, na cor de pele, com o cabelo, a camisa e a expressão de agora. */
+function faceSvg(look: Folk['look'], size: number, mood = 60, state: FaceState = 'calm'): string {
   const skin = hex(SKIN[look.skin % SKIN.length]);
   const shirt = hex(SHIRT[look.shirt % SHIRT.length]);
-  const curve = (11 + (mood / 100) * 8).toFixed(1);
+  const hair = hex(HAIR[look.hair % HAIR.length]);
+  const ink = '#2a2320';
+  const curve = 11 + (mood / 100) * 8;
+  const eyes =
+    state === 'sleep'
+      ? `<path d="M8.4 9.8 Q9.5 10.6 10.6 9.8M13.4 9.8 Q14.5 10.6 15.6 9.8" fill="none" stroke="${ink}" stroke-width="0.9" stroke-linecap="round"/>`
+      : `<circle cx="9.5" cy="9.6" r="0.95" fill="${ink}"/><circle cx="14.5" cy="9.6" r="0.95" fill="${ink}"/>`;
+  // sobrancelhas: caídas para dentro quando está mal, erguidas quando está ótimo
+  const brow = state === 'upset' || mood < 28 ? 'M8.2 7.2 L10.6 7.9M15.8 7.2 L13.4 7.9' : mood >= 80 ? 'M8.3 7.4 Q9.5 6.6 10.7 7.3M13.3 7.3 Q14.5 6.6 15.7 7.4' : 'M8.4 7.6 L10.6 7.5M13.4 7.5 L15.6 7.6';
+  const mouth =
+    state === 'talk'
+      ? `<ellipse cx="12" cy="13" rx="1.4" ry="1.1" fill="${ink}"/>`
+      : state === 'sleep'
+        ? `<path d="M10.8 13 Q12 13.5 13.2 13" fill="none" stroke="${ink}" stroke-width="0.9" stroke-linecap="round"/>`
+        : `<path d="M9.3 12.6 Q12 ${(curve - 2.4).toFixed(1)} 14.7 12.6" fill="none" stroke="${ink}" stroke-width="1.1" stroke-linecap="round"/>`;
+  const cheeks = mood >= 62 && state !== 'upset' ? '<circle cx="7.8" cy="11.8" r="1" fill="#e0806a" opacity="0.45"/><circle cx="16.2" cy="11.8" r="1" fill="#e0806a" opacity="0.45"/>' : '';
+  const zzz = state === 'sleep' ? `<text x="18" y="5" font-size="4.5" font-weight="700" fill="${ink}">z</text>` : '';
   return (
     `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">` +
-    `<path d="M3 24 Q3 17 12 17 Q21 17 21 24Z" fill="${shirt}" stroke="#2a2320" stroke-width="1.2"/>` +
-    `<circle cx="12" cy="10" r="7" fill="${skin}" stroke="#2a2320" stroke-width="1.2"/>` +
-    `<circle cx="9.5" cy="9.5" r="0.9" fill="#2a2320"/><circle cx="14.5" cy="9.5" r="0.9" fill="#2a2320"/>` +
-    `<path d="M9.3 12.6 Q12 ${(Number(curve) - 2.4).toFixed(1)} 14.7 12.6" fill="none" stroke="#2a2320" stroke-width="1.1" stroke-linecap="round"/></svg>`
+    `<path d="M3 24 Q3 17 12 17 Q21 17 21 24Z" fill="${shirt}" stroke="${ink}" stroke-width="1.2"/>` +
+    `<circle cx="12" cy="10" r="7" fill="${skin}" stroke="${ink}" stroke-width="1.2"/>` +
+    `<path d="${HAIR_PATHS[look.style % HAIR_PATHS.length]}" fill="${hair}" stroke="${ink}" stroke-width="0.8" stroke-linejoin="round"/>` +
+    `${cheeks}${eyes}<path d="${brow}" fill="none" stroke="${ink}" stroke-width="0.8" stroke-linecap="round"/>${mouth}${zzz}</svg>`
   );
 }
 
@@ -320,19 +437,36 @@ export class Hud {
   /** bloco 3: o cômodo onde o folk está, com nota e luz */
   private roomEl = el('div', 'room-line');
   private moodFill = el('div', 'mood-fill');
+  /** plano 2, bloco 2: ação de agora em palavras, embaixo do retrato */
+  private doingEl = el('div', 'folk-doing');
   private queueEl = el('div', 'queue-list');
+  private queueWrap = el('div', 'queue');
   private queueSig = '';
+  /** plano 2, bloco 2: arrastando um ícone da fila */
+  private drag: { id: number; startX: number; moved: boolean; pill: HTMLElement } | null = null;
   private toastsEl = el('div', 'toasts');
   private menuEl = el('div', 'menu card');
+  /** plano 2, bloco 2: menu em anel em volta do objeto ou da pessoa */
+  private ringEl = el('div', 'ring');
   private bubbleEl = el('div', 'bubble');
   private tooltipEl = el('div', 'tooltip');
   private bubbleIcon: string | null = null;
   private menuOpen = false;
   private lastPausedSpeed: Speed = 1;
   private fundsEl = el('button', 'funds');
-  private buyButton = el('button', 'btn btn-buy');
-  private panelEl = el('div', 'card panel');
-  private panel: Panel = null;
+  /** plano 2, bloco 2: o painel do folk, com abas */
+  private fpEl = el('div', 'card fp');
+  private tabBody = el('div', 'fp-content');
+  private tabTitle = el('div', 'fp-title');
+  private tabButtons = new Map<Tab, HTMLButtonElement>();
+  private tab: Tab = 'needs';
+  private needsEl = el('div', 'needs');
+  /** cartão que abre por cima do canto (família, contas, opções, cidade, histórico) */
+  private popEl = el('div', 'card pop');
+  private pop: Pop = null;
+  private popSig = '';
+  /** onde os renderizadores de aba escrevem (a aba do folk ou o cartão da família) */
+  private panelEl: HTMLElement = this.tabBody;
   private panelSig = '';
   private jobTab: JobTab = 'job';
   private familyTab: FamilyTab = 'tree';
@@ -345,13 +479,16 @@ export class Hud {
   private overEl = el('div', 'over');
   private overShown = false;
   private wevSig = '';
-  private panelButtons = new Map<Exclude<Panel, null>, HTMLButtonElement>();
+  private modeButtons = new Map<string, HTMLButtonElement>();
   private faceEl = el('div', 'folk-face');
   /** bloco 6: desejos do dia e ânimo */
   private wishesEl = el('div', 'wishes');
   private wishesSig = '';
   /** bloco 6: cartões de aviso (algo quebrou, conta chegou, campainha) */
   private noticesEl = el('div', 'notices');
+  /** plano 2, bloco 2: os avisos que já saíram da tela */
+  private history: NoticeEntry[] = [];
+  private historyButton = el('button', 'btn btn-icon history-btn');
   private householdEl = el('div', 'household');
   private householdSig = '';
   private floatsEl = el('div', 'floats');
@@ -372,12 +509,9 @@ export class Hud {
   /** bloco 12: botão do modo das paredes e nome do andar visto */
   private wallsButton = el('button', 'btn');
   private levelLabel = el('span', 'level-label');
+  private helpEl = el('div', 'help card');
   /** bloco 5: abre a tela de criar família */
   openCreator: (() => void) | null = null;
-  private townButton: HTMLButtonElement | null = null;
-  /** bloco 16: táxi para o centro (vira "Voltar para casa" no passeio) */
-  private outingButton: HTMLButtonElement | null = null;
-  private buildButton = el('button', 'btn btn-buy');
   private buildEl = el('div', 'card catalog build');
   private buildTabs = el('div', 'catalog-tabs');
   private buildItems = el('div', 'catalog-items');
@@ -387,51 +521,79 @@ export class Hud {
   private buildSig = '';
   /** bloco 7: cartões de jogos salvos e de som */
   private system: SystemCards;
-  private soundButton = el('button', 'btn btn-icon');
+  private prefs: UiPrefs = loadUiPrefs();
 
   constructor(
     private readonly root: HTMLElement,
     private readonly ctrl: GameController,
   ) {
     this.system = new SystemCards(ctrl);
-    this.buildClock();
-    this.buildSystem();
+    this.system.onChange = () => this.renderPop();
+    this.tab = this.prefs.tab;
+    this.applyScale();
     this.buildViewBar();
-    this.buildFolkCard();
     this.root.append(this.householdEl);
     this.buildNeeds();
-    this.buildQueue();
-    this.buildPanel();
+    this.buildFolkPanel();
+    this.buildDock();
     this.buildCatalog();
     this.buildBuildPanel();
-    this.root.append(this.wevEl, this.bargainEl, this.overEl, this.floatsEl, this.noticesEl, this.toastsEl, this.menuEl, this.bubbleEl, this.tooltipEl);
+    this.popEl.hidden = true;
+    this.root.append(this.popEl, this.system.el);
+    const notices = el('div', 'notices-col');
+    this.historyButton.addEventListener('click', () => this.togglePop('history'));
+    this.renderHistoryButton();
+    notices.append(this.historyButton, this.noticesEl);
+    this.root.append(this.wevEl, this.bargainEl, this.overEl, this.floatsEl, notices, this.toastsEl, this.ringEl, this.menuEl, this.bubbleEl, this.tooltipEl);
     this.wevEl.hidden = true;
     this.bargainEl.hidden = true;
     this.overEl.hidden = true;
     this.tooltipEl.hidden = true;
     this.menuEl.hidden = true;
+    this.ringEl.hidden = true;
     this.bubbleEl.hidden = true;
     ctrl.onToast((text) => this.showToast(text));
-    ctrl.onNotice((text, icon) => this.showNotice(text, icon));
+    ctrl.onNotice((text, icon, target) => this.showNotice(text, icon, target));
+    window.addEventListener('keydown', (e) => this.onKey(e));
     this.update();
   }
 
   // ---------- montagem ----------
 
-  private buildClock(): void {
-    const card = el('div', 'card clock');
+  /** Atalhos que são da HUD (o resto fica na cena). */
+  private onKey(e: KeyboardEvent): void {
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    if (document.querySelector('.creator:not([hidden])') || this.ctrl.screen === 'town') return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.code === 'KeyH' || e.key === '?') this.toggleHelp();
+    else if (e.code === 'KeyF') this.togglePop('family');
+    else if (e.code === 'KeyO') this.togglePop('options');
+    else if (e.code === 'KeyV' && this.ctrl.mode !== 'live') this.setLive();
+    else if (e.code === 'Escape' && (this.pop || !this.helpEl.hidden)) {
+      if (this.pop) this.togglePop(this.pop);
+      else this.toggleHelp();
+    }
+  }
+
+  /** Plano 2, bloco 2: a barra de baixo (relógio, velocidades, dinheiro) e os modos. */
+  private buildDock(): void {
+    const dock = el('div', 'dock');
+    const time = el('div', 'card timebar');
     const info = el('div', 'clock-info');
-    info.append(this.clockSky, this.clockDay, this.clockTime);
+    const when = el('div', 'clock-when');
+    when.append(this.clockDay, this.clockTime);
+    info.append(this.clockSky, when);
     const speeds = el('div', 'speeds');
     const defs: [Speed, string, string][] = [
       [0, '❙❙', 'hud.pause'],
       [1, '▸', 'hud.speed1'],
       [2, '▸▸', 'hud.speed2'],
       [3, '▸▸▸', 'hud.speed3'],
-      [4, '▸▸❙', 'hud.speed4'],
+      [4, '»|', 'hud.speed4'],
     ];
     for (const [speed, glyph, tip] of defs) {
-      const b = el('button', 'speed', glyph);
+      const b = el('button', 'speed');
+      b.append(el('span', 'speed-glyph', glyph), el('span', 'speed-key', String(speed)));
       b.title = t(tip);
       b.setAttribute('aria-label', t(tip));
       b.addEventListener('click', () => this.setSpeed(speed));
@@ -439,14 +601,40 @@ export class Hud {
       speeds.append(b);
     }
     this.fundsEl.title = t('hud.funds');
-    this.fundsEl.addEventListener('click', () => this.togglePanel('job'));
-    card.append(info, this.fundsEl, speeds, this.partyEl);
+    this.fundsEl.addEventListener('click', () => this.togglePop('finance'));
+    time.append(info, speeds, this.fundsEl);
     this.partyEl.hidden = true;
-    this.partyEl.addEventListener('click', () => this.togglePanel('relations'));
-    this.root.append(card);
+    this.partyEl.addEventListener('click', () => this.openTab('relations'));
+    const timeWrap = el('div', 'timewrap');
+    timeWrap.append(this.partyEl, time);
+    // modos: viver, comprar, construir, família, cidade, opções
+    const modes = el('div', 'card modes');
+    const mode = (id: string, icon: IconId, key: string, act: () => void) => {
+      const b = el('button', 'mode');
+      b.innerHTML = iconSvg(icon, 20);
+      b.append(el('span', 'mode-label', t(`mode.${id}`)));
+      b.title = `${t(`mode.${id}Tip`)}${key ? ` (${key})` : ''}`;
+      b.setAttribute('aria-label', b.title);
+      b.addEventListener('click', act);
+      this.modeButtons.set(id, b);
+      modes.append(b);
+    };
+    mode('live', 'mood', 'V', () => this.setLive());
+    mode('buy', 'coin', 'B', () => this.toggleBuyMode());
+    mode('build', 'house', 'C', () => this.toggleBuildMode());
+    mode('family', 'heart', 'F', () => this.togglePop('family'));
+    mode('city', 'map', '', () => this.togglePop('city'));
+    mode('options', 'gear', 'O', () => this.togglePop('options'));
+    dock.append(timeWrap, modes);
+    this.root.append(dock);
   }
 
-  /** Bloco 9: plaquinha da festa no relógio. */
+  private setLive(): void {
+    if (this.ctrl.mode === 'buy') this.toggleBuyMode();
+    else if (this.ctrl.mode === 'build') this.toggleBuildMode();
+  }
+
+  /** Bloco 9: plaquinha da festa em cima do relógio. */
   private renderParty(): void {
     const world = this.ctrl.world;
     const party = world.party;
@@ -501,68 +689,12 @@ export class Hud {
     this.update();
   }
 
-  private buildSystem(): void {
-    const bar = el('div', 'system');
-    const save = el('button', 'btn', t('hud.save'));
-    save.title = t('hud.saveTip');
-    save.addEventListener('click', () => void this.ctrl.save().then(() => {
-      if (this.system.isOpen('saves')) void this.system.render();
-    }));
-    // bloco 7: "Jogos" abre as três vagas, exportar e importar
-    const games = el('button', 'btn', t('hud.games'));
-    games.title = t('hud.gamesTip');
-    games.addEventListener('click', () => this.system.toggle('saves'));
-    this.soundButton.addEventListener('click', () => this.system.toggle('sound'));
-    this.system.onChange = () => this.renderSoundButton();
-    this.renderSoundButton();
-    const fresh = el('button', 'btn btn-quiet', t('hud.new'));
-    // bloco 5: jogo novo abre a tela de criar família (que tem o atalho da família pronta)
-    fresh.addEventListener('click', () => {
-      this.system.close();
-      if (this.openCreator) this.openCreator();
-      else this.ctrl.newGame();
-    });
-    // bloco 15: o bairro (trocar de família, mudar de casa, família nova)
-    const town = el('button', 'btn', t('hud.town'));
-    town.title = t('hud.townTip');
-    town.addEventListener('click', () => {
-      this.system.close();
-      this.ctrl.openTown();
-    });
-    town.hidden = !this.ctrl.world.town;
-    this.townButton = town;
-    // bloco 16: centro da cidade (de táxi) e encontros
-    const outing = el('button', 'btn', t('hud.downtown'));
-    outing.title = t('hud.downtownTip');
-    outing.addEventListener('click', (e) => {
-      this.system.close();
-      if (this.ctrl.world.outing) {
-        this.closeMenu();
-        this.ctrl.outingCommand({ type: 'goHome' });
-        return;
-      }
-      const r = outing.getBoundingClientRect();
-      this.openOutingMenu(Math.max(8, r.left - 320), r.bottom + 30 || e.clientY);
-    });
-    this.outingButton = outing;
-    bar.append(outing, town, save, games, this.soundButton, fresh);
-    this.root.append(bar, this.system.el);
-  }
-
-  private renderSoundButton(): void {
-    const muted = this.system.muted;
-    this.soundButton.textContent = muted ? '♪̸' : '♪';
-    this.soundButton.classList.toggle('muted', muted);
-    this.soundButton.title = t(muted ? 'hud.soundMuted' : 'hud.sound');
-    this.soundButton.setAttribute('aria-label', this.soundButton.title);
-  }
-
   /** Bloco 7: liga os volumes ao motor de som. */
   setAudio(engine: AudioEngine): void {
     this.system.setAudio(engine);
   }
 
-  /** Controles de câmera e de paredes, no canto superior esquerdo. */
+  /** Controles de câmera e de paredes, no canto superior esquerdo, e as dicas de teclado. */
   private buildViewBar(): void {
     const bar = el('div', 'viewbar');
     const turn = (glyph: string, tip: string, dir: number) => {
@@ -592,41 +724,93 @@ export class Hud {
     };
     this.levelLabel.title = t('hud.levelTip');
     floors.append(step('▾', 'hud.levelDown', -1), this.levelLabel, step('▴', 'hud.levelUp', 1));
-    this.buyButton.title = t('hud.buyTip');
-    this.buyButton.addEventListener('click', () => this.toggleBuyMode());
-    this.buildButton.title = t('hud.buildTip');
-    this.buildButton.addEventListener('click', () => this.toggleBuildMode());
-    bar.append(turn('⟲', 'hud.turnLeft', -1), turn('⟳', 'hud.turnRight', 1), walls, floors, this.buyButton, this.buildButton);
-    this.root.append(bar, el('div', 'help', t('hud.help')));
+    const help = el('button', 'btn btn-icon', '?');
+    help.title = t('hud.helpTip');
+    help.setAttribute('aria-label', help.title);
+    help.addEventListener('click', () => this.toggleHelp());
+    bar.append(turn('⟲', 'hud.turnLeft', -1), turn('⟳', 'hud.turnRight', 1), walls, floors, help);
+    // plano 2, bloco 2: as dicas viram uma tabela de atalhos que abre e fecha (H)
+    const keys: [string, string][] = [
+      ['hud.keys.click', 'hud.keys.clickDo'],
+      ['hud.keys.shift', 'hud.keys.shiftDo'],
+      ['0 · 1 · 2 · 3 · 4', 'hud.keys.speedDo'],
+      ['Espaço', 'hud.keys.pauseDo'],
+      ['Tab', 'hud.keys.tabDo'],
+      ['Q · E', 'hud.keys.turnDo'],
+      ['PageUp · PageDown', 'hud.keys.levelDo'],
+      ['V · B · C', 'hud.keys.modesDo'],
+      ['F · O', 'hud.keys.popsDo'],
+      ['M', 'hud.keys.muteDo'],
+      ['H', 'hud.keys.helpDo'],
+      ['Esc', 'hud.keys.escDo'],
+    ];
+    const head = el('div', 'panel-head');
+    const close = el('button', 'pill-cancel', '✕');
+    close.title = t('hud.close');
+    close.setAttribute('aria-label', t('hud.close'));
+    close.addEventListener('click', () => this.toggleHelp());
+    head.append(el('div', 'panel-title', t('hud.keys.title')), close);
+    const table = el('div', 'keys');
+    for (const [k, v] of keys) table.append(el('span', 'key', hasText(k) ? t(k) : k), el('span', 'key-do', t(v)));
+    this.helpEl.append(head, table, el('div', 'panel-note', t('hud.keys.mouse')));
+    this.helpEl.hidden = !this.prefs.help;
+    this.root.append(bar, this.helpEl);
   }
 
-  private buildFolkCard(): void {
-    const card = el('div', 'card folk');
-    const face = this.faceEl;
-    const body = el('div', 'folk-body');
+  private toggleHelp(): void {
+    this.helpEl.hidden = !this.helpEl.hidden;
+    this.prefs.help = !this.helpEl.hidden;
+    saveUiPrefs(this.prefs);
+  }
+
+  // ---------- painel do folk ----------
+
+  /**
+   * Plano 2, bloco 2: o painel do canto inferior esquerdo. À esquerda o
+   * retrato com a expressão de agora, o nome e o humor num medidor só; no
+   * meio as abas em ícones; à direita o conteúdo da aba. A fila fica em cima.
+   */
+  private buildFolkPanel(): void {
+    const wrap = el('div', 'fp-wrap');
+    this.queueWrap.append(this.queueEl);
+    const side = el('div', 'fp-side');
     const mood = el('div', 'mood');
-    const moodLabel = el('span', 'mood-label', `${t('mood.label')}: `);
     const moodTrack = el('div', 'mood-track');
     moodTrack.append(this.moodFill);
     const moodLine = el('div', 'mood-line');
-    moodLine.append(moodLabel, this.moodWord);
+    moodLine.append(el('span', 'mood-label', `${t('mood.label')}: `), this.moodWord);
     mood.append(moodLine, moodTrack);
-    // plano 2, bloco 1: sem jogo sozinho; a dica lembra como pôr na fila
-    const auto = el('div', 'order-hint', t('hud.orderHint'));
-    const tabs = el('div', 'folk-tabs');
-    for (const id of ['skills', 'job', 'relations', 'family'] as const) {
-      const b = el('button', 'btn btn-small', t(`hud.${id}`));
-      b.addEventListener('click', () => this.togglePanel(id));
-      this.panelButtons.set(id, b);
+    side.append(this.faceEl, this.nameEl, this.traitsEl, mood, this.doingEl, this.kidEl);
+    const tabs = el('div', 'fp-tabs');
+    tabs.setAttribute('role', 'tablist');
+    for (const id of TABS) {
+      const b = el('button', 'fp-tab');
+      b.innerHTML = iconSvg(TAB_ICON[id], 18);
+      b.title = t(`tab.${id}`);
+      b.setAttribute('aria-label', b.title);
+      b.setAttribute('role', 'tab');
+      b.addEventListener('click', () => this.openTab(id));
+      this.tabButtons.set(id, b);
       tabs.append(b);
     }
-    body.append(this.nameEl, this.traitsEl, this.kidEl, mood, this.wishesEl, auto, tabs);
-    card.append(face, body);
-    this.root.append(card);
+    const body = el('div', 'fp-body');
+    body.append(tabs, this.tabTitle, this.tabBody);
+    this.fpEl.append(side, body);
+    wrap.append(this.queueWrap, this.fpEl);
+    this.root.append(wrap);
+  }
+
+  /** Abre uma aba do painel do folk (e lembra dela para a próxima vez). */
+  openTab(tab: Tab): void {
+    if (this.tab !== tab) cue('open');
+    this.tab = tab;
+    this.prefs.tab = tab;
+    saveUiPrefs(this.prefs);
+    this.panelSig = '';
+    this.renderPanel();
   }
 
   private buildNeeds(): void {
-    const card = el('div', 'card needs');
     for (const id of NEED_IDS) {
       const row = el('div', 'need');
       const icon = el('span', 'need-icon');
@@ -640,13 +824,11 @@ export class Hud {
         meter.append(s);
       }
       row.append(icon, label, meter);
-      card.append(row);
+      this.needsEl.append(row);
       this.needRows.set(id, { segs, row });
     }
-    card.append(this.roomEl);
-    this.root.append(card);
+    this.needsEl.append(this.roomEl);
   }
-
   /** Bloco 3: "Sala e cozinha · agradável · claro", com a conta da nota na dica. */
   private renderRoom(folk: Folk): void {
     const sim = this.ctrl.sim;
@@ -677,52 +859,6 @@ export class Hud {
       light: n(score.light),
       taste: n(score.taste),
     });
-  }
-
-  /**
-   * Bloco 6: os desejos do dia (ícone, texto na dica, cumprido em verde), o
-   * ânimo guardado em losangos e o botão do dia inspirado.
-   */
-  private renderWishes(folk: Folk): void {
-    const world = this.ctrl.world;
-    const catalog = this.ctrl.sim.catalog;
-    const inspired = isInspired(folk, world.tick);
-    const sig = `${folk.id}|${JSON.stringify(folk.wishes)}|${folk.spark}|${inspired ? folk.inspired : 0}`;
-    if (sig === this.wishesSig) return;
-    this.wishesSig = sig;
-    this.wishesEl.replaceChildren();
-    const row = el('div', 'wish-row');
-    row.append(el('span', 'wish-label', t('wish.title')));
-    if (folk.wishes.length === 0) row.append(el('span', 'wish-none', t('wish.none')));
-    for (const w of folk.wishes) {
-      const def = catalog.wishes[w.defId];
-      if (!def) continue;
-      const params = wishParams(world, catalog, w);
-      const text = t(def.label, { other: params.other ?? '', skill: params.skill ? t(params.skill) : '', category: params.category ? t(params.category) : '' });
-      const chip = el('span', `wish${w.done ? ' done' : ''}`);
-      chip.innerHTML = iconSvg(def.icon as IconId, 15);
-      const pct = Math.min(100, Math.round((w.progress / def.amount) * 100));
-      chip.title = w.done ? t('wish.doneTip', { text }) : def.amount > 1 ? t('wish.progressTip', { text, pct }) : text;
-      chip.setAttribute('aria-label', chip.title);
-      row.append(chip);
-    }
-    const spark = el('div', 'spark-row');
-    const pips = el('span', 'spark-pips');
-    pips.title = t('spark.tip', { n: folk.spark, max: MAX_SPARK, cost: INSPIRE_COST });
-    for (let i = 0; i < MAX_SPARK; i++) pips.append(el('span', `pip${i < folk.spark ? ' on' : ''}`));
-    spark.append(el('span', 'wish-label', t('spark.title')), pips);
-    if (inspired) {
-      spark.append(el('span', 'spark-on', t('spark.until', { time: formatClock(folk.inspired) })));
-    } else {
-      const b = el('button', 'btn btn-small btn-spark', t('spark.inspire'));
-      b.disabled = folk.spark < INSPIRE_COST;
-      b.title = t('spark.inspireTip', { cost: INSPIRE_COST });
-      b.addEventListener('click', () => {
-        if (this.ctrl.commandOrExplain({ type: 'inspire', folkId: folk.id })) this.wishesSig = '';
-      });
-      spark.append(b);
-    }
-    this.wishesEl.append(row, spark);
   }
 
   /**
@@ -763,129 +899,6 @@ export class Hud {
       return d;
     }));
     this.kidEl.hidden = lines.length === 0;
-  }
-
-  private showNotice(text: string, icon: string): void {
-    const card = el('div', 'card notice');
-    const ic = el('span', 'notice-icon');
-    ic.innerHTML = iconSvg(icon as IconId, 16);
-    const close = el('button', 'pill-cancel', '✕');
-    close.title = t('hud.close');
-    close.setAttribute('aria-label', t('hud.close'));
-    close.addEventListener('click', () => card.remove());
-    const time = el('span', 'notice-time', formatClock(this.ctrl.world.tick));
-    const body = el('div', 'notice-body');
-    body.append(el('div', 'notice-text', text), time);
-    card.append(ic, body, close);
-    this.noticesEl.prepend(card);
-    while (this.noticesEl.children.length > 4) this.noticesEl.lastElementChild?.remove();
-    window.setTimeout(() => card.classList.add('out'), 24000);
-    window.setTimeout(() => card.remove(), 24500);
-  }
-
-  private buildQueue(): void {
-    const wrap = el('div', 'queue');
-    wrap.append(el('div', 'queue-title', t('queue.title')), this.queueEl);
-    this.root.append(wrap);
-  }
-
-  // ---------- atualização ----------
-
-  update(): void {
-    const world = this.ctrl.world;
-    if (this.townButton) this.townButton.hidden = !world.town || !!world.outing;
-    if (this.outingButton) {
-      const label = t(world.outing ? 'hud.goHome' : 'hud.downtown');
-      if (this.outingButton.textContent !== label) {
-        this.outingButton.textContent = label;
-        this.outingButton.title = t(world.outing ? 'hud.goHomeTip' : 'hud.downtownTip');
-        this.outingButton.classList.toggle('btn-hot', !!world.outing);
-      }
-    }
-    // bloco 14: casa vazia: só o aviso (não há a quem mostrar)
-    if (this.renderOver()) return;
-    const folk = this.ctrl.folk;
-    const clock = clockOf(world.tick);
-    const levelText = t(`hud.level.${this.ctrl.viewLevel}`);
-    if (this.levelLabel.textContent !== levelText) this.levelLabel.textContent = levelText;
-    const wallsText = t(`hud.walls.${this.ctrl.wallMode}`);
-    if (this.wallsButton.textContent !== wallsText) this.wallsButton.textContent = wallsText;
-
-    // bloco 13: o dia mostra quando está chovendo
-    const dayText = t('hud.day', { day: clock.day, weekday: t(`weekday.${(clock.day - 1) % 7}`) }) + (raining(world) ? ` · ☂ ${t('hud.rain')}` : '');
-    if (this.clockDay.textContent !== dayText) this.clockDay.textContent = dayText;
-    const house = world.household;
-    const funds = formatMoney(house.funds);
-    if (this.fundsEl.textContent !== funds) this.fundsEl.textContent = funds;
-    this.fundsEl.classList.toggle('debt', house.funds < 0);
-    const debt = debtOf(world);
-    const unpaid = unpaidBills(world).length;
-    this.fundsEl.title = `${t('hud.funds')}. ${
-      debt > 0
-        ? t('hud.billsUnpaid', { amount: formatMoney(debt), when: whenText(house.nextBills) })
-        : t('hud.billsNone', { when: whenText(house.nextBills), amount: formatMoney(billAmount(world, this.ctrl.sim.catalog)) })
-    }`;
-    this.fundsEl.classList.toggle('mail', unpaid > 0);
-    if (this.fundsEl.dataset.mail !== String(unpaid)) {
-      this.fundsEl.dataset.mail = String(unpaid);
-      this.fundsEl.dataset.mailText = unpaid > 0 ? t('hud.mail', { n: unpaid }) : '';
-    }
-    const buyLabel = this.ctrl.mode === 'buy' ? t('hud.live') : t('hud.buy');
-    if (this.buyButton.textContent !== buyLabel) this.buyButton.textContent = buyLabel;
-    this.buyButton.classList.toggle('on', this.ctrl.mode === 'buy');
-    const buildLabel = this.ctrl.mode === 'build' ? t('hud.live') : t('hud.build');
-    if (this.buildButton.textContent !== buildLabel) this.buildButton.textContent = buildLabel;
-    this.buildButton.classList.toggle('on', this.ctrl.mode === 'build');
-    this.clockTime.textContent =
-      world.speed === 0 ? `${formatClock(world.tick)} · ${t('hud.paused')}` : formatClock(world.tick);
-    const night = clock.hour < 6 || clock.hour >= 19;
-    this.clockSky.classList.toggle('night', night);
-    this.speedButtons.forEach((b, i) => b.classList.toggle('on', i === world.speed));
-    // plano 2, bloco 1: pular só acende com a casa toda dormindo, fora ou ocupada
-    const skip = this.speedButtons[SKIP_SPEED];
-    if (skip) {
-      const can = world.speed === SKIP_SPEED || canSkip(world, this.ctrl.sim.catalog);
-      skip.classList.toggle('off', !can);
-      skip.setAttribute('aria-disabled', String(!can));
-    }
-
-    this.nameEl.textContent = folk.name;
-    const traitText = [...(folk.age ? [t(`age.${folk.age}`)] : []), ...folk.traits.map((id) => t(`trait.${id}`))].join(' · ');
-    if (this.traitsEl.textContent !== traitText) this.traitsEl.textContent = traitText;
-
-    const mood = moodOf(this.ctrl.sim.catalog, folk.needs);
-    const level = mood >= 80 ? 5 : mood >= 62 ? 4 : mood >= 45 ? 3 : mood >= 28 ? 2 : 1;
-    this.moodWord.textContent = t(`mood.${level}`);
-    this.moodFill.style.width = `${Math.round(mood)}%`;
-    this.moodFill.dataset.level = String(level);
-    const faceKey = `${folk.id}|${level}`;
-    if (this.faceEl.dataset.key !== faceKey) {
-      this.faceEl.dataset.key = faceKey;
-      this.faceEl.innerHTML = faceSvg(folk.look, 46, mood);
-    }
-    this.renderHousehold();
-    this.renderParty();
-
-    for (const id of NEED_IDS) {
-      const row = this.needRows.get(id);
-      if (!row) continue;
-      const v = folk.needs[id];
-      const tone = v < 25 ? 'low' : v < 55 ? 'mid' : 'high';
-      if (row.row.dataset.tone !== tone) row.row.dataset.tone = tone;
-      row.row.title = `${t(`need.${id}`)}: ${Math.round(v)}`;
-      row.segs.forEach((s, i) => s.classList.toggle('on', v >= (i + 0.5) * (100 / SEGMENTS)));
-    }
-
-    this.renderRoom(folk);
-    this.renderKid(folk);
-    this.wishesEl.hidden = folk.age === 'baby';
-    this.renderWishes(folk);
-    this.renderQueue();
-    this.renderWorkEvent();
-    this.renderBargain();
-    this.renderPanel();
-    this.renderCatalog();
-    this.renderBuild();
   }
 
   private actionLabel(action: Action): string {
@@ -930,52 +943,369 @@ export class Hud {
     return `${t(def.name)}: ${t(it.label)}`;
   }
 
+  /**
+   * Bloco 6 (plano 2, bloco 2: virou aba): os desejos do dia com o texto e o
+   * progresso, o ânimo guardado em losangos e o botão do dia inspirado.
+   */
+  private renderWishes(folk: Folk): void {
+    const world = this.ctrl.world;
+    const catalog = this.ctrl.sim.catalog;
+    const inspired = isInspired(folk, world.tick);
+    const sig = `${folk.id}|${JSON.stringify(folk.wishes)}|${folk.spark}|${inspired ? folk.inspired : 0}`;
+    if (sig === this.wishesSig) return;
+    this.wishesSig = sig;
+    this.wishesEl.replaceChildren();
+    if (folk.age === 'baby') {
+      this.wishesEl.append(el('div', 'panel-note', t('wish.baby')));
+      return;
+    }
+    const list = el('div', 'wish-list');
+    if (folk.wishes.length === 0) list.append(el('div', 'panel-note', t('wish.none')));
+    for (const w of folk.wishes) {
+      const def = catalog.wishes[w.defId];
+      if (!def) continue;
+      const params = wishParams(world, catalog, w);
+      const text = t(def.label, { other: params.other ?? '', skill: params.skill ? t(params.skill) : '', category: params.category ? t(params.category) : '' });
+      const row = el('div', `wish-card${w.done ? ' done' : ''}`);
+      const icon = el('span', 'wish');
+      icon.innerHTML = iconSvg(def.icon as IconId, 16);
+      const pct = Math.min(100, Math.round((w.progress / def.amount) * 100));
+      const body = el('div', 'wish-body');
+      body.append(el('div', 'wish-text', text));
+      if (w.done) body.append(el('div', 'wish-sub', t('wish.done')));
+      else if (def.amount > 1) {
+        const bar = el('div', 'skill-bar');
+        const fill = el('div', 'skill-fill');
+        fill.style.width = `${pct}%`;
+        bar.append(fill);
+        body.append(bar);
+      }
+      row.append(icon, body);
+      list.append(row);
+    }
+    const spark = el('div', 'spark-row');
+    const pips = el('span', 'spark-pips');
+    pips.title = t('spark.tip', { n: folk.spark, max: MAX_SPARK, cost: INSPIRE_COST });
+    for (let i = 0; i < MAX_SPARK; i++) pips.append(el('span', `pip${i < folk.spark ? ' on' : ''}`));
+    spark.append(el('span', 'wish-label', t('spark.title')), pips);
+    if (inspired) {
+      spark.append(el('span', 'spark-on', t('spark.until', { time: formatClock(folk.inspired) })));
+    } else {
+      const b = el('button', 'btn btn-small btn-spark', t('spark.inspire'));
+      b.disabled = folk.spark < INSPIRE_COST;
+      b.title = t('spark.inspireTip', { cost: INSPIRE_COST });
+      b.addEventListener('click', () => {
+        if (this.ctrl.commandOrExplain({ type: 'inspire', folkId: folk.id })) this.wishesSig = '';
+      });
+      spark.append(b);
+    }
+    this.wishesEl.append(list, spark, el('div', 'panel-note', t('spark.hint')));
+  }
+
+  // ---------- avisos ----------
+
+  /**
+   * Plano 2, bloco 2: aviso empilhado no canto, com ícone, hora e fechar;
+   * clicar leva a câmera até onde aconteceu. Ao sair da tela ele fica no
+   * histórico (o sininho).
+   */
+  private showNotice(text: string, icon: string, target: FocusTarget | null): void {
+    const entry: NoticeEntry = { text, icon, target, tick: this.ctrl.world.tick };
+    this.history.unshift(entry);
+    if (this.history.length > HISTORY_MAX) this.history.length = HISTORY_MAX;
+    const card = this.noticeCard(entry, 'card notice');
+    const close = el('button', 'pill-cancel', '✕');
+    close.title = t('hud.close');
+    close.setAttribute('aria-label', t('hud.close'));
+    close.addEventListener('click', (e) => {
+      e.stopPropagation();
+      card.remove();
+    });
+    card.append(close);
+    this.noticesEl.prepend(card);
+    while (this.noticesEl.children.length > 4) this.noticesEl.lastElementChild?.remove();
+    window.setTimeout(() => card.classList.add('out'), 24000);
+    window.setTimeout(() => card.remove(), 24500);
+    this.renderHistoryButton();
+    if (this.pop === 'history') {
+      this.popSig = '';
+      this.renderPop();
+    }
+  }
+
+  private noticeCard(entry: NoticeEntry, className: string): HTMLElement {
+    const card = el('div', className);
+    const ic = el('span', 'notice-icon');
+    ic.innerHTML = iconSvg(entry.icon as IconId, 16);
+    const body = el('div', 'notice-body');
+    body.append(el('div', 'notice-text', entry.text), el('span', 'notice-time', whenText(entry.tick)));
+    card.append(ic, body);
+    if (entry.target) {
+      card.classList.add('go');
+      card.title = t('notice.go');
+      const target = entry.target;
+      card.addEventListener('click', () => {
+        if ('folkId' in target) this.ctrl.selectFolk(target.folkId);
+        this.ctrl.focus(target);
+        this.update();
+      });
+    }
+    return card;
+  }
+
+  private renderHistoryButton(): void {
+    const n = this.history.length;
+    this.historyButton.innerHTML = iconSvg('bell', 16);
+    if (n) this.historyButton.append(el('span', 'history-n', String(n)));
+    this.historyButton.title = t('notice.history');
+    this.historyButton.setAttribute('aria-label', this.historyButton.title);
+    this.historyButton.hidden = n === 0;
+  }
+
+  // ---------- fila ----------
+
+  /** Ícone da ação na fila: o da necessidade que mais sobe, ou o do tipo da ação. */
+  private actionIcon(action: Action): IconId {
+    switch (action.kind) {
+      case 'goto':
+      case 'leave':
+        return 'walk';
+      case 'work':
+        return 'work';
+      case 'tidy':
+        return 'broom';
+      case 'door':
+        return 'house';
+      case 'douse':
+      case 'panic':
+        return 'fire';
+      case 'circle':
+      case 'listen':
+        return 'social';
+      default:
+        break;
+    }
+    if (action.serviceId) return 'phone';
+    if (action.guests) return 'heart';
+    if (action.kind === 'social') {
+      const def = this.ctrl.sim.catalog.socials[action.socialId ?? ''];
+      return def?.category === 'romantic' ? 'heart' : def?.category === 'mean' ? 'no' : 'social';
+    }
+    const it = this.ctrl.sim.interactionOf(action);
+    if (!it) return 'mood';
+    if (it.special === 'call' || it.special === 'answer' || it.special === 'services') return 'phone';
+    if (it.care) return 'hand';
+    const main = Object.entries(it.effects).sort((a, c) => (c[1] ?? 0) - (a[1] ?? 0))[0];
+    if (main && (main[1] ?? 0) > 0) return main[0] as NeedId;
+    return it.skill ? 'skill' : 'mood';
+  }
+
+  /** Quanto da ação já foi (0 a 1), ou null quando não dá para saber. */
+  private actionProgress(folk: Folk, action: Action): number | null {
+    if (action.phase === 'walking' || action.phase === 'queued') return null;
+    if (action.kind === 'social') {
+      const def = this.ctrl.sim.catalog.socials[action.socialId ?? ''];
+      return def?.duration ? Math.min(1, action.elapsed / def.duration) : null;
+    }
+    if (action.kind !== 'use') return null;
+    const it = this.ctrl.sim.interactionOf(action);
+    if (!it || it.duration <= 0) return null;
+    let p = action.elapsed / it.duration;
+    if (it.until) p = Math.max(p, folk.needs[it.until] / 100);
+    return Math.min(1, Math.max(0, p));
+  }
+
   private renderQueue(): void {
+    if (this.drag) return;
     const folk = this.ctrl.folk;
+    const cur = folk.queue[0];
+    const prog = cur ? this.actionProgress(folk, cur) : null;
     const sig =
-      `${this.ctrl.mode}|${folk.away?.until ?? ''}|${folk.collapsed > 0}|` +
+      `${this.ctrl.mode}|${folk.id}|${folk.away?.until ?? ''}|${folk.collapsed > 0}|${prog === null ? '' : Math.round(prog * 40)}|` +
       folk.queue.map((a) => `${a.id}:${a.phase}`).join(',');
     if (sig === this.queueSig) return;
     this.queueSig = sig;
     this.queueEl.replaceChildren();
-
-    if (this.ctrl.mode !== 'live') {
-      this.queueEl.parentElement!.hidden = true;
-      return;
-    }
-    this.queueEl.parentElement!.hidden = false;
-    if (folk.away) {
-      this.queueEl.append(el('div', 'queue-empty', t(folk.kid ? 'queue.school' : 'queue.away', { time: formatClock(folk.away.until) })));
-      return;
-    }
-    if (folk.collapsed > 0) {
-      this.queueEl.append(el('div', 'queue-empty', t('queue.collapsed')));
-      return;
-    }
+    const doing = folk.away
+      ? t(folk.away.school ? 'queue.school' : 'queue.away', { time: formatClock(folk.away.until) })
+      : folk.collapsed > 0
+        ? t('queue.collapsed')
+        : cur
+          ? `${this.actionLabel(cur)}${cur.phase === 'walking' ? ` · ${t('queue.walking')}` : ''}`
+          : t('queue.idle');
+    if (this.doingEl.textContent !== doing) this.doingEl.textContent = doing;
+    this.doingEl.classList.toggle('idle', !cur && !folk.away && folk.collapsed === 0);
+    this.queueWrap.hidden = this.ctrl.mode !== 'live' || !!folk.away || folk.collapsed > 0;
+    if (this.queueWrap.hidden) return;
     if (folk.queue.length === 0) {
-      this.queueEl.append(el('div', 'queue-empty', t('queue.emptyManual', { name: folk.name.split(' ')[0] })));
+      this.queueEl.append(el('div', 'queue-empty', t('queue.emptyManual', { name: first(folk.name) })));
       return;
     }
     folk.queue.forEach((action, index) => {
-      const pill = el('div', 'pill');
+      const pill = el('button', 'qicon');
+      pill.dataset.id = String(action.id);
       if (index === 0) pill.classList.add('current');
       if (action.source === 'auto') pill.classList.add('auto');
-      const text = el('div', 'pill-text');
-      text.append(el('span', 'pill-label', this.actionLabel(action)));
-      const notes: string[] = [];
-      if (action.source === 'auto') notes.push(t('queue.auto'));
-      if (action.phase === 'walking') notes.push(t('queue.walking'));
-      if (notes.length) text.append(el('span', 'pill-note', notes.join(' · ')));
-      const cancel = el('button', 'pill-cancel', '✕');
-      cancel.title = t('queue.cancel');
-      cancel.setAttribute('aria-label', t('queue.cancel'));
-      cancel.addEventListener('click', () => {
-        this.ctrl.command({ type: 'cancel', folkId: folk.id, actionId: action.id });
-        this.update();
-      });
-      pill.append(text, cancel);
+      const icon = el('span', 'qicon-img');
+      icon.innerHTML = iconSvg(this.actionIcon(action), index === 0 ? 26 : 22);
+      pill.append(icon, el('span', 'qicon-x', '✕'));
+      if (index === 0) {
+        const p = this.actionProgress(folk, action);
+        if (p !== null) pill.style.setProperty('--p', `${Math.round(p * 100)}%`);
+        pill.classList.toggle('timed', p !== null);
+      }
+      const label = this.actionLabel(action);
+      const notes = [action.source === 'auto' ? t('queue.auto') : '', action.phase === 'walking' ? t('queue.walking') : ''].filter(Boolean);
+      pill.title = `${label}${notes.length ? ` (${notes.join(', ')})` : ''}. ${t(index === 0 ? 'queue.clickCancel' : 'queue.dragHint')}`;
+      pill.setAttribute('aria-label', pill.title);
+      pill.addEventListener('pointerdown', (e) => this.queueDown(e, pill, action.id, index));
       this.queueEl.append(pill);
     });
+  }
+
+  /** Plano 2, bloco 2: clicar cancela; arrastar (o que não é a ação de agora) muda a ordem. */
+  private queueDown(e: PointerEvent, pill: HTMLElement, id: number, index: number): void {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const folk = this.ctrl.folk;
+    this.drag = { id, startX: e.clientX, moved: false, pill };
+    const move = (ev: PointerEvent) => {
+      const d = this.drag;
+      if (!d) return;
+      const dx = ev.clientX - d.startX;
+      if (!d.moved && Math.abs(dx) > 6 && index > 0) {
+        d.moved = true;
+        pill.classList.add('dragging');
+      }
+      if (d.moved) pill.style.transform = `translateX(${dx / this.scale()}px)`;
+    };
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      const d = this.drag;
+      this.drag = null;
+      this.queueSig = '';
+      if (!d) return;
+      if (!d.moved) {
+        this.ctrl.command({ type: 'cancel', folkId: folk.id, actionId: id });
+        cue('close');
+        this.update();
+        return;
+      }
+      // a nova posição é a do ícone mais perto de onde soltou (a de agora não sai do lugar)
+      const pills = [...this.queueEl.querySelectorAll<HTMLElement>('.qicon')];
+      let to = index;
+      let best = Infinity;
+      pills.forEach((p, i) => {
+        if (i === 0) return;
+        const r = p === pill ? null : p.getBoundingClientRect();
+        const cx = r ? r.left + r.width / 2 : d.startX;
+        const dist = Math.abs(ev.clientX - cx);
+        if (dist < best) {
+          best = dist;
+          to = i;
+        }
+      });
+      this.ctrl.command({ type: 'moveQueued', folkId: folk.id, actionId: id, to });
+      cue('open');
+      this.update();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+
+  // ---------- atualização ----------
+
+  update(): void {
+    const world = this.ctrl.world;
+    // bloco 14: casa vazia: só o aviso (não há a quem mostrar)
+    if (this.renderOver()) return;
+    const folk = this.ctrl.folk;
+    const clock = clockOf(world.tick);
+    this.root.dataset.mode = this.ctrl.mode;
+    const levelText = t(`hud.level.${this.ctrl.viewLevel}`);
+    if (this.levelLabel.textContent !== levelText) this.levelLabel.textContent = levelText;
+    const wallsText = t(`hud.walls.${this.ctrl.wallMode}`);
+    if (this.wallsButton.textContent !== wallsText) this.wallsButton.textContent = wallsText;
+
+    // bloco 13: o dia mostra quando está chovendo
+    const dayText = t('hud.dayShortWeek', { day: clock.day, weekday: t(`weekday.${(clock.day - 1) % 7}`) }) + (raining(world) ? ' ☂' : '');
+    if (this.clockDay.textContent !== dayText) this.clockDay.textContent = dayText;
+    this.clockDay.title = raining(world) ? t('hud.rain') : '';
+    const house = world.household;
+    const funds = formatMoney(house.funds);
+    if (this.fundsEl.textContent !== funds) this.fundsEl.textContent = funds;
+    this.fundsEl.classList.toggle('debt', house.funds < 0);
+    const unpaid = unpaidBills(world).length;
+    this.fundsEl.title = t('hud.fundsTip');
+    this.fundsEl.classList.toggle('mail', unpaid > 0);
+    if (this.fundsEl.dataset.mail !== String(unpaid)) {
+      this.fundsEl.dataset.mail = String(unpaid);
+      this.fundsEl.dataset.mailText = unpaid > 0 ? t('hud.mail', { n: unpaid }) : '';
+    }
+    for (const [id, b] of this.modeButtons) {
+      const on = id === this.ctrl.mode || (id !== 'live' && id !== 'buy' && id !== 'build' && this.pop === id);
+      b.classList.toggle('on', on);
+    }
+    const city = this.modeButtons.get('city');
+    if (city) city.classList.toggle('hot', !!world.outing);
+    const time = formatClock(world.tick);
+    if (this.clockTime.textContent !== time) this.clockTime.textContent = time;
+    this.clockTime.classList.toggle('paused', world.speed === 0);
+    const night = clock.hour < 6 || clock.hour >= 19;
+    this.clockSky.classList.toggle('night', night);
+    this.speedButtons.forEach((b, i) => b.classList.toggle('on', i === world.speed));
+    // plano 2, bloco 1: pular só acende com a casa toda dormindo, fora ou ocupada
+    const skip = this.speedButtons[SKIP_SPEED];
+    if (skip) {
+      const can = world.speed === SKIP_SPEED || canSkip(world, this.ctrl.sim.catalog);
+      skip.classList.toggle('off', !can);
+      skip.setAttribute('aria-disabled', String(!can));
+    }
+
+    if (this.nameEl.textContent !== folk.name) this.nameEl.textContent = folk.name;
+    const traitText = [...(folk.age ? [t(`age.${folk.age}`)] : []), ...folk.traits.map((id) => t(`trait.${id}`))].join(' · ');
+    if (this.traitsEl.textContent !== traitText) this.traitsEl.textContent = traitText;
+
+    const mood = moodOf(this.ctrl.sim.catalog, folk.needs);
+    const level = mood >= 80 ? 5 : mood >= 62 ? 4 : mood >= 45 ? 3 : mood >= 28 ? 2 : 1;
+    const word = t(`mood.${level}`);
+    if (this.moodWord.textContent !== word) this.moodWord.textContent = word;
+    this.moodFill.style.width = `${Math.round(mood)}%`;
+    this.moodFill.dataset.level = String(level);
+    const face = faceState(this.ctrl.sim.catalog, folk);
+    const faceKey = `${folk.id}|${level}|${face}|${folk.look.hair}|${folk.look.style}`;
+    if (this.faceEl.dataset.key !== faceKey) {
+      this.faceEl.dataset.key = faceKey;
+      this.faceEl.innerHTML = faceSvg(folk.look, 72, mood, face);
+      this.faceEl.dataset.mood = String(level);
+    }
+    this.renderHousehold();
+    this.renderParty();
+
+    for (const id of NEED_IDS) {
+      const row = this.needRows.get(id);
+      if (!row) continue;
+      const v = folk.needs[id];
+      const tone = v < 25 ? 'low' : v < 55 ? 'mid' : 'high';
+      if (row.row.dataset.tone !== tone) row.row.dataset.tone = tone;
+      row.row.title = `${t(`need.${id}`)}: ${Math.round(v)}`;
+      row.segs.forEach((s, i) => s.classList.toggle('on', v >= (i + 0.5) * (100 / SEGMENTS)));
+    }
+    // aba fechada com necessidade no vermelho: o ícone da aba avisa
+    const low = NEED_IDS.some((id) => folk.needs[id] < 25);
+    this.tabButtons.get('needs')?.classList.toggle('alert', low && this.tab !== 'needs');
+
+    this.renderRoom(folk);
+    this.renderKid(folk);
+    this.renderWishes(folk);
+    this.renderQueue();
+    this.renderWorkEvent();
+    this.renderBargain();
+    this.renderPanel();
+    this.renderPop();
+    this.renderCatalog();
+    this.renderBuild();
   }
 
   // ---------- menu de interações ----------
@@ -987,128 +1317,196 @@ export class Hud {
   closeMenu(): void {
     this.menuOpen = false;
     this.menuEl.hidden = true;
+    this.ringEl.hidden = true;
+  }
+
+  /**
+   * Plano 2, bloco 2: menu em anel. As opções ficam em volta do ponto
+   * clicado; passando de RING_MAX, as do mesmo grupo viram uma fatia que abre
+   * um segundo anel (com "voltar" no meio). O que não dá agora fica em cinza
+   * e o motivo aparece no meio do anel e na dica.
+   */
+  private showRing(x: number, y: number, head: HTMLElement[], items: RingItem[], back?: () => void): void {
+    this.menuEl.hidden = true;
+    if (this.ringEl.hidden) cue('open');
+    this.menuOpen = true;
+    this.ringEl.hidden = false;
+    this.ringEl.replaceChildren();
+    const k = this.scale();
+    const hub = el('div', 'ring-hub card');
+    hub.append(...head);
+    const hint = el('div', 'ring-hint', items.length ? t('ring.hint') : t('menu.nothing'));
+    hub.append(hint);
+    if (back) {
+      const b = el('button', 'ring-back');
+      b.innerHTML = iconSvg('back', 14);
+      b.append(el('span', '', t('ring.back')));
+      b.addEventListener('click', back);
+      hub.prepend(b);
+    }
+    this.ringEl.append(hub);
+    const slots = ringSlots(items);
+    const pills: HTMLElement[] = slots.map((slot) => {
+      const b = el('button', 'ring-item');
+      if (slot.kind === 'group') {
+        const icon = el('span', 'ring-icon');
+        icon.innerHTML = iconSvg(GROUP_ICON[slot.group] ?? 'mood', 16);
+        b.append(icon, el('span', 'ring-label', t(`ring.group.${slot.group}`)), el('span', 'ring-more', `${slot.items.length} ›`));
+        b.classList.add('group', `cat-${slot.group}`);
+        b.addEventListener('mouseenter', () => (hint.textContent = slot.items.map((i) => i.label).join(' · ')));
+        b.addEventListener('click', () => this.showRing(x, y, head, slot.items, () => this.showRing(x, y, head, items, back)));
+        return b;
+      }
+      const it = slot.item;
+      if (it.face) {
+        const face = el('span', 'menu-face');
+        face.innerHTML = faceSvg(it.face, 18);
+        b.append(face);
+      } else {
+        const icon = el('span', 'ring-icon');
+        icon.innerHTML = iconSvg(it.icon ?? 'mood', 16);
+        b.append(icon);
+      }
+      b.append(el('span', 'ring-label', it.label));
+      if (it.extra) b.append(el('span', 'ring-extra', it.extra));
+      if (it.group) b.classList.add(`cat-${it.group}`);
+      if (it.tone) b.classList.add(it.tone);
+      const tip = it.why ?? it.reluctant ?? it.extra ?? '';
+      if (it.why) {
+        b.classList.add('off');
+        b.setAttribute('aria-disabled', 'true');
+      } else if (it.reluctant) b.classList.add('reluctant');
+      b.title = tip ? `${it.label}: ${tip}` : it.label;
+      b.addEventListener('mouseenter', () => (hint.textContent = it.why ? `✕ ${it.why}` : it.reluctant ? `! ${it.reluctant}` : (it.extra ?? it.label)));
+      b.addEventListener('click', () => {
+        if (it.why) {
+          cue('click');
+          hint.textContent = `✕ ${it.why}`;
+          return;
+        }
+        it.run();
+      });
+      return b;
+    });
+    this.ringEl.append(...pills);
+    // mede o meio para o anel não passar por cima dele
+    const hubRect = hub.getBoundingClientRect();
+    const hubW = hubRect.width / k;
+    const hubH = hubRect.height / k;
+    const r = Math.max(ringRadius(slots.length), hubH / 2 + 26, hubW / 2 + 18);
+    const pts = ringPoints(slots.length, r);
+    let reachX = hubW / 2;
+    let reachY = hubH / 2;
+    pills.forEach((p, i) => {
+      const w = p.getBoundingClientRect().width / k;
+      const pt = pts[i];
+      // à esquerda a fatia cresce para a esquerda; à direita, para a direita; em cima e embaixo, centrada
+      const side = pt.x < -12 ? -1 : pt.x > 12 ? 1 : 0;
+      const left = side < 0 ? pt.x - w + 18 : side > 0 ? pt.x - 18 : pt.x - w / 2;
+      p.style.left = `${Math.round(left)}px`;
+      p.style.top = `${Math.round(pt.y - 16)}px`;
+      p.style.setProperty('--dx', `${-pt.x}px`);
+      p.style.setProperty('--dy', `${-pt.y}px`);
+      p.style.animationDelay = `${i * 18}ms`;
+      reachX = Math.max(reachX, Math.abs(left), Math.abs(left + w));
+      reachY = Math.max(reachY, Math.abs(pt.y) + 18);
+    });
+    const c = ringCenter(x, y, reachX * k, reachY * k, window.innerWidth, window.innerHeight);
+    this.ringEl.style.left = `${c.x / k}px`;
+    this.ringEl.style.top = `${c.y / k}px`;
+    // foco no primeiro (teclado: Tab passa pelas fatias)
+    (pills[0] as HTMLButtonElement | undefined)?.focus({ preventScroll: true });
+  }
+
+  /** Cabeçalho do anel: nome e o estado em notas curtas. */
+  private ringHead(title: string, notes: { text: string; warn?: boolean }[], look?: Folk['look'], sub?: string): HTMLElement[] {
+    const head = el('div', 'ring-title');
+    if (look) {
+      const face = el('span', 'menu-face big');
+      face.innerHTML = faceSvg(look, 26);
+      head.append(face);
+    }
+    const names = el('div', 'menu-names');
+    names.append(el('div', '', title));
+    if (sub) names.append(el('div', 'menu-sub', sub));
+    head.append(names);
+    return [head, ...notes.map((n) => el('div', `ring-note${n.warn ? ' menu-warn' : ''}`, n.text))];
+  }
+
+  private order(cmd: Command): void {
+    this.ctrl.commandOrExplain(cmd);
+    this.closeMenu();
+    this.update();
   }
 
   openMenu(x: number, y: number, obj: WorldObject): void {
     const def = this.ctrl.sim.defOf(obj);
     if (!def) return;
     const folk = this.ctrl.folk;
-    this.menuEl.replaceChildren(el('div', 'menu-title', t(def.name)));
+    const world = this.ctrl.world;
+    const catalog = this.ctrl.sim.catalog;
+    const notes: { text: string; warn?: boolean }[] = [];
     const state = stateOf(obj);
     const status = this.objectStatus(obj);
-    if (status) this.menuEl.append(el('div', `menu-note ${state.broken ? 'menu-warn' : ''}`, status));
+    if (status) notes.push({ text: status, warn: state.broken });
     // bloco 13: como vai a planta (fase, água e frutos)
     if (def.plant && obj.plant) {
       const stage = plantStage(obj.plant);
       let note = t('plant.status', { stage: t(`plant.${stage}`), water: Math.round(obj.plant.water) });
       if (obj.plant.fruit > 0) note += ` · ${t('plant.fruit', { n: obj.plant.fruit })}`;
-      this.menuEl.append(el('div', `menu-note ${stage === 'wilted' || stage === 'dead' ? 'menu-warn' : ''}`, note));
+      notes.push({ text: note, warn: stage === 'wilted' || stage === 'dead' });
     }
     // bloco 7: o que o som está tocando e qual estação o folk prefere
     if (isStereo(def)) {
       const on = stationDef(obj.tune);
       const fav = favoriteStation(folk);
-      if (on && !state.broken) this.menuEl.append(el('div', 'menu-note', `♪ ${t('menu.playing', { station: t(on.name) })} · ${t(`${on.name}Tip`)}`));
-      this.menuEl.append(el('div', 'menu-note', `${t(fav.name)}: ${t('menu.favStation', { name: folk.name.split(' ')[0] })}`));
+      if (on && !state.broken) notes.push({ text: `♪ ${t('menu.playing', { station: t(on.name) })}` });
+      notes.push({ text: `${t(fav.name)}: ${t('menu.favStation', { name: first(folk.name) })}` });
     }
     // bloco 2: cada conta da caixa de correio, detalhada
     if (def.interactions.some((i) => i.special === 'payBills')) {
-      for (const bill of unpaidBills(this.ctrl.world)) {
+      for (const bill of unpaidBills(world)) {
         const day = Math.floor(bill.due / 1440) + 1;
-        const late = this.ctrl.world.tick > bill.due;
-        const line = `${t('bill.line', { power: formatMoney(bill.power), water: formatMoney(bill.water), furniture: formatMoney(bill.furniture) })} · ${t(late ? 'bill.overdue' : 'bill.due', { day })}`;
-        this.menuEl.append(el('div', `menu-note ${late ? 'menu-warn' : ''}`, line));
+        const late = world.tick > bill.due;
+        notes.push({ text: `${formatMoney(bill.power + bill.water + bill.furniture)} · ${t(late ? 'bill.overdue' : 'bill.due', { day })}`, warn: late });
       }
     }
-    // cuidados só aparecem quando há o que fazer; o resto some se quebrou.
-    // Comida pedida, feira e contas só aparecem quando existem.
-    const world = this.ctrl.world;
-    const shown = def.interactions.filter((it) => {
-      if (it.hidden) return false;
-      // bloco 11: o que a idade deixa (e o berço só oferece cuidado com bebê dentro)
-      if (!kidAllows(folk, it)) return false;
-      if (it.baby) return interactionOpen(obj, it);
-      if (it.care) return careAvailable(obj, it);
-      // bloco 7: ligar, trocar e desligar o som só quando faz sentido
-      if (it.tune) return interactionOpen(obj, it);
-      if (it.takeout || it.special === 'fair' || it.special === 'payBills') return interactionReady(world, it);
-      return true;
-    });
-    if (shown.length === 0) {
-      this.menuEl.append(el('div', 'menu-note', t('menu.nothing')));
-    }
+    const items: RingItem[] = [];
     // bloco 9: telefone tocando: atender vem primeiro
     const answer = def.interactions.find((i) => i.special === 'answer');
     if (answer && world.call && !world.call.answeredBy) {
       const n = world.neighbors.find((x) => x.id === world.call!.from);
-      const b = el('button', 'menu-item ringing');
-      const icon = el('span', 'menu-icon');
-      icon.innerHTML = iconSvg('phone', 16);
-      b.append(icon, el('span', '', t('act.answerFrom', { name: n ? first(n.name) : '?' })));
-      b.addEventListener('click', () => {
-        this.ctrl.commandOrExplain({ type: 'answerPhone', folkId: folk.id });
-        this.closeMenu();
-        this.update();
-      });
-      this.menuEl.append(b);
+      items.push({ label: t('act.answerFrom', { name: n ? first(n.name) : '?' }), icon: 'phone', tone: 'ringing', run: () => this.order({ type: 'answerPhone', folkId: folk.id }) });
     }
-    for (const it of shown) {
-      const b = el('button', 'menu-item');
+    for (const it of def.interactions) {
+      const st = interactionState(world, catalog, folk, obj, it);
+      if (!st.show) continue;
       const main = Object.entries(it.effects).sort((a, c) => (c[1] ?? 0) - (a[1] ?? 0))[0];
-      const icon = el('span', 'menu-icon');
-      if (main) icon.innerHTML = iconSvg(main[0] as NeedId, 16);
-      b.append(icon, el('span', '', t(it.label)));
       const extras: string[] = [];
       if (it.cost) extras.push(formatMoney(it.cost));
       if (it.special === 'payBills') extras.push(formatMoney(debtOf(world)));
       if (it.special === 'fair') extras.push(formatMoney(FAIR.price));
       if (it.skill) extras.push(t(`skill.${it.skill.id}`));
       if (it.tune === 'next') extras.push(t(stationDef(nextStation(obj.tune))!.name));
-      // bloco 6: de mau humor ele não topa; o menu já avisa (mas deixa tentar)
-      const why = refusal(this.ctrl.sim.catalog, folk, it, world.tick);
-      if (why) {
-        extras.push(t('refuse.short'));
-        b.classList.add('reluctant');
-        b.title = t(`refuse.${why}`, { name: folk.name });
-      }
-      if (extras.length) b.append(el('span', 'menu-extra', extras.join(' · ')));
-      if (state.broken && !it.care) {
-        b.disabled = true;
-        b.title = t('problem.broken');
-      } else if (!interactionReady(world, it)) {
-        b.disabled = true;
-        b.title = t('problem.noFood');
-      }
-      b.addEventListener('click', () => {
-        if (it.special === 'invite') {
-          this.openInviteMenu(x, y);
-          return;
-        }
-        if (it.special === 'services') {
-          this.openServicesMenu(x, y);
-          return;
-        }
-        if (it.special === 'call') {
-          this.openCallMenu(x, y, obj, it.id);
-          return;
-        }
-        if (it.special === 'party') {
-          this.openPartyMenu(x, y);
-          return;
-        }
-        this.ctrl.commandOrExplain({
-          type: 'queueUse',
-          folkId: folk.id,
-          objectId: obj.id,
-          interactionId: it.id,
-        });
-        this.closeMenu();
-        this.update();
+      const sub = it.special === 'invite' || it.special === 'services' || it.special === 'call' || it.special === 'party';
+      if (sub) extras.push('›');
+      items.push({
+        label: t(it.label),
+        icon: it.care ? 'hand' : main && (main[1] ?? 0) > 0 ? (main[0] as NeedId) : it.skill ? 'skill' : 'mood',
+        extra: extras.join(' · ') || undefined,
+        why: st.why ? t(`ring.why.${st.why}`, { name: first(folk.name) }) : undefined,
+        reluctant: st.reluctant ? `${t('refuse.short')}: ${t(`refuse.${st.reluctant}`, { name: folk.name })}` : undefined,
+        group: objectGroup(it),
+        run: () => {
+          if (it.special === 'invite') return this.openInviteMenu(x, y);
+          if (it.special === 'services') return this.openServicesMenu(x, y);
+          if (it.special === 'call') return this.openCallMenu(x, y, obj, it.id);
+          if (it.special === 'party') return this.openPartyMenu(x, y);
+          this.order({ type: 'queueUse', folkId: folk.id, objectId: obj.id, interactionId: it.id });
+        },
       });
-      if (it.special === 'invite' || it.special === 'services' || it.special === 'call' || it.special === 'party') b.append(el('span', 'menu-extra', '›'));
-      this.menuEl.append(b);
     }
-    this.showMenuAt(x, y);
+    this.showRing(x, y, this.ringHead(t(def.name), notes), items);
   }
 
   /** Estado do objeto em palavras (sujo, quebrado, remendado, lixo cheio), ou null se está tudo bem. */
@@ -1155,19 +1553,13 @@ export class Hud {
   openMessMenu(x: number, y: number, mess: Mess): void {
     const folk = this.ctrl.folk;
     const old = mess.kind === 'paper' && !freshPaper(this.ctrl.world, mess);
-    this.menuEl.replaceChildren(el('div', 'menu-title', t(old ? 'mess.paperOld' : `mess.${mess.kind}`)));
-    const b = el('button', 'menu-item');
-    const icon = el('span', 'menu-icon');
-    icon.innerHTML = iconSvg(mess.kind === 'paper' && !old ? 'fun' : 'ambience', 16);
-    b.append(icon, el('span', '', this.messAction(mess)));
-    if (mess.kind !== 'paper') b.append(el('span', 'menu-extra', t('skill.tidiness')));
-    b.addEventListener('click', () => {
-      this.ctrl.commandOrExplain({ type: 'queueTidy', folkId: folk.id, messId: mess.id });
-      this.closeMenu();
-      this.update();
-    });
-    this.menuEl.append(b);
-    this.showMenuAt(x, y);
+    const item: RingItem = {
+      label: this.messAction(mess),
+      icon: mess.kind === 'paper' && !old ? 'fun' : 'broom',
+      extra: mess.kind !== 'paper' ? t('skill.tidiness') : undefined,
+      run: () => this.order({ type: 'queueTidy', folkId: folk.id, messId: mess.id }),
+    };
+    this.showRing(x, y, this.ringHead(t(old ? 'mess.paperOld' : `mess.${mess.kind}`), []), [item]);
   }
 
   /** Rótulo da ação de recolher uma bagunça (o jornal do dia é "pegar o jornal"). */
@@ -1540,7 +1932,7 @@ export class Hud {
     return bits.join(', ');
   }
 
-  /** Menu ao clicar em outra pessoa: conversas possíveis, por tipo. */
+  /** Menu ao clicar em outra pessoa: conversas em anel, agrupadas por tipo. */
   openSocialMenu(x: number, y: number, other: Folk): void {
     if (other.visit && !other.visit.admitted && !other.visit.leaving) {
       this.openDoorMenu(x, y, other);
@@ -1548,143 +1940,125 @@ export class Hud {
     }
     const folk = this.ctrl.folk;
     const world = this.ctrl.world;
+    const catalog = this.ctrl.sim.catalog;
     const rel = relationOf(world, folk.id, other.id);
-    const title = el('div', 'menu-title');
-    const face = el('span', 'menu-face big');
-    face.innerHTML = faceSvg(other.look, 26);
-    const names = el('div', 'menu-names');
-    names.append(
-      el('div', '', other.name),
-      el('div', 'menu-sub', `${other.visit ? `${t('social.visitor')} · ` : ''}${this.relSummary(rel)}`),
-    );
-    title.append(face, names);
-    this.menuEl.replaceChildren(title);
+    const sub = `${other.visit ? `${t('social.visitor')} · ` : ''}${this.relSummary(rel)}`;
+    const notes: { text: string; warn?: boolean }[] = [];
     // bloco 14: equipes de perigo e quem caiu só mostram o nome
     const crew = other.visit?.service && ['firefighter', 'police', 'burglar', 'reaper'].includes(other.visit.service.kind);
     if (crew || other.down) {
-      this.showMenuAt(x, y);
+      this.showRing(x, y, this.ringHead(other.name, notes, other.look, sub), []);
       return;
     }
-    if (!other.visit) {
-      const b = el('button', 'menu-item');
-      b.append(el('span', '', t('social.control', { name: first(other.name) })));
-      b.addEventListener('click', () => {
+    // bloco 9: assuntos que o folk conhece do outro
+    if ((rel?.friendship ?? 0) >= 30) {
+      const favs = favoriteTopics(catalog, other).map((id) => t(`topic.${id}`)).join(', ');
+      notes.push({ text: t('topic.favorites', { list: favs }) });
+    }
+    const items: RingItem[] = [];
+    if (!other.visit && other.id !== folk.id) {
+      items.push({ label: t('social.control', { name: first(other.name) }), icon: 'mood', run: () => {
         this.ctrl.selectFolk(other.id);
         this.closeMenu();
         this.update();
-      });
-      this.menuEl.append(b);
+      } });
     }
-    // bloco 9: assuntos que o folk conhece do outro
-    const catalog = this.ctrl.sim.catalog;
-    if ((rel?.friendship ?? 0) >= 30) {
-      const favs = favoriteTopics(catalog, other).map((id) => t(`topic.${id}`)).join(', ');
-      this.menuEl.append(el('div', 'menu-note topics-note', t('topic.favorites', { list: favs })));
-      const shared = sharedTopics(catalog, folk, other);
-      this.menuEl.append(el('div', 'menu-note topics-note', shared.length ? t('topic.shared', { list: shared.slice(0, 3).map((id) => t(`topic.${id}`)).join(', ') }) : t('topic.noneShared')));
+    if (folk.away) {
+      this.showRing(x, y, this.ringHead(other.name, [...notes, { text: t('social.nothing') }], other.look, sub), items);
+      return;
     }
     // bloco 9: roda de conversa
-    if (!folk.away && !other.visit?.service) {
+    if (!other.visit?.service) {
       const theirs = circleOfFolk(world, other.id);
       const mine = circleOfFolk(world, folk.id);
       if (theirs && theirs !== mine && theirs.members.length < CIRCLE_MAX) {
-        const b = el('button', 'menu-item');
-        b.append(el('span', 'menu-dot'), el('span', '', t('circle.join')));
-        b.addEventListener('click', () => {
-          this.ctrl.commandOrExplain({ type: 'joinCircle', folkId: folk.id, circleId: theirs.id });
-          this.closeMenu();
-          this.update();
-        });
-        this.menuEl.append(b);
+        items.push({ label: t('circle.join'), icon: 'social', group: 'talk', run: () => this.order({ type: 'joinCircle', folkId: folk.id, circleId: theirs.id }) });
       } else if (!theirs) {
         const near = world.folks
           .filter((f) => f !== folk && f !== other && onLot(f) && !f.visit?.service && !(f.visit && !f.visit.admitted))
           .sort((a, c) => Math.abs(a.x - other.x) + Math.abs(a.y - other.y) - (Math.abs(c.x - other.x) + Math.abs(c.y - other.y)) || a.id - c.id)
           .slice(0, CIRCLE_MAX - 2);
-        const crew = [other, ...near];
-        const b = el('button', 'menu-item');
-        b.append(el('span', 'menu-dot'), el('span', '', t('circle.start')), el('span', 'menu-extra', crew.map((f) => first(f.name)).join(', ')));
-        b.title = t('circle.startTip');
-        b.addEventListener('click', () => {
-          this.ctrl.commandOrExplain({ type: 'startCircle', folkId: folk.id, otherIds: crew.map((f) => f.id) });
-          this.closeMenu();
-          this.update();
-        });
-        this.menuEl.append(b);
+        const group = [other, ...near];
+        items.push({ label: t('circle.start'), icon: 'social', group: 'talk', extra: group.map((f) => first(f.name)).join(', '), run: () => this.order({ type: 'startCircle', folkId: folk.id, otherIds: group.map((f) => f.id) }) });
       }
     }
     // bloco 10: noivos marcam o casamento daqui
-    if (!folk.away && !folk.visit && bondOf(world, folk.id, other.id) === 'engaged' && !world.party) {
-      const b = el('button', 'menu-item');
-      b.append(el('span', 'menu-dot'), el('span', '', t('soc.wedding')), el('span', 'menu-extra', '›'));
-      b.addEventListener('click', () => this.openPartyMenu(x, y, undefined, { partner: other.id, surname: 'host' }));
-      this.menuEl.append(b);
+    if (!folk.visit && bondOf(world, folk.id, other.id) === 'engaged') {
+      items.push({ label: t('soc.wedding'), icon: 'heart', group: 'romantic', extra: '›', why: world.party ? t('problem.partyOn') : undefined, run: () => this.openPartyMenu(x, y, undefined, { partner: other.id, surname: 'host' }) });
     }
-    const list = availableSocials(world, this.ctrl.sim.catalog, folk, other);
-    if (!folk.away && list.some((d) => d.topic)) {
-      const b = el('button', 'menu-item');
-      b.append(el('span', 'menu-dot'), el('span', '', t('soc.talkTopic')), el('span', 'menu-extra', '›'));
-      b.addEventListener('click', () => this.openTopicMenu(x, y, other));
-      this.menuEl.append(b);
+    const defs = Object.values(catalog.socials);
+    if (defs.some((d) => d.topic && socialAllowed(world, catalog, d, folk, other))) {
+      items.push({ label: t('soc.talkTopic'), icon: 'social', group: 'talk', extra: '›', run: () => this.openTopicMenu(x, y, other) });
     }
-    if (list.length === 0 || folk.away) this.menuEl.append(el('div', 'menu-note', t('social.nothing')));
-    else {
-      for (const cat of SOCIAL_ORDER) {
-        const defs = list.filter((d) => d.category === cat);
-        if (!defs.length) continue;
-        this.menuEl.append(el('div', `menu-group cat-${cat}`, t(`socCat.${cat}`)));
-        for (const def of defs) {
-          const b = el('button', `menu-item soc cat-${cat}`);
-          b.append(el('span', 'menu-dot'), el('span', '', t(def.label)));
-          if (def.special === 'engage' && !ringOnLot(world, catalog)) {
-            b.append(el('span', 'menu-extra', t('soc.noRing')));
-            b.classList.add('reluctant');
-            b.title = t('problem.noRing');
-          }
-          b.addEventListener('click', () => {
-            this.ctrl.commandOrExplain({ type: 'queueSocial', folkId: folk.id, otherId: other.id, socialId: def.id });
-            this.closeMenu();
-            this.update();
-          });
-          this.menuEl.append(b);
-        }
+    for (const cat of SOCIAL_ORDER) {
+      for (const def of defs) {
+        if (def.category !== cat || def.topic) continue;
+        const st = socialState(world, catalog, def, folk, other);
+        if (!st.show) continue;
+        const item: RingItem = {
+          label: t(def.label),
+          icon: cat === 'romantic' ? 'heart' : cat === 'mean' ? 'no' : cat === 'professional' ? 'work' : 'social',
+          group: cat,
+          why: st.why ? t(`ring.why.${st.why}`, { n: st.need ?? 0, name: first(other.name) }) : undefined,
+          run: () => this.order({ type: 'queueSocial', folkId: folk.id, otherId: other.id, socialId: def.id }),
+        };
+        if (!item.why && def.special === 'engage' && !ringOnLot(world, catalog)) item.reluctant = t('problem.noRing');
+        items.push(item);
       }
     }
-    this.showMenuAt(x, y);
+    if (items.length === 0) notes.push({ text: t('social.nothing') });
+    this.showRing(x, y, this.ringHead(other.name, notes, other.look, sub), items);
   }
 
   // ---------- moradores ----------
 
+  /**
+   * Plano 2, bloco 2: retratos da família numa coluna à esquerda. Clicar
+   * troca o folk; clicar duas vezes leva a câmera até ele. Quem está fora
+   * mostra onde está (trabalho, escola, centro).
+   */
   private renderHousehold(): void {
     const sim = this.ctrl.sim;
+    const world = this.ctrl.world;
     // bloco 11: bebês aparecem na família também
     const residents = sim.household();
     const sel = this.ctrl.folk.id;
+    const placeOf = (f: Folk): string => {
+      if (f.away) return f.away.school ? t('place.school') : f.job ? t(careerOf(sim.catalog, f.job)?.name ?? 'place.work') : t('place.work');
+      if (world.outing) return t('place.downtown');
+      if (f.collapsed > 0 || f.queue[0]?.interactionId === 'sleep') return t('place.asleep');
+      return '';
+    };
     const sig = residents
       .map((f) => {
         const m = moodOf(sim.catalog, f.needs);
-        return `${f.id}:${f.id === sel}:${!!f.away}:${m >= 62 ? 2 : m >= 40 ? 1 : 0}`;
+        return `${f.id}:${f.id === sel}:${placeOf(f)}:${m >= 62 ? 2 : m >= 40 ? 1 : 0}:${faceState(sim.catalog, f)}`;
       })
       .join('|');
     if (sig === this.householdSig) return;
     this.householdSig = sig;
     this.householdEl.replaceChildren();
-    this.householdEl.hidden = residents.length < 2;
+    this.householdEl.hidden = residents.length === 0;
     for (const f of residents) {
       const m = moodOf(sim.catalog, f.needs);
+      const place = placeOf(f);
       const b = el('button', 'member');
       b.classList.toggle('on', f.id === sel);
       b.classList.toggle('away', !!f.away);
-      b.title = `${f.name}${f.away ? ` · ${t('rel.away')}` : ''}`;
-      const face = el('span', 'member-face');
-      face.innerHTML = faceSvg(f.look, 30, m);
-      const dot = el('span', `member-mood m${m >= 62 ? 2 : m >= 40 ? 1 : 0}`);
-      b.append(face, el('span', 'member-name', first(f.name)), dot);
+      b.title = `${f.name}${place ? ` · ${place}` : ''}. ${t('member.tip')}`;
+      b.setAttribute('aria-label', b.title);
+      const face = el('span', `member-face m${m >= 62 ? 2 : m >= 40 ? 1 : 0}`);
+      face.innerHTML = faceSvg(f.look, 40, m, faceState(sim.catalog, f));
+      b.append(face, el('span', 'member-name', first(f.name)));
+      if (place) b.append(el('span', 'member-place', place));
       b.addEventListener('click', () => {
         this.ctrl.selectFolk(f.id);
         this.panelSig = '';
         this.queueSig = '';
         this.update();
+      });
+      b.addEventListener('dblclick', () => {
+        if (!f.away) this.ctrl.focus({ folkId: f.id });
       });
       this.householdEl.append(b);
     }
@@ -1692,76 +2066,415 @@ export class Hud {
 
   /** Mostra uma etiqueta que sobe e some (o que uma conversa mudou). */
   floatChip(x: number, y: number, text: string, tone: 'good' | 'bad' | 'love'): void {
+    const k = this.scale();
     const chip = el('div', `float-chip ${tone}`, text);
-    chip.style.left = `${Math.round(x)}px`;
-    chip.style.top = `${Math.round(y)}px`;
+    chip.style.left = `${Math.round(x / k)}px`;
+    chip.style.top = `${Math.round(y / k)}px`;
     this.floatsEl.append(chip);
     while (this.floatsEl.children.length > 8) this.floatsEl.firstElementChild?.remove();
     window.setTimeout(() => chip.remove(), 2600);
   }
 
+  /** Cartão de lista (assuntos, convites, festa, serviços) perto do clique. */
   private showMenuAt(x: number, y: number): void {
+    this.ringEl.hidden = true;
     if (this.menuEl.hidden) cue('open');
     this.menuEl.hidden = false;
     this.menuOpen = true;
+    const k = this.scale();
     const rect = this.menuEl.getBoundingClientRect();
     const left = Math.min(Math.max(8, x + 14), window.innerWidth - rect.width - 8);
     const top = Math.min(Math.max(8, y - 20), window.innerHeight - rect.height - 8);
-    this.menuEl.style.left = `${left}px`;
-    this.menuEl.style.top = `${top}px`;
+    this.menuEl.style.left = `${left / k}px`;
+    this.menuEl.style.top = `${top / k}px`;
   }
 
+  // ---------- tamanho da letra ----------
 
-  // ---------- painéis de habilidades e trabalho ----------
-
-  private buildPanel(): void {
-    this.panelEl.hidden = true;
-    this.root.append(this.panelEl);
+  /** Escala da HUD (letra pequena, média ou grande). */
+  private scale(): number {
+    return UI_SCALES[this.prefs.scale];
   }
 
-  togglePanel(panel: Exclude<Panel, null>): void {
-    this.panel = this.panel === panel ? null : panel;
-    cue(this.panel ? 'open' : 'close');
+  private applyScale(): void {
+    this.root.style.setProperty('zoom', String(this.scale()));
+    this.root.dataset.scale = this.prefs.scale;
+  }
+
+  // ---------- abas do folk ----------
+
+  private refreshPanel(): void {
     this.panelSig = '';
-    this.renderPanel();
+    this.popSig = '';
+    this.update();
+  }
+
+  private tabSig(folk: Folk, world: World): string {
+    switch (this.tab) {
+      case 'needs':
+        return `n|${folk.id}`;
+      case 'wishes':
+        return `w|${folk.id}`;
+      case 'feelings':
+        return `f|${folk.id}|${JSON.stringify(feelingsOf(world, this.ctrl.sim.catalog, folk).map((f) => [f.id, f.params, f.until === undefined ? 0 : Math.ceil((f.until - world.tick) / 10)]))}`;
+      case 'skills':
+        return `s|${folk.id}|${Object.entries(folk.skills).map(([k, v]) => `${k}:${Math.floor(v)}`).join(',')}`;
+      case 'temper':
+        return `t|${folk.id}|${JSON.stringify(folk.temper)}|${folk.traits.join(',')}|${folk.age ?? ''}`;
+      case 'inventory':
+        return `i|${folk.id}|${(folk.gifts ?? []).join(',')}|${world.household.pantry}|${world.household.takeout}`;
+      case 'relations':
+        return `r|${folk.id}|${Math.floor(world.tick / 10)}|${world.folks.map((f) => f.id).join(',')}|${world.pendingVisits.length}|${world.news.length}`;
+      case 'job':
+        return `j|${this.jobTab}|${folk.id}|${folk.age ?? ''}|${folk.alarm}|${JSON.stringify([folk.job, folk.gig && Math.floor(folk.gig.progress / 5), folk.business && Math.floor(folk.business.quality), world.gigBoard, world.household.funds >= 0, folk.kid?.grade && Math.round(folk.kid.grade), folk.kid?.homework])}|${folk.away?.until ?? ''}|${Math.floor(world.tick / 60)}`;
+    }
   }
 
   private renderPanel(): void {
-    for (const [id, b] of this.panelButtons) b.classList.toggle('on', this.panel === id);
-    if (!this.panel) {
-      this.panelEl.hidden = true;
-      return;
+    for (const [id, b] of this.tabButtons) {
+      b.classList.toggle('on', this.tab === id);
+      b.setAttribute('aria-selected', String(this.tab === id));
     }
     const folk = this.ctrl.folk;
     const world = this.ctrl.world;
-    const sig =
-      this.panel === 'skills'
-        ? `s|${folk.id}|${JSON.stringify(folk.temper)}|${Object.entries(folk.skills)
-            .map(([k, v]) => `${k}:${Math.floor(v)}`)
-            .join(',')}`
-        : this.panel === 'family'
-          ? `f|${this.familyTab}|${world.household.album?.length ?? 0}|${world.household.album?.at(-1)?.id ?? 0}|${world.folks.map((f) => `${f.id}${f.age ?? ''}`).join(',')}|${world.departed.length}|${Math.floor(world.tick / 60)}`
-          : this.panel === 'relations'
-          ? `r|${folk.id}|${Math.floor(world.tick / 10)}|${world.folks.map((f) => f.id).join(',')}|${world.pendingVisits.length}|${world.news.length}`
-          : `j|${this.jobTab}|${folk.id}|${folk.alarm}|${JSON.stringify([folk.job, folk.gig && Math.floor(folk.gig.progress / 5), folk.business && Math.floor(folk.business.quality), world.gigBoard, world.household.funds >= 0])}|${folk.away?.until ?? ''}|${Math.floor(world.tick / 60)}`;
+    const sig = this.tabSig(folk, world);
     if (sig === this.panelSig) return;
     this.panelSig = sig;
-    this.panelEl.hidden = false;
-    this.panelEl.replaceChildren();
+    const title = t(`tab.${this.tab}`);
+    if (this.tabTitle.textContent !== title) this.tabTitle.textContent = title;
+    const keepScroll = this.tabBody.scrollTop;
+    const sameTab = this.tabBody.dataset.tab === `${this.tab}|${folk.id}`;
+    this.tabBody.dataset.tab = `${this.tab}|${folk.id}`;
+    this.panelEl = this.tabBody;
+    this.tabBody.replaceChildren();
+    switch (this.tab) {
+      case 'needs':
+        this.tabBody.append(this.needsEl);
+        break;
+      case 'wishes':
+        this.tabBody.append(this.wishesEl);
+        break;
+      case 'feelings':
+        this.renderFeelings(folk);
+        break;
+      case 'skills':
+        this.renderSkills();
+        break;
+      case 'temper':
+        this.renderTemper(folk);
+        break;
+      case 'inventory':
+        this.renderInventory(folk);
+        break;
+      case 'relations':
+        this.renderRelations();
+        break;
+      case 'job':
+        this.renderJob();
+        break;
+    }
+    if (sameTab) this.tabBody.scrollTop = keepScroll;
+  }
+
+  /** Plano 2, bloco 2: sensações em cartões (ícone, o que é, por quê e até quando). */
+  private renderFeelings(folk: Folk): void {
+    const world = this.ctrl.world;
+    const list = feelingsOf(world, this.ctrl.sim.catalog, folk);
+    if (!list.length) {
+      this.panelEl.append(el('div', 'panel-note', t('feel.none', { name: first(folk.name) })));
+      return;
+    }
+    const box = el('div', 'feel-list');
+    for (const f of list) {
+      const card = el('div', `feel ${f.tone}`);
+      const icon = el('span', 'feel-icon');
+      icon.innerHTML = iconSvg(f.icon as IconId, 18);
+      const body = el('div', 'feel-body');
+      const params = { ...(f.params ?? {}), name: first(folk.name) };
+      body.append(el('div', 'feel-name', t(`feel.${f.id}`, params)), el('div', 'feel-why', t(`feel.${f.id}.why`, params)));
+      card.append(icon, body);
+      if (f.until !== undefined) {
+        const left = Math.max(0, f.until - world.tick);
+        const text = left >= 1440 ? t('feel.days', { n: Math.ceil(left / 1440) }) : left >= 60 ? t('feel.hours', { n: Math.round(left / 60) }) : t('feel.minutes', { n: left });
+        card.append(el('span', 'feel-time', text));
+      }
+      box.append(card);
+    }
+    this.panelEl.append(box);
+  }
+
+  /** Plano 2, bloco 2: temperamento (cinco eixos), traços com o que querem dizer e o mês. */
+  private renderTemper(folk: Folk): void {
+    const traits = el('div', 'trait-list');
+    for (const id of folk.traits) {
+      const row = el('div', 'trait-card');
+      row.append(el('div', 'trait-name', t(`trait.${id}`)));
+      if (hasText(`traitHint.${id}`)) row.append(el('div', 'trait-hint', t(`traitHint.${id}`)));
+      traits.append(row);
+    }
+    if (!folk.traits.length) traits.append(el('div', 'panel-note', t('temper.noTraits')));
+    const temper = el('div', 'temper-list');
+    temper.append(el('div', 'panel-sub', t('temper.title')));
+    for (const axis of TEMPER_AXES) {
+      const row = el('div', 'temper-row');
+      row.title = t(`temperHint.${axis}`);
+      const pips = el('div', 'pips');
+      for (let i = 0; i < 10; i++) pips.append(el('span', i < (folk.temper?.[axis] ?? 5) ? 'pip on' : 'pip'));
+      row.append(el('span', '', t(`temper.${axis}`)), pips);
+      temper.append(row);
+    }
+    const month = this.ctrl.sim.catalog.months[folk.month ?? 0];
+    if (month) {
+      const born = el('div', 'panel-note', t('temper.born', { month: t(month.name) }));
+      born.title = t(month.hint);
+      temper.append(born);
+    }
+    this.panelEl.append(el('div', 'panel-sub', t('temper.traits')), traits, temper, el('div', 'panel-note', t('skills.mood')));
+  }
+
+  /** Plano 2, bloco 2: o que o folk carrega (presentes) e o que a casa tem guardado. */
+  private renderInventory(folk: Folk): void {
+    const house = this.ctrl.world.household;
+    const gifts = folk.gifts ?? [];
+    this.panelEl.append(el('div', 'panel-sub', t('inv.carry', { name: first(folk.name) })));
+    if (!gifts.length) this.panelEl.append(el('div', 'panel-note', t('inv.empty')));
+    const counts = new Map<string, number>();
+    for (const g of gifts) counts.set(g, (counts.get(g) ?? 0) + 1);
+    const grid = el('div', 'inv-grid');
+    for (const [id, n] of counts) {
+      const def = GIFTS[id];
+      const cell = el('div', 'inv-item');
+      const icon = el('span', 'inv-icon');
+      icon.innerHTML = iconSvg('gift', 22);
+      cell.append(icon, el('span', 'inv-name', def ? t(def.name) : id));
+      if (n > 1) cell.append(el('span', 'inv-n', `×${n}`));
+      if (def) cell.title = t('inv.giftTip', { friendship: def.friendship, romance: def.romance });
+      grid.append(cell);
+    }
+    if (counts.size) this.panelEl.append(grid, el('div', 'panel-note', t('inv.giftHint')));
+    this.panelEl.append(el('div', 'panel-sub', t('inv.house')));
+    const stock = el('div', 'inv-grid');
+    const item = (icon: IconId, text: string) => {
+      const cell = el('div', 'inv-item');
+      const ic = el('span', 'inv-icon');
+      ic.innerHTML = iconSvg(icon, 22);
+      cell.append(ic, el('span', 'inv-name', text));
+      stock.append(cell);
+    };
+    item('hunger', house.pantry > 0 ? t('state.pantry', { n: house.pantry }) : t('state.pantryEmpty'));
+    if (house.takeout > 0) item('hunger', t('state.takeout', { n: house.takeout }));
+    this.panelEl.append(stock);
+  }
+
+  // ---------- cartões do canto (família, contas, opções, cidade, histórico) ----------
+
+  togglePop(pop: Exclude<Pop, null>): void {
+    this.closeMenu();
+    this.system.close();
+    this.pop = this.pop === pop ? null : pop;
+    cue(this.pop ? 'open' : 'close');
+    this.popSig = '';
+    this.renderPop();
+    this.update();
+  }
+
+  private renderPop(): void {
+    const pop = this.pop;
+    if (!pop || this.system.isOpen('saves') || this.system.isOpen('sound')) {
+      this.popEl.hidden = true;
+      if (!pop) this.popSig = '';
+      return;
+    }
+    const world = this.ctrl.world;
+    const sig =
+      pop === 'family'
+        ? `f|${this.familyTab}|${world.household.album?.length ?? 0}|${world.household.album?.at(-1)?.id ?? 0}|${world.folks.map((f) => `${f.id}${f.age ?? ''}`).join(',')}|${world.departed.length}|${Math.floor(world.tick / 60)}`
+        : pop === 'finance'
+          ? `m|${world.household.funds}|${unpaidBills(world).length}|${Math.floor(world.tick / 60)}`
+          : pop === 'options'
+            ? `o|${this.prefs.scale}|${this.prefs.help}|${this.system.muted}`
+            : pop === 'city'
+              ? `c|${!!world.outing}|${!!world.town}`
+              : `h|${this.history.length}|${this.history[0]?.tick ?? 0}`;
+    if (sig === this.popSig && !this.popEl.hidden) return;
+    this.popSig = sig;
+    this.popEl.hidden = false;
+    this.popEl.dataset.pop = pop;
+    this.popEl.replaceChildren();
     const head = el('div', 'panel-head');
     const close = el('button', 'pill-cancel', '✕');
     close.title = t('hud.close');
     close.setAttribute('aria-label', t('hud.close'));
-    close.addEventListener('click', () => {
-      this.panel = null;
-      this.renderPanel();
+    close.addEventListener('click', () => this.togglePop(pop));
+    head.append(el('div', 'panel-title', t(`pop.${pop}`)), close);
+    this.popEl.append(head);
+    const body = el('div', 'pop-body');
+    this.popEl.append(body);
+    this.panelEl = body;
+    if (pop === 'family') this.renderFamily();
+    else if (pop === 'finance') this.renderFinance();
+    else if (pop === 'options') this.renderOptions();
+    else if (pop === 'city') this.renderCity();
+    else this.renderHistory();
+    this.panelEl = this.tabBody;
+  }
+
+  /** Plano 2, bloco 2: resumo das contas e dos salários (clique no dinheiro). */
+  private renderFinance(): void {
+    const world = this.ctrl.world;
+    const catalog = this.ctrl.sim.catalog;
+    const house = world.household;
+    const row = (label: string, value: string, tone = '') => {
+      const r = el('div', `fin-row ${tone}`);
+      r.append(el('span', '', label), el('span', 'fin-value', value));
+      return r;
+    };
+    this.panelEl.append(row(t('fin.funds'), formatMoney(house.funds), house.funds < 0 ? 'bad' : 'good'));
+    const bills = unpaidBills(world);
+    this.panelEl.append(el('div', 'panel-sub', t('fin.bills')));
+    for (const bill of bills) {
+      const day = Math.floor(bill.due / 1440) + 1;
+      const late = world.tick > bill.due;
+      this.panelEl.append(row(t(late ? 'bill.overdue' : 'bill.due', { day }), formatMoney(bill.power + bill.water + bill.furniture), late ? 'bad' : ''));
+    }
+    if (!bills.length) this.panelEl.append(el('div', 'panel-note', t('fin.noBills')));
+    this.panelEl.append(row(t('fin.next', { when: whenText(house.nextBills) }), `≈ ${formatMoney(billAmount(world, catalog))}`));
+    if (house.lastBill) this.panelEl.append(row(t('fin.last'), formatMoney(house.lastBill)));
+    this.panelEl.append(el('div', 'panel-sub', t('fin.income')));
+    let any = false;
+    for (const f of this.ctrl.sim.household()) {
+      if (f.job) {
+        const level = levelOfJob(catalog, f.job);
+        const career = careerOf(catalog, f.job);
+        if (level && career) {
+          any = true;
+          const r = row(`${first(f.name)} · ${t(level.title)}`, t('fin.perShift', { pay: formatMoney(payFor(catalog, f.job)) }));
+          r.title = `${t(career.name)} · ${scheduleText(level)}`;
+          this.panelEl.append(r);
+        }
+      }
+      if (f.pension) {
+        any = true;
+        this.panelEl.append(row(`${first(f.name)} · ${t('fin.pension')}`, t('fin.perDay', { pay: formatMoney(f.pension) })));
+      }
+      if (f.business) {
+        any = true;
+        this.panelEl.append(row(`${first(f.name)} · ${t('job.tab.business')}`, t('fin.business')));
+      }
+      if (f.gig) {
+        any = true;
+        this.panelEl.append(row(`${first(f.name)} · ${t('job.tab.gigs')}`, `${Math.floor(f.gig.progress)}%`));
+      }
+    }
+    if (!any) this.panelEl.append(el('div', 'panel-note', t('fin.noIncome')));
+    const hire = (on: boolean, key: string, fee: number) => on && this.panelEl.append(row(t(key), t('fin.perDay', { pay: formatMoney(fee) }), 'bad'));
+    if (house.maid || house.gardener) this.panelEl.append(el('div', 'panel-sub', t('fin.services')));
+    hire(!!house.maid, 'services.maidOn', MAID.fee);
+    hire(!!house.gardener, 'services.gardenerOn', GARDENER.fee);
+    const job = el('button', 'btn btn-small', t('fin.openJob'));
+    job.addEventListener('click', () => {
+      this.togglePop('finance');
+      this.openTab('job');
     });
-    head.append(el('div', 'panel-title', t(`hud.${this.panel}`)), close);
-    this.panelEl.append(head);
-    if (this.panel === 'skills') this.renderSkills();
-    else if (this.panel === 'relations') this.renderRelations();
-    else if (this.panel === 'family') this.renderFamily();
-    else this.renderJob();
+    this.panelEl.append(job);
+  }
+
+  /** Plano 2, bloco 2: opções (jogos salvos, som, letra, dicas, jogo novo). */
+  private renderOptions(): void {
+    const grid = el('div', 'opt-grid');
+    const save = el('button', 'btn', t('hud.save'));
+    save.title = t('hud.saveTip');
+    save.addEventListener('click', () => void this.ctrl.save());
+    const games = el('button', 'btn', t('hud.games'));
+    games.title = t('hud.gamesTip');
+    games.addEventListener('click', () => {
+      this.pop = null;
+      this.system.toggle('saves');
+      this.renderPop();
+      this.update();
+    });
+    const sound = el('button', 'btn', this.system.muted ? `♪̸ ${t('opt.sound')}` : `♪ ${t('opt.sound')}`);
+    sound.title = t(this.system.muted ? 'hud.soundMuted' : 'hud.sound');
+    sound.addEventListener('click', () => {
+      this.pop = null;
+      this.system.toggle('sound');
+      this.renderPop();
+      this.update();
+    });
+    const fresh = el('button', 'btn btn-quiet', t('hud.new'));
+    // bloco 5: jogo novo abre a tela de criar família (que tem o atalho da família pronta)
+    fresh.addEventListener('click', () => {
+      this.togglePop('options');
+      if (this.openCreator) this.openCreator();
+      else this.ctrl.newGame();
+    });
+    grid.append(save, games, sound, fresh);
+    this.panelEl.append(grid, el('div', 'panel-sub', t('opt.scale')));
+    const scales = el('div', 'catalog-tabs');
+    for (const s of ['s', 'm', 'l'] as UiScale[]) {
+      const b = el('button', 'tab', t(`opt.scale.${s}`));
+      b.classList.toggle('on', this.prefs.scale === s);
+      b.addEventListener('click', () => {
+        this.prefs.scale = s;
+        saveUiPrefs(this.prefs);
+        this.applyScale();
+        this.popSig = '';
+        this.renderPop();
+      });
+      scales.append(b);
+    }
+    const help = el('button', 'btn btn-small', t(this.helpEl.hidden ? 'opt.helpShow' : 'opt.helpHide'));
+    help.addEventListener('click', () => {
+      this.toggleHelp();
+      this.popSig = '';
+      this.renderPop();
+    });
+    this.panelEl.append(scales, el('div', 'panel-sub', t('opt.keys')), help);
+  }
+
+  /** Plano 2, bloco 2: cidade (o bairro e o táxi para o centro); no bloco 12 vira o mapa. */
+  private renderCity(): void {
+    const world = this.ctrl.world;
+    const list = el('div', 'opt-grid one');
+    if (world.outing) {
+      const home = el('button', 'btn btn-hot', t('hud.goHome'));
+      home.title = t('hud.goHomeTip');
+      home.addEventListener('click', () => {
+        this.togglePop('city');
+        this.ctrl.outingCommand({ type: 'goHome' });
+      });
+      list.append(home);
+    } else {
+      const go = el('button', 'btn', t('hud.downtown'));
+      go.title = t('hud.downtownTip');
+      go.addEventListener('click', () => {
+        this.togglePop('city');
+        const r = this.modeButtons.get('city')!.getBoundingClientRect();
+        this.openOutingMenu(r.left, r.top - 380);
+      });
+      list.append(go);
+      if (world.town) {
+        const town = el('button', 'btn', t('hud.town'));
+        town.title = t('hud.townTip');
+        town.addEventListener('click', () => {
+          this.togglePop('city');
+          this.ctrl.openTown();
+        });
+        list.append(town);
+      }
+    }
+    this.panelEl.append(list, el('div', 'panel-note', t(world.outing ? 'city.outingNote' : 'city.note')));
+  }
+
+  /** Plano 2, bloco 2: os avisos que já passaram, do mais novo ao mais velho. */
+  private renderHistory(): void {
+    if (!this.history.length) {
+      this.panelEl.append(el('div', 'panel-note', t('notice.none')));
+      return;
+    }
+    const box = el('div', 'history');
+    for (const entry of this.history) box.append(this.noticeCard(entry, 'notice old'));
+    this.panelEl.append(box);
   }
 
   // ---------- bloco 17: árvore e álbum ----------
@@ -1773,8 +2486,8 @@ export class Hud {
       b.classList.toggle('on', this.familyTab === id);
       b.addEventListener('click', () => {
         this.familyTab = id;
-        this.panelSig = '';
-        this.renderPanel();
+        this.popSig = '';
+        this.renderPop();
       });
       tabs.append(b);
     }
@@ -2166,24 +2879,7 @@ export class Hud {
       row.append(top, pips, bar);
       list.append(row);
     }
-    // bloco 5: temperamento e mês de nascimento
-    const temper = el('div', 'temper-list');
-    temper.append(el('div', 'panel-title', t('temper.title')));
-    for (const axis of TEMPER_AXES) {
-      const row = el('div', 'temper-row');
-      row.title = t(`temperHint.${axis}`);
-      const pips = el('div', 'pips');
-      for (let i = 0; i < 10; i++) pips.append(el('span', i < (folk.temper?.[axis] ?? 5) ? 'pip on' : 'pip'));
-      row.append(el('span', '', t(`temper.${axis}`)), pips);
-      temper.append(row);
-    }
-    const month = this.ctrl.sim.catalog.months[folk.month ?? 0];
-    if (month) {
-      const born = el('div', 'panel-note', t('temper.born', { month: t(month.name) }));
-      born.title = t(month.hint);
-      temper.append(born);
-    }
-    this.panelEl.append(list, temper, el('div', 'panel-note', t('skills.hint')), el('div', 'panel-note', t('skills.mood')));
+    this.panelEl.append(list, el('div', 'panel-note', t('skills.hint')));
   }
 
   private renderJob(): void {
@@ -2262,10 +2958,6 @@ export class Hud {
     this.panelEl.append(box);
   }
 
-  private refreshPanel(): void {
-    this.panelSig = '';
-    this.update();
-  }
 
   /** Botão que pede confirmação no segundo clique. */
   private confirmButton(label: string, confirm: string, action: () => void): HTMLButtonElement {
@@ -2963,7 +3655,8 @@ export class Hud {
       this.bubbleEl.dataset.icon = icon;
     }
     this.bubbleEl.hidden = false;
-    this.bubbleEl.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) translate(-50%, -100%)`;
+    const k = this.scale();
+    this.bubbleEl.style.transform = `translate(${Math.round(x / k)}px, ${Math.round(y / k)}px) translate(-50%, -100%)`;
   }
 
   setTooltip(x: number, y: number, text: string | null): void {
@@ -2973,7 +3666,8 @@ export class Hud {
     }
     if (this.tooltipEl.textContent !== text) this.tooltipEl.textContent = text;
     this.tooltipEl.hidden = false;
-    this.tooltipEl.style.transform = `translate(${Math.round(x + 14)}px, ${Math.round(y + 16)}px)`;
+    const k = this.scale();
+    this.tooltipEl.style.transform = `translate(${Math.round((x + 14) / k)}px, ${Math.round((y + 16) / k)}px)`;
   }
 
   private showToast(text: string): void {

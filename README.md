@@ -1082,18 +1082,39 @@ traços e cidade aberta com o bairro dentro dela).
   reflexos), ordem nova substitui a atual com saída limpa e `Shift` põe na
   fila, tempo em 1, 3 e 10 minutos por segundo mais o pular, sem aumento de
   objetos sob o mouse e jogador de teste nas semanas dos testes (save v22).
+- **Bloco 2 (feito)**: HUD nova. Painel do folk no canto com retrato de
+  expressão ao vivo, humor num medidor e oito abas (necessidades, sensações,
+  habilidades, carreira e escola, relações, temperamento e traços, desejos,
+  inventário); retratos da família em coluna (clique duplo leva a câmera);
+  fila em ícones com o progresso da ação de agora, clique cancela e arrastar
+  muda a ordem; barra do relógio embaixo com as velocidades 0 a 4 e o
+  dinheiro (abre contas e salários); modos viver, comprar, construir,
+  família, cidade e opções; menu de interações em anel, agrupado quando passa
+  de seis opções e com o indisponível em cinza e o motivo; avisos que levam a
+  câmera ao lugar, com histórico; letra pequena, média ou grande e tabela de
+  atalhos (H). O save não subiu (preferências ficam no navegador).
 
 ## Limitações conhecidas do bloco 1 (plano 2)
 
 - A caminhada continua a um tile por minuto de jogo (um segundo por tile no
   normal, com o passo interpolado); o plano falava em 0,8 s.
-- Arrastar para reordenar a fila fica para o bloco 2, com a fila nova.
 - A carona do trabalho e o ônibus da escola ainda põem o folk a caminho
   sozinhos (como nos jogos do gênero); o jogador pode cancelar.
 - Ninguém atende porta ou telefone sem ordem: quem toca vai embora e a
   ligação cai.
-- A barra do relógio ainda é a antiga, só com o quinto botão; a HUD nova vem
-  no bloco 2.
+
+## Limitações conhecidas do bloco 2 (plano 2)
+
+- Os menus de lista (convidar, festa, serviços, assuntos, centro) seguem como
+  cartão perto do clique; só o primeiro nível (objeto, pessoa, bagunça) é em
+  anel.
+- O botão Cidade abre o bairro e o táxi para o centro; o mapa da cidade vem
+  no bloco 12.
+- As sensações juntam estados que já existiam (necessidade baixa, inspirado,
+  luto, susto, cômodo, festa); efeitos de humor novos com prazo próprio
+  ficam para os blocos de atividades.
+- Arrastar na fila não põe uma ação no lugar da de agora: para isso, cancele
+  a atual.
 
 ## Limitações conhecidas do bloco 17
 

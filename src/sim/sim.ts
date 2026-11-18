@@ -664,6 +664,17 @@ export class Sim {
         else folk.queue.splice(idx, 1);
         return true;
       }
+      case 'moveQueued': {
+        const folk = this.findFolk(cmd.folkId);
+        if (!folk) return false;
+        const idx = folk.queue.findIndex((a) => a.id === cmd.actionId);
+        if (idx < 1) return false;
+        const to = Math.min(Math.max(1, Math.round(cmd.to)), folk.queue.length - 1);
+        if (to === idx) return true;
+        const [action] = folk.queue.splice(idx, 1);
+        folk.queue.splice(to, 0, action);
+        return true;
+      }
       case 'queueUse': {
         const folk = this.findFolk(cmd.folkId);
         const obj = this.findObject(cmd.objectId);

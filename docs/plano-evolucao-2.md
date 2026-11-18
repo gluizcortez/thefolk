@@ -156,6 +156,11 @@ ausência de autonomia (folk sem ordem não sai do lugar por 24 h de jogo).
 
 ## Bloco 2 — HUD nova (save v23)
 
+**Feito em 18/11/2026.** O save não subiu (continua v22): a aba aberta, o
+tamanho da letra e a tabela de atalhos ficam nas preferências do navegador,
+fora do `World`. A barra do relógio foi refeita junto (pendência do bloco 1),
+e o arrastar na fila entrou aqui.
+
 Uma interface com a organização que o gênero consagrou, mais limpa e mais
 gostosa de usar, mas com desenho nosso (continua o papel com sombra sólida e
 os medidores segmentados como identidade).

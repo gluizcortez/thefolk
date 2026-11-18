@@ -1863,6 +1863,8 @@ export type Command =
   | { type: 'dismissService'; service: 'maid' | 'gardener' }
   | { type: 'answerDoor'; folkId: number; otherId: number; welcome: boolean; append?: boolean }
   | { type: 'cancel'; folkId: number; actionId: number }
+  /** plano 2, bloco 2: arrastar na fila; `to` é a nova posição (1 em diante, a atual não sai do lugar) */
+  | { type: 'moveQueued'; folkId: number; actionId: number; to: number }
   | { type: 'setSpeed'; speed: Speed }
   | { type: 'buy'; defId: string; x: number; y: number; rot: Rotation; color?: string }
   | { type: 'undoBuy' }

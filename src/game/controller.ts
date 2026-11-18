@@ -23,7 +23,7 @@ import {
   writeSlot,
 } from '../platform/slots';
 import { Sim, createWorld, isBuildCommand } from '../sim';
-import type { Command, FamilyDraft, LifePace, FenceKind, Folk, OpeningKind, Rotation, Side, Speed, World } from '../sim';
+import type { Catalog, Command, LogEntry, FamilyDraft, LifePace, FenceKind, Folk, OpeningKind, Rotation, Side, Speed, World } from '../sim';
 import { MAX_LEVELS, levelOfRow } from '../sim';
 import { cleanName, familyProblem, foundTown, skipBlocker } from '../sim';
 
@@ -150,6 +150,38 @@ const NOTICES: [string, string][] = [
   ['log.restInPeaceAlone', 'heart'],
 ];
 
+/** Plano 2, bloco 2: para onde a câmera vai ao clicar num aviso. */
+export type FocusTarget = { folkId: number } | { x: number; y: number };
+
+/**
+ * Plano 2, bloco 2: onde aconteceu o que o aviso conta. Procura, nos
+ * parâmetros da linha do log, alguém que está no lote (pelo nome) ou um
+ * objeto (pelo nome do modelo, o quebrado primeiro); fogo vai até as chamas e
+ * contas até a caixa de correio. null = o aviso não tem lugar.
+ */
+export function noticeTarget(world: World, catalog: Catalog, entry: LogEntry): FocusTarget | null {
+  const values = Object.values(entry.params ?? {}).filter((v): v is string => typeof v === 'string');
+  if (entry.key.includes('Fire') || entry.key.includes('fire') || entry.key === 'log.smokeAlarm') {
+    const fire = world.fires?.[0];
+    if (fire) return { x: fire.x, y: fire.y };
+  }
+  for (const v of values) {
+    const obj =
+      world.objects.find((o) => catalog.objects[o.defId]?.name === v && o.state?.broken) ??
+      world.objects.find((o) => catalog.objects[o.defId]?.name === v);
+    if (obj) return { x: obj.x, y: obj.y };
+  }
+  for (const v of values) {
+    const folk = world.folks.find((f) => f.name === v && !f.away);
+    if (folk) return { folkId: folk.id };
+  }
+  if (entry.key.startsWith('log.bill')) {
+    const box = world.objects.find((o) => catalog.objects[o.defId]?.interactions.some((i) => i.special === 'payBills'));
+    if (box) return { x: box.x, y: box.y };
+  }
+  return null;
+}
+
 /** Ícone do cartão de aviso para esta linha do log (null = aviso passageiro). */
 export function noticeIcon(key: string): string | null {
   for (const [k, icon] of NOTICES) if (key === k || key.startsWith(`${k}.`) || (k === 'log.fired' && key === 'log.firedByBoss')) return icon;
@@ -195,7 +227,9 @@ export class GameController {
   /** bloco 16: última troca de lote feita pela própria simulação (o centro fechou) */
   private seenLot = 0;
   private toastListeners: ((text: string) => void)[] = [];
-  private noticeListeners: ((text: string, icon: string) => void)[] = [];
+  private noticeListeners: ((text: string, icon: string, target: FocusTarget | null) => void)[] = [];
+  /** plano 2, bloco 2: a câmera vai até aqui no próximo quadro (a cena consome) */
+  focusRequest: FocusTarget | null = null;
   private seenLog = 0;
   /** bloco 7: vaga de save em uso e o nome do jogo */
   slot: SlotId = SLOT_IDS[0];
@@ -446,7 +480,7 @@ export class GameController {
       if (entry.tick <= this.seenLog) continue;
       const text = t(entry.key, translateParams(entry.params));
       const icon = noticeIcon(entry.key);
-      if (icon) this.notice(text, icon);
+      if (icon) this.notice(text, icon, noticeTarget(this.world, this.sim.catalog, entry));
       else this.toast(text);
     }
     if (log.length > 0) this.seenLog = Math.max(this.seenLog, log[log.length - 1].tick);
@@ -471,12 +505,17 @@ export class GameController {
     for (const cb of this.toastListeners) cb(text);
   }
 
-  onNotice(cb: (text: string, icon: string) => void): void {
+  onNotice(cb: (text: string, icon: string, target: FocusTarget | null) => void): void {
     this.noticeListeners.push(cb);
   }
 
-  notice(text: string, icon: string): void {
-    for (const cb of this.noticeListeners) cb(text, icon);
+  notice(text: string, icon: string, target: FocusTarget | null = null): void {
+    for (const cb of this.noticeListeners) cb(text, icon, target);
+  }
+
+  /** Plano 2, bloco 2: leva a câmera até alguém ou até um tile (e o andar junto). */
+  focus(target: FocusTarget): void {
+    this.focusRequest = target;
   }
 
   private replaceWorld(world: World): void {

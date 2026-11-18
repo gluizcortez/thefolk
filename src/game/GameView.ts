@@ -551,6 +551,7 @@ export class GameView {
   // ---------- câmera ----------
 
   private updateCamera(dt: number): void {
+    this.consumeFocus(dt);
     const goal = Math.PI / 4 + this.ctrl.camQuarter * (Math.PI / 2);
     this.azimuth += (goal - this.azimuth) * (1 - Math.exp(-dt * 9));
     if (Math.abs(goal - this.azimuth) < 0.0005) this.azimuth = goal;
@@ -797,7 +798,39 @@ export class GameView {
     }
   }
 
+  /** Plano 2, bloco 2: a câmera desliza até o que a HUD pediu (retrato, aviso). */
+  private focusGoal: { x: number; z: number } | null = null;
+
+  private consumeFocus(dt: number): void {
+    const req = this.ctrl.focusRequest;
+    if (req) {
+      this.ctrl.focusRequest = null;
+      let x: number;
+      let y: number;
+      if ('folkId' in req) {
+        const f = this.ctrl.sim.findFolk(req.folkId);
+        if (!f || f.away) return;
+        x = f.x;
+        y = f.y;
+        this.ctrl.viewLevel = this.ctrl.levelOf(f);
+      } else {
+        x = req.x;
+        y = req.y;
+        this.ctrl.viewLevel = Math.max(0, levelOfRow(this.ctrl.world.grid, y));
+      }
+      const p = this.footAt(x, y);
+      this.focusGoal = { x: p.x, z: p.z };
+    }
+    const goal = this.focusGoal;
+    if (!goal) return;
+    const k = 1 - Math.exp(-dt * 7);
+    this.target.x += (goal.x - this.target.x) * k;
+    this.target.z += (goal.z - this.target.z) * k;
+    if (Math.abs(goal.x - this.target.x) + Math.abs(goal.z - this.target.z) < 0.02) this.focusGoal = null;
+  }
+
   private pan(dxPx: number, dyPx: number): void {
+    this.focusGoal = null;
     const el = this.renderer.domElement;
     const unit = this.viewHeight / Math.max(1, el.clientHeight);
     const rightX = Math.cos(this.azimuth);

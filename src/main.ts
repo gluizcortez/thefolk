@@ -51,6 +51,7 @@ async function boot(): Promise<void> {
   if (!hadSave) creator.show(false);
   if (import.meta.env.DEV) (window as unknown as { thefolkCreator: FamilyCreator }).thefolkCreator = creator;
   if (import.meta.env.DEV) (window as unknown as { thefolkView: GameView }).thefolkView = view;
+  if (import.meta.env.DEV) (window as unknown as { thefolkHud: Hud }).thefolkHud = hud;
 
   window.setInterval(() => void ctrl.save(true), AUTOSAVE_MS);
   document.addEventListener('visibilitychange', () => {
