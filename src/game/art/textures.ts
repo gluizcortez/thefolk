@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { FORMAL, HAIR, PAJAMA, PAL, PANTS, SHIRT, SKIN, SWIM, css, seeded, shade } from './palette';
-import { ICON_PATHS, STROKED } from '../../ui/icons';
+import { ICON_PATHS, STROKED, TOPIC_PATHS } from '../../ui/icons';
 import type { IconId } from '../../ui/icons';
 
 // Todas as texturas do jogo são pintadas aqui, por código, em canvases
@@ -1185,14 +1185,18 @@ function socialIcon(kind: string): Painter {
  * da tinta diz o tipo: recusa em vermelho com risco, aprovação em verde,
  * desejo cumprido em dourado, saudade em rosa.
  */
-function thoughtIcon(kind: string, icon: string): Painter {
+function thoughtIcon(kind: string, raw: string): Painter {
+  // bloco 9: balão de assunto: "stars+" (gostou), "stars-" (detestou), "stars" (quem fala)
+  const mark = kind === 'topic' && /[+-]$/.test(raw) ? raw.slice(-1) : '';
+  const topic = kind === 'topic' ? raw.replace(/[+-]$/, '') : '';
+  const icon = kind === 'topic' ? (mark === '+' ? 'yes' : mark === '-' ? 'no' : '') : raw;
   return (c, w, h) => {
     c.clearRect(0, 0, w, h);
     const r = 9;
     const top = 3;
     const bottom = h - 11;
     const paper =
-      kind === 'wish' ? 0xf6e3a4 : kind === 'refuse' ? 0xf4d6cc : kind === 'miss' ? 0xf3dbe0 : kind === 'chat' && icon === 'yes' ? 0xdcefd2 : 0xf4ead8;
+      kind === 'wish' ? 0xf6e3a4 : kind === 'refuse' ? 0xf4d6cc : kind === 'miss' ? 0xf3dbe0 : (kind === 'chat' || kind === 'topic') && icon === 'yes' ? 0xdcefd2 : kind === 'topic' && icon === 'no' ? 0xf4d6cc : 0xf4ead8;
     const ink =
       kind === 'refuse' || icon === 'no' ? 0xb23a2e : icon === 'yes' ? 0x2f7a3a : kind === 'wish' ? 0x8a5a12 : kind === 'miss' ? 0xb04a66 : kind === 'mess' ? 0x6e5326 : 0x2a2320;
     c.beginPath();
@@ -1211,6 +1215,40 @@ function thoughtIcon(kind: string, icon: string): Painter {
     c.lineWidth = 3;
     c.strokeStyle = css(0x2a2320);
     c.stroke();
+    if (kind === 'topic') {
+      // assunto no meio, com o sinal de gostou ou não no canto
+      const tint = mark === '+' ? 0x2f7a3a : mark === '-' ? 0xb23a2e : 0x3a4f8a;
+      const size = Math.min(w - 14, bottom - top - 8);
+      c.save();
+      c.translate((w - size) / 2, top + (bottom - top - size) / 2);
+      c.scale(size / 24, size / 24);
+      c.lineJoin = 'round';
+      c.lineCap = 'round';
+      c.lineWidth = 2.4;
+      c.strokeStyle = css(tint);
+      c.stroke(new Path2D(TOPIC_PATHS[topic] ?? ''));
+      c.restore();
+      if (mark) {
+        c.fillStyle = css(tint);
+        c.beginPath();
+        c.arc(w - 10, top + 8, 6, 0, Math.PI * 2);
+        c.fill();
+        c.strokeStyle = css(0xffffff);
+        c.lineWidth = 2;
+        c.beginPath();
+        if (mark === '+') {
+          c.moveTo(w - 13, top + 8);
+          c.lineTo(w - 7, top + 8);
+          c.moveTo(w - 10, top + 5);
+          c.lineTo(w - 10, top + 11);
+        } else {
+          c.moveTo(w - 13, top + 8);
+          c.lineTo(w - 7, top + 8);
+        }
+        c.stroke();
+      }
+      return;
+    }
     const d = ICON_PATHS[icon as IconId];
     if (!d) return;
     const size = Math.min(w - 16, bottom - top - 10);

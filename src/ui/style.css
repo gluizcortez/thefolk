@@ -2224,3 +2224,41 @@ button {
   background: var(--paper);
   opacity: 0.75;
 }
+
+/* ---------- bloco 9: festa, telefone e assuntos ---------- */
+.party-pill {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 6px;
+  white-space: nowrap;
+  padding: 3px 8px;
+  border: 2px solid #2a2320;
+  border-radius: 6px;
+  background: #f6e3a4;
+  color: #2a2320;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 #2a2320;
+}
+.party-pill[hidden] { display: none; }
+.party-pill.ringing { background: #dcefd2; animation: ring-shake 0.6s infinite; }
+@keyframes ring-shake {
+  0%, 100% { transform: translateX(-50%); }
+  25% { transform: translateX(calc(-50% - 2px)); }
+  75% { transform: translateX(calc(-50% + 2px)); }
+}
+.menu-item.ringing { background: #dcefd2; font-weight: 700; }
+.party-list { max-height: 260px; overflow-y: auto; }
+.party-row { cursor: pointer; }
+.party-row input { margin: 0 4px 0 0; }
+.party-go { width: 100%; margin-top: 6px; }
+.react-love { color: #2f7a3a; font-weight: 700; }
+.react-like { color: #4f8a3a; }
+.react-hate { color: #b23a2e; font-weight: 700; }
+.topics-note { font-style: italic; }
+.clique-rivals { color: #b23a2e; font-weight: 700; }
+.party-hint { white-space: normal; max-width: 380px; }

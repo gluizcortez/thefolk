@@ -182,7 +182,7 @@ describe('campainha', () => {
     const guest = guestAtDoor(sim);
     expect(sim.dispatch({ type: 'answerDoor', folkId: host.id, otherId: guest.id, welcome: true })).toBe(true);
     expect(runUntil(sim, () => guest.visit!.admitted, 120)).toBe(true);
-    expect(hasLog(sim, 'log.welcomed')).toBe(true);
+    expect(sim.world.log.some((e) => e.key.startsWith('log.welcomed'))).toBe(true);
 
     const sim2 = house(8);
     goTo(sim2, 1, 14);

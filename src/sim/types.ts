@@ -53,7 +53,9 @@ export interface InteractionDef {
    * 'services' = liga para um serviço (`serviceId` da ação); 'payBills' =
    * paga as contas da caixa de correio; 'fair' = compra na feira da rua.
    */
-  special?: 'invite' | 'services' | 'payBills' | 'fair';
+  special?: 'invite' | 'services' | 'payBills' | 'fair' | 'call' | 'answer' | 'party' | 'buffet';
+  /** bloco 9: petisco da mesa de festa (só com petisco na mesa) */
+  snacks?: 'eat';
   /** bloco 2: porções que tira da despensa ao começar (sem estoque, não dá) */
   portions?: number;
   /** bloco 2: come da comida pronta que chegou pela entrega */
@@ -136,7 +138,7 @@ export interface MonthDef {
  * sujeira; 'miss' = saudade de alguém (`other`); 'chat' = o que acha da
  * conversa; 'wish' = cumpriu um desejo; 'alarm' = o despertador tocou.
  */
-export type ThoughtKind = 'want' | 'refuse' | 'mess' | 'miss' | 'chat' | 'wish' | 'alarm';
+export type ThoughtKind = 'want' | 'refuse' | 'mess' | 'miss' | 'chat' | 'wish' | 'alarm' | 'topic';
 
 export interface Thought {
   kind: ThoughtKind;
@@ -579,6 +581,8 @@ export interface SocialDef {
   /** a IA pode escolher sozinha (padrão: true) */
   autonomous?: boolean;
   special?: 'date' | 'moveIn' | 'sendHome' | 'breakUp' | 'gossip';
+  /** bloco 9: a conversa tem assunto (quem ouve reage ao gosto dele) */
+  topic?: boolean;
   skill?: { id: string; xpPerMinute: number };
   /** animação de quem puxa e de quem ouve */
   anim: SocialAnim;
@@ -624,6 +628,8 @@ export interface Neighbor {
   boss?: boolean;
   /** bloco 8: perdeu o emprego e procura outro */
   wasFired?: boolean;
+  /** bloco 9: gosto por assunto (-5 a 5); veja sim/topics.ts */
+  interests?: Record<string, number>;
 }
 
 export interface Visit {
@@ -639,6 +645,8 @@ export interface Visit {
   rang: number;
   /** veio trabalhar na casa */
   service: ServiceVisit | null;
+  /** bloco 9: convidado da festa (fica até a festa acabar) */
+  party?: boolean;
 }
 
 // ---------- Bloco 2: despensa, correio e serviços ----------
@@ -697,6 +705,8 @@ export interface PendingVisit {
   neighborId: number;
   at: number;
   hostId: number;
+  /** bloco 9: vem para a festa */
+  party?: boolean;
 }
 
 export interface NeedDef {
@@ -762,6 +772,8 @@ export interface Catalog {
   months: MonthDef[];
   /** bloco 6 */
   wishes: Record<string, WishDef>;
+  /** bloco 9 */
+  topics: Record<string, TopicDef>;
 }
 
 // ---------- Estado ----------
@@ -815,6 +827,8 @@ export interface WorldObject {
   beloved?: number;
   /** bloco 7: estação tocando no som (sem isso, desligado) */
   tune?: string;
+  /** bloco 9: petiscos na mesa de festa */
+  snacks?: number;
 }
 
 export interface ObjectState {
@@ -849,7 +863,7 @@ export type ActionPhase = 'queued' | 'walking' | 'using';
  * 'social' = puxar conversa com `otherId`; 'listen' = dar atenção a quem puxou;
  * 'leave' = visita indo embora.
  */
-export type ActionKind = 'use' | 'goto' | 'work' | 'social' | 'listen' | 'leave' | 'tidy' | 'door';
+export type ActionKind = 'use' | 'goto' | 'work' | 'social' | 'listen' | 'leave' | 'tidy' | 'door' | 'circle';
 
 export interface Action {
   id: number;
@@ -877,6 +891,12 @@ export interface Action {
   lightChecked?: boolean;
   /** bloco 4: comida já servida, levada para comer neste lugar à mesa */
   eatAt?: number;
+  /** bloco 9: roda de conversa de que participa (circle) */
+  circleId?: number;
+  /** bloco 9: assunto escolhido (papo e telefone) */
+  topic?: string;
+  /** bloco 9: convidados chamados para a festa (use com 'party') */
+  guests?: number[];
   phase: ActionPhase;
   elapsed: number;
 }
@@ -931,6 +951,10 @@ export interface Folk {
   business: Business | null;
   /** null = mora na casa; senão é uma visita */
   visit: Visit | null;
+  /** bloco 9: gosto por assunto (-5 a 5); veja sim/topics.ts */
+  interests?: Record<string, number>;
+  /** bloco 9: minutos parado esperando alguém sair da frente */
+  blocked?: number;
 }
 
 /** Aparência: índices nas paletas da arte. */
@@ -1102,6 +1126,90 @@ export interface World {
   gigBoard: GigOffer[];
   /** bloco 1: pratos sujos, poças e lixo pela casa */
   mess: Mess[];
+  /** bloco 9: rodas de conversa em andamento */
+  circles: Circle[];
+  /** bloco 9: festa marcada ou acontecendo */
+  party: Party | null;
+  /** bloco 9: como foi a última festa */
+  lastParty: PartyResult | null;
+  /** bloco 9: telefone tocando (ou em ligação recebida) */
+  call: PhoneCall | null;
+}
+
+// ---------- Bloco 9: assuntos, rodas, telefone e festas ----------
+
+/** Um assunto de conversa. */
+export interface TopicDef {
+  id: string;
+  /** chave de texto */
+  name: string;
+  /** quanto cada eixo do temperamento puxa o gosto (por ponto acima de 5) */
+  axes: Partial<Record<TemperAxis, number>>;
+  /** traços que gostam (+) ou não suportam (-) */
+  traits?: Record<string, number>;
+  /** habilidade que faz gostar do assunto */
+  skill?: string;
+}
+
+/** Roda de conversa: até 4 pessoas em volta de um tile vazio, falando por turnos. */
+export interface Circle {
+  id: number;
+  /** tile do meio (fica vazio) */
+  center: Vec;
+  /** quem está na roda e em que lado do meio fica (0 N, 1 E, 2 S, 3 W) */
+  members: { id: number; spot: number }[];
+  /** quem está com a palavra (0 = ninguém chegou ainda) */
+  speaker: number;
+  topic: string;
+  /** tick em que a vez passa */
+  turnEnds: number;
+  /** tick em que a roda se desfaz */
+  until: number;
+  started: number;
+}
+
+/** Festa: convidados chamados por telefone, nota pela animação deles. */
+export interface Party {
+  host: number;
+  /** tick em que começa (os convidados chegam por volta disso) */
+  start: number;
+  /** tick em que acaba */
+  end: number;
+  /** quem confirmou */
+  guests: number[];
+  /** soma das médias de animação medidas */
+  score: number;
+  samples: number;
+  /** brigas de rivais durante a festa */
+  brawls: number;
+  /** reclamações de barulho */
+  complaints: number;
+  /** a mesa de petiscos foi montada */
+  buffet: boolean;
+}
+
+export interface PartyResult {
+  tick: number;
+  host: number;
+  guests: number;
+  /** animação média (0 a 100), já com descontos */
+  score: number;
+  /** estrelas, de 1 a 5 */
+  grade: number;
+  brawls: number;
+  complaints: number;
+}
+
+/** Ligação recebida. */
+export interface PhoneCall {
+  /** vizinho que ligou */
+  from: number;
+  /** tick em que começou a tocar */
+  rang: number;
+  /** por que ligou: papo, fofoca ou chamar para uma visita */
+  reason: 'chat' | 'gossip' | 'visit';
+  /** quem atendeu (0 = ninguém ainda) */
+  answeredBy: number;
 }
 
 // ---------- Comandos (única porta de entrada do jogador) ----------
@@ -1121,7 +1229,7 @@ export type Command =
   | { type: 'closeBuy' }
   | { type: 'sell'; objectId: number }
   | { type: 'move'; objectId: number; x: number; y: number; rot: Rotation }
-  | { type: 'queueSocial'; folkId: number; otherId: number; socialId: string }
+  | { type: 'queueSocial'; folkId: number; otherId: number; socialId: string; topic?: string }
   | { type: 'invite'; folkId: number; neighborId: number }
   | { type: 'takeJob'; folkId: number; careerId: string }
   | { type: 'quitJob'; folkId: number }
@@ -1134,6 +1242,12 @@ export type Command =
   // bloco 6
   | { type: 'inspire'; folkId: number }
   | { type: 'setAlarm'; folkId: number; on: boolean }
+  // bloco 9
+  | { type: 'startCircle'; folkId: number; otherIds: number[] }
+  | { type: 'joinCircle'; folkId: number; circleId: number }
+  | { type: 'phoneFriend'; folkId: number; neighborId: number }
+  | { type: 'throwParty'; folkId: number; guestIds: number[] }
+  | { type: 'answerPhone'; folkId: number }
   // modo construção: linhas de paredes vão de vértice a vértice do grid
   | { type: 'buildWalls'; x0: number; y0: number; x1: number; y1: number }
   | { type: 'eraseWalls'; x0: number; y0: number; x1: number; y1: number }

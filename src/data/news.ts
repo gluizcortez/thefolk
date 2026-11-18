@@ -20,6 +20,10 @@ const list: NewsDef[] = [
   // bloco 2: a faxineira conta por aí como estava a casa
   { id: 'repossessed', label: 'news.repossessed', reputation: -2, opinion: { respect: -2 }, juicy: 0.7, days: 5 },
   { id: 'messyHouse', label: 'news.messyHouse', reputation: -1, opinion: { respect: -1 }, juicy: 0.55, days: 4 },
+  // bloco 9: festas
+  { id: 'greatParty', label: 'news.greatParty', reputation: 3, opinion: { friendship: 2 }, juicy: 0.6, days: 6 },
+  { id: 'flopParty', label: 'news.flopParty', reputation: -2, opinion: { respect: -1 }, juicy: 0.75, days: 5 },
+  { id: 'partyBrawl', label: 'news.partyBrawl', reputation: -3, opinion: { friendship: -2, respect: -1 }, juicy: 0.9, days: 6 },
 ];
 
 export const NEWS: Record<string, NewsDef> = Object.fromEntries(list.map((n) => [n.id, n]));

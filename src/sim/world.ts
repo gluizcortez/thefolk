@@ -260,6 +260,10 @@ export function createWorld(seed: WorldSeed): World {
     reputation: {},
     gigBoard: [],
     mess: [],
+    circles: [],
+    party: null,
+    lastParty: null,
+    call: null,
   };
   seedRelations(world, seed.relations ?? []);
   seedWorkplaceTies(world);

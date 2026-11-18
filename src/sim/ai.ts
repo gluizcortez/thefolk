@@ -197,7 +197,8 @@ export function scoreOptions(world: World, catalog: Catalog, folk: Folk, nav: Na
     const auto = def.interactions.filter(
       (it) =>
         it.autonomous !== false &&
-        !it.special &&
+        // bloco 9: ligar para um amigo é especial, mas qualquer um faz sozinho
+        (!it.special || it.special === 'call') &&
         !it.care &&
         !it.hidden &&
         canUse(world, obj, it) &&

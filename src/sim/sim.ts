@@ -20,15 +20,47 @@ import {
   shiftScore,
 } from './career';
 import {
+  addReputation,
   breakUp,
   chatGossip,
   createNews,
   dailyHearts,
   grudge,
+  learnNews,
   onLotWitnesses,
+  pickGossip,
+  reputationOf,
   romanticAct,
   spreadNews,
 } from './gossip';
+import {
+  CIRCLE_EFFECTS,
+  CIRCLE_EXTRA,
+  CIRCLE_GRACE,
+  CIRCLE_MAX,
+  CIRCLE_MINUTES,
+  CIRCLE_REACH,
+  CIRCLE_TURN,
+  circleById,
+  circleOfFolk,
+  faceCenter,
+  findCircleCenter,
+  freeSpot,
+  inCircle,
+  spotTile,
+} from './circles';
+import type { Reaction } from './topics';
+import {
+  REACTION_ACCEPT,
+  REACTION_FRIENDSHIP,
+  REACTION_FUN,
+  catchTopic,
+  ensureAllInterests,
+  ensureInterests,
+  pickTopic,
+  reactionTo,
+} from './topics';
+import { partyFriction } from './cliques';
 import {
   BOARD_HOUR,
   BUSINESS_CLOSE_HOUR,
@@ -92,6 +124,7 @@ import { acceptChance, adjacent, onLot, socialAllowed, talkTiles, talkingWith } 
 import type {
   Action,
   Catalog,
+  Circle,
   Command,
   Folk,
   InteractionDef,
@@ -100,6 +133,7 @@ import type {
   ObjectDef,
   RelDelta,
   SocialDef,
+  Vec,
   World,
   WorldObject,
 } from './types';
@@ -202,7 +236,11 @@ export type CommandProblem =
   | 'undoBuyBlocked'
   | 'refused'
   | 'noSpark'
-  | 'locked';
+  | 'locked'
+  | 'noRoom'
+  | 'partyOn'
+  | 'noGuests'
+  | 'noCall';
 
 /** Resultado de uma conversa, para a tela mostrar o que mudou (não vai no save). */
 export interface SocialOutcome {
@@ -221,6 +259,27 @@ export const MAX_RESIDENTS = 8;
 /** Gente no lote ao mesmo tempo, moradores e visitas. */
 export const MAX_ON_LOT = 8;
 export const MAX_VISITORS = 3;
+/** bloco 9: numa festa cabe mais gente no lote */
+export const MAX_ON_LOT_PARTY = 16;
+export const PARTY_MAX_GUESTS = 8;
+/** quanto dura uma festa */
+export const PARTY_MINUTES = 4 * 60;
+/** minutos entre ligar para todo mundo e a festa começar */
+export const PARTY_LEAD = 45;
+/** de quanto em quanto tempo a animação dos convidados é medida */
+export const PARTY_SAMPLE = 30;
+/** ninguém atende? convidado de festa entra sozinho depois disso */
+export const PARTY_WALK_IN = 6;
+/** hora a partir da qual música alta incomoda a vizinhança */
+export const QUIET_HOUR = 22;
+/** reclamações de barulho que acabam com a festa */
+export const COMPLAINTS_TO_END = 2;
+/** porções da mesa de petiscos */
+export const BUFFET_PORTIONS = 16;
+/** telefone: chance a cada meia hora (9h às 21h) de algum amigo ligar */
+export const CALL_CHANCE = 0.05;
+/** minutos tocando antes de quem liga desistir */
+export const RING_MINUTES = 12;
 /** Visitas sem aviso: entre estas horas, no máximo uma a cada DROPIN_GAP minutos. */
 export const DROPIN_FROM = 9;
 export const DROPIN_TO = 19;
@@ -266,7 +325,7 @@ const COLLAPSE_ENERGY_PER_MINUTE = 0.3;
 
 type ActionSeed = Pick<
   Action,
-  'kind' | 'objectId' | 'interactionId' | 'target' | 'otherId' | 'socialId' | 'messId' | 'serviceId' | 'welcome'
+  'kind' | 'objectId' | 'interactionId' | 'target' | 'otherId' | 'socialId' | 'messId' | 'serviceId' | 'welcome' | 'circleId' | 'topic' | 'guests'
 >;
 
 /** minutos de conversa na porta antes de decidir */
@@ -310,12 +369,24 @@ export class Sim {
   constructor(catalog: Catalog, world: World) {
     this.catalog = catalog;
     this.world = world;
+    this.prepare();
     this.nav = buildNav(world, catalog);
+  }
+
+  /** Bloco 9: campos novos em mundos montados à mão e gostos de todo mundo. */
+  private prepare(): void {
+    const w = this.world;
+    w.circles ??= [];
+    w.party ??= null;
+    w.lastParty ??= null;
+    w.call ??= null;
+    ensureAllInterests(w, this.catalog);
   }
 
   /** Troca o mundo inteiro (ex.: ao carregar um save). */
   load(world: World): void {
     this.world = world;
+    this.prepare();
     this.undoStack = [];
     this.buyStack = [];
     this.invalidateNav();
@@ -393,7 +464,7 @@ export class Sim {
         const def = obj && this.defOf(obj);
         const it = def?.interactions.find((i) => i.id === cmd.interactionId);
         // convites e serviços passam pelos comandos 'invite' e 'callService'
-        if (!folk || !obj || !def || !it || it.special === 'invite' || it.special === 'services' || it.hidden) return false;
+        if (!folk || !obj || !def || !it || it.special === 'invite' || it.special === 'services' || it.special === 'party' || it.hidden) return false;
         if (folk.visit && (it.residentOnly || (it.cost ?? 0) > 0 || it.care)) return this.fail('visitor');
         if (!interactionOpen(obj, it)) return this.fail(it.care || it.light ? 'nothingToDo' : 'broken');
         if (!interactionReady(this.world, it)) {
@@ -447,10 +518,60 @@ export class Sim {
         if (other.visit && !other.visit.admitted) return this.fail('atDoor');
         if (!onLot(other) || !socialAllowed(this.world, this.catalog, def, folk, other)) return this.fail('socialNotNow');
         if (def.special === 'moveIn' && this.residents().length >= MAX_RESIDENTS) return this.fail('houseFull');
-        return this.enqueuePlayer(folk, { kind: 'social', otherId: other.id, socialId: def.id });
+        // bloco 9: "puxar assunto" escolhe o assunto do papo
+        const topic = def.topic && cmd.topic && this.catalog.topics[cmd.topic] ? cmd.topic : undefined;
+        return this.enqueuePlayer(folk, { kind: 'social', otherId: other.id, socialId: def.id, topic });
       }
       case 'invite':
         return this.invite(cmd.folkId, cmd.neighborId);
+      case 'startCircle':
+        return this.startCircle(cmd.folkId, cmd.otherIds, 'player');
+      case 'joinCircle': {
+        const folk = this.findFolk(cmd.folkId);
+        const c = circleById(this.world, cmd.circleId);
+        if (!folk || !c) return false;
+        if (c.members.some((m) => m.id === folk.id)) return this.fail('already');
+        const spot = freeSpot(this.world, this.nav, c, folk.id, this.catalog);
+        if (spot < 0) return this.fail('noRoom');
+        const old = circleOfFolk(this.world, folk.id);
+        if (!this.enqueuePlayer(folk, { kind: 'circle', circleId: c.id })) return false;
+        if (old) this.dropFromCircle(folk, old, true);
+        c.members.push({ id: folk.id, spot });
+        return true;
+      }
+      case 'phoneFriend': {
+        const folk = this.findFolk(cmd.folkId);
+        const n = this.world.neighbors.find((x) => x.id === cmd.neighborId);
+        if (!folk || !n) return false;
+        if (!relationOf(this.world, folk.id, n.id)) return this.fail('invalid');
+        if (this.findFolk(n.id)) return this.fail('alreadyComing');
+        const best = this.nearestSpecial(folk, 'call');
+        if (!best) return this.fail('noPhone');
+        return this.enqueuePlayer(folk, { kind: 'use', objectId: best.obj.id, interactionId: best.it.id, otherId: n.id });
+      }
+      case 'throwParty': {
+        const folk = this.findFolk(cmd.folkId);
+        if (!folk) return false;
+        if (folk.visit) return this.fail('visitor');
+        if (this.world.party) return this.fail('partyOn');
+        const guests = [...new Set(cmd.guestIds)].filter((id) => {
+          const n = this.world.neighbors.find((x) => x.id === id);
+          return n && !isServiceNeighbor(n);
+        });
+        if (guests.length === 0) return this.fail('noGuests');
+        if (guests.length > PARTY_MAX_GUESTS) return this.fail('invalid');
+        const best = this.nearestSpecial(folk, 'party');
+        if (!best) return this.fail('noPhone');
+        return this.enqueuePlayer(folk, { kind: 'use', objectId: best.obj.id, interactionId: best.it.id, guests });
+      }
+      case 'answerPhone': {
+        const folk = this.findFolk(cmd.folkId);
+        if (!folk) return false;
+        if (!this.world.call || this.world.call.answeredBy) return this.fail('noCall');
+        const best = this.nearestSpecial(folk, 'answer');
+        if (!best) return this.fail('noPhone');
+        return this.enqueuePlayer(folk, { kind: 'use', objectId: best.obj.id, interactionId: best.it.id });
+      }
       case 'buy':
         return this.buy(cmd.defId, cmd.x, cmd.y, cmd.rot, cmd.color);
       case 'undoBuy':
@@ -785,6 +906,9 @@ export class Sim {
     }
     const minute = world.tick % MINUTES_PER_DAY;
     this.stepServices(minute);
+    // bloco 9: telefone tocando e festa
+    this.stepPhone();
+    this.stepParty();
     if (minute === COOL_HOUR * 60) {
       coolRelations(world);
       // fofoca anda pela vizinhança; namoros apagados terminam
@@ -802,6 +926,7 @@ export class Sim {
       if (folk.business && minute === BUSINESS_CLOSE_HOUR * 60) settleBusiness(world, this.catalog, this.logger, folk);
       this.stepFolk(folk);
     }
+    this.stepCircles();
     for (const id of this.departed) this.removeVisitor(id);
     this.departed = [];
     if (world.log.length > MAX_LOG) world.log.splice(0, world.log.length - MAX_LOG);
@@ -936,6 +1061,10 @@ export class Sim {
     if (it.special === 'services' && action.serviceId) placeOrder(this.world, this.logger, folk, action.serviceId);
     else if (it.special === 'payBills') payBills(this.world, this.logger, folk);
     else if (it.special === 'fair') buyAtFair(this.world, this.catalog, this.logger, folk);
+    else if (it.special === 'call' && action.otherId !== undefined) this.resolveCall(folk, action.otherId);
+    else if (it.special === 'answer') this.resolveAnswer(folk);
+    else if (it.special === 'party' && action.guests) this.resolveParty(folk, action.guests);
+    else if (it.special === 'buffet') this.setBuffet(folk, action);
   }
 
   // ---------- trabalho ----------
@@ -1177,7 +1306,31 @@ export class Sim {
     }
 
     this.processAction(folk);
+    // bloco 9: parado à toa no mesmo tile de outra pessoa? dá um passo para o lado
+    if (folk.queue.length === 0) this.spreadOut(folk);
     if (folk.x !== folk.px || folk.y !== folk.py) this.leftRoom(folk);
+  }
+
+  /** Bloco 9: quem está à toa em cima de outra pessoa sai para um tile livre do lado. */
+  private spreadOut(folk: Folk): void {
+    const world = this.world;
+    const crowded = world.folks.some((f) => f !== folk && !f.away && f.x === folk.x && f.y === folk.y);
+    if (!crowded || (folk.x === world.exit.x && folk.y === world.exit.y)) return;
+    for (const d of [
+      { x: 0, y: 1 },
+      { x: 1, y: 0 },
+      { x: 0, y: -1 },
+      { x: -1, y: 0 },
+    ]) {
+      const x = folk.x + d.x;
+      const y = folk.y + d.y;
+      if (!this.nav.canStep(folk.x, folk.y, x, y)) continue;
+      if (world.folks.some((f) => f !== folk && !f.away && f.x === x && f.y === y)) continue;
+      folk.facing = d;
+      folk.x = x;
+      folk.y = y;
+      return;
+    }
   }
 
   // ---------- bloco 6: vontade, desejos e despertador ----------
@@ -1309,6 +1462,9 @@ export class Sim {
   private pickAutonomous(folk: Folk): void {
     folk.idleTicks = 0;
     if (this.answerIfRinging(folk)) return;
+    // bloco 9: atender o telefone e entrar (ou puxar) uma roda de conversa
+    if (this.answerPhoneIfRinging(folk)) return;
+    if (this.circleWish(folk)) return;
     const choice = chooseAutonomous(this.world, this.catalog, folk, this.nav);
     if (!choice) return;
     if (choice.socialId !== undefined) {
@@ -1335,7 +1491,7 @@ export class Sim {
   }
 
   /** Anda um tile pelo caminho. 'moved' = andou; 'blocked' = o mundo mudou; 'arrived' = sem caminho a andar. */
-  private stepAlong(folk: Folk, action: Action): 'moved' | 'blocked' | 'arrived' {
+  private stepAlong(folk: Folk, action: Action): 'moved' | 'blocked' | 'arrived' | 'waiting' {
     const next = folk.path[0];
     if (!next) return 'arrived';
     if (!this.nav.canStep(folk.x, folk.y, next.x, next.y)) {
@@ -1343,6 +1499,9 @@ export class Sim {
       folk.path = [];
       return 'blocked';
     }
+    // bloco 9: alguém parado na frente? espera, depois contorna; sem jeito, passa
+    if (this.giveWay(folk, next)) return 'waiting';
+    folk.blocked = 0;
     folk.path.shift();
     folk.facing = { x: next.x - folk.x, y: next.y - folk.y };
     folk.x = next.x;
@@ -1369,6 +1528,10 @@ export class Sim {
       this.processDoor(folk, action);
       return;
     }
+    if (action.kind === 'circle') {
+      this.processCircle(folk, action);
+      return;
+    }
 
     if (action.phase === 'queued') {
       const path = this.planPath(folk, action);
@@ -1387,7 +1550,7 @@ export class Sim {
 
     if (action.phase === 'walking') {
       const moved = this.stepAlong(folk, action);
-      if (moved === 'blocked') return;
+      if (moved === 'blocked' || moved === 'waiting') return;
       if (moved === 'moved') {
         if (folk.path.length > 0) return;
         if (action.kind === 'goto') this.finish(folk);
@@ -1440,7 +1603,7 @@ export class Sim {
       const it = this.interactionOf(action);
       if (obj && odef && it && !interactionOpen(obj, it)) {
         // quebrou (ou já limparam) enquanto vinha
-        if (!it.care) this.log('log.foundBroken', { name: folk.name, object: odef.name });
+        if (!it.care && !it.snacks) this.log('log.foundBroken', { name: folk.name, object: odef.name });
         this.finish(folk);
         return;
       }
@@ -1474,6 +1637,19 @@ export class Sim {
         this.world.household.funds -= cost;
       }
       if (it) consumeFor(this.world, it);
+      // bloco 9: petisco sai da mesa; atender e ligar já sabem com quem falam
+      if (obj && it?.snacks === 'eat') obj.snacks = Math.max(0, (obj.snacks ?? 0) - 1);
+      if (it?.special === 'answer') {
+        const call = this.world.call;
+        if (!call || (call.answeredBy && call.answeredBy !== folk.id)) {
+          this.log('log.callGone', { name: folk.name });
+          this.finish(folk);
+          return;
+        }
+        call.answeredBy = folk.id;
+        action.otherId = call.from;
+      }
+      if (it?.special === 'call' && action.otherId === undefined) action.otherId = this.callTarget(folk);
       if (it?.atTable) {
         // bloco 4: com o prato pronto, procura um lugar à mesa
         const spot = findSeat(this.world, this.catalog, this.nav, folk);
@@ -1800,6 +1976,10 @@ export class Sim {
     const mood = moodOf(this.catalog, folk.needs);
     applyEffects(folk, { effects: def.effects } as InteractionDef);
     applyEffects(other, { effects: def.targetEffects ?? def.effects } as InteractionDef);
+    // bloco 9: assunto bom diverte quem ouve; assunto chato cansa
+    if (action.topic && action.accepted) {
+      other.needs.fun = clampNeed(other.needs.fun + REACTION_FUN[reactionTo(this.catalog, other, action.topic)]);
+    }
     // bloco 5: conversar vira hábito (Expansão); ser gentil ou maldoso mexe no Afeto
     countHabit(folk, 'outgoing', 1);
     if (def.category === 'friendly' || def.category === 'romantic') countHabit(folk, 'warmth', 1);
@@ -1869,10 +2049,21 @@ export class Sim {
 
   private beginSocial(folk: Folk, other: Folk, action: Action, def: SocialDef): void {
     ensureRelation(this.world, folk.id, other.id);
-    const p = acceptChance(this.world, this.catalog, folk, other, def);
+    let p = acceptChance(this.world, this.catalog, folk, other, def);
+    // bloco 9: o papo tem assunto; quem ouve topa mais o que gosta
+    let reaction: Reaction | null = null;
+    if (def.topic) {
+      action.topic ??= pickTopic(this.world, this.catalog, folk, [other]);
+      reaction = reactionTo(this.catalog, other, action.topic);
+      p = Math.max(0.03, Math.min(0.97, p + REACTION_ACCEPT[reaction]));
+    }
     action.accepted = nextFloat(this.world) < p;
     // bloco 6: quem ouve mostra no balão se está gostando da conversa
-    setThought(other, 'chat', action.accepted ? 'yes' : 'no', this.world.tick, action.accepted ? def.duration : REJECT_MINUTES, folk.id);
+    const minutes = action.accepted ? def.duration : REJECT_MINUTES;
+    if (action.topic && reaction) {
+      setThought(folk, 'topic', action.topic, this.world.tick, minutes, other.id);
+      setThought(other, 'topic', `${action.topic}${topicMark(action.accepted ? reaction : 'hate')}`, this.world.tick, minutes, folk.id);
+    } else setThought(other, 'chat', action.accepted ? 'yes' : 'no', this.world.tick, minutes, folk.id);
     action.phase = 'using';
     action.elapsed = 0;
     folk.path = [];
@@ -1884,6 +2075,11 @@ export class Sim {
     const world = this.world;
     const ok = action.accepted === true;
     const bonus: RelDelta = {};
+    if (ok && action.topic) {
+      const r = reactionTo(this.catalog, other, action.topic);
+      bonus.friendship = REACTION_FRIENDSHIP[r];
+      catchTopic(this.catalog, other, folk, action.topic, relationOf(world, other.id, folk.id)?.friendship ?? 0);
+    }
     if (ok && def.respectFromCharisma) {
       const same = this.careerIdOf(folk) !== null && this.careerIdOf(folk) === this.careerIdOf(other);
       bonus.respect = skillLevel(folk, 'charisma') / 2 + (same ? 2 : 0);
@@ -1902,7 +2098,7 @@ export class Sim {
     if (!folk.visit) wishOnTalk(world, this.catalog, this.logger, folk, other.id, def, ok);
     if (!other.visit) wishOnTalk(world, this.catalog, this.logger, other, folk.id, def, ok);
     // quem puxou também diz o que achou
-    setThought(folk, 'chat', ok ? 'yes' : 'no', world.tick, 4, other.id);
+    if (!action.topic) setThought(folk, 'chat', ok ? 'yes' : 'no', world.tick, 4, other.id);
     this.socialRipples(folk, other, def, ok, mem?.self);
     this.outcomes.push({ fromId: folk.id, toId: other.id, socialId: def.id, accepted: ok, toTarget, toSelf });
     if (this.outcomes.length > 50) this.outcomes.shift();
@@ -2006,6 +2202,12 @@ export class Sim {
       return;
     }
     const waited = this.world.tick - v.rang;
+    // bloco 9: em dia de festa a porta fica aberta
+    if (v.party && waited >= PARTY_WALK_IN && this.residents().some((r) => !r.away)) {
+      v.admitted = true;
+      this.log('log.partyWalkIn', { name: folk.name });
+      return;
+    }
     const coming = doorTaken(this.world, folk.id);
     if (waited > ringWait(folk) + (coming ? 30 : 0)) this.noAnswer(folk);
   }
@@ -2117,9 +2319,13 @@ export class Sim {
       this.log('log.letIn', names);
       return;
     }
-    applyDelta(this.world, this.catalog, guest, host, { friendship: 2 });
-    applyDelta(this.world, this.catalog, host, guest, { friendship: 1 });
-    this.log('log.welcomed', names);
+    // bloco 9: o jeito de receber na porta depende de quanto se gostam
+    const rel = relationOf(this.world, host.id, guest.id);
+    const greet = (rel?.romance ?? 0) >= 40 ? 'kiss' : (rel?.friendship ?? 0) >= 50 ? 'hug' : (rel?.friendship ?? 0) >= 15 ? 'handshake' : 'nod';
+    const warm = greet === 'kiss' || greet === 'hug' ? 2 : 0;
+    applyDelta(this.world, this.catalog, guest, host, { friendship: 2 + warm });
+    applyDelta(this.world, this.catalog, host, guest, { friendship: 1 + warm / 2 });
+    this.log(`log.welcomed.${greet}`, names);
   }
 
   /** O entregador entrega: mercado vai para a despensa, comida pronta é paga na hora. */
@@ -2268,9 +2474,12 @@ export class Sim {
       world.pendingVisits = world.pendingVisits.filter((v) => v.at > world.tick);
       for (const v of due) {
         const n = world.neighbors.find((x) => x.id === v.neighborId);
-        if (!n || this.findFolk(n.id) || world.folks.length >= MAX_ON_LOT) continue;
-        this.spawnVisitor(n, world.tick + INVITED_STAY, v.hostId);
-        this.log('log.arrived', { name: n.name });
+        const party = v.party && world.party ? world.party : null;
+        if (!n || this.findFolk(n.id) || world.folks.length >= (party ? MAX_ON_LOT_PARTY : MAX_ON_LOT)) continue;
+        this.spawnVisitor(n, party ? party.end : world.tick + INVITED_STAY, v.hostId);
+        const guest = this.findFolk(n.id);
+        if (party && guest?.visit) guest.visit.party = true;
+        this.log(party ? 'log.partyArrived' : 'log.arrived', { name: n.name });
       }
     }
 
@@ -2311,6 +2520,11 @@ export class Sim {
       if (v.service) {
         // quem trabalha tem a chave: só vai embora no fim do serviço (ou de madrugada)
         if (late || world.tick >= v.until) this.startLeaving(f);
+        continue;
+      }
+      // bloco 9: convidado da festa fica até a festa acabar (ou cair de sono)
+      if (v.party && world.party) {
+        if (f.needs.energy < 8) this.startLeaving(f);
         continue;
       }
       const worn = f.needs.energy < 15 || f.needs.hunger < 12;
@@ -2362,6 +2576,7 @@ export class Sim {
       inspired: 0,
       alarm: false,
       skills: { ...n.skills },
+      interests: { ...ensureInterests(this.catalog, n) },
       job: null,
       away: null,
       gig: null,
@@ -2388,7 +2603,12 @@ export class Sim {
     if (!folk) return;
     world.folks = world.folks.filter((f) => f.id !== id);
     const n = world.neighbors.find((x) => x.id === id);
-    if (n) n.skills = { ...folk.skills };
+    if (n) {
+      n.skills = { ...folk.skills };
+      // bloco 9: o gosto pelos assuntos que mudou na visita vai junto
+      if (folk.interests) n.interests = { ...folk.interests };
+    }
+    for (const c of world.circles) c.members = c.members.filter((m) => m.id !== id);
     for (const f of world.folks) {
       const idx = f.queue.findIndex((a) => a.otherId === id && (a.kind === 'social' || a.kind === 'listen'));
       if (idx < 0) continue;
@@ -2396,6 +2616,618 @@ export class Sim {
       if (idx === 0) f.path = [];
     }
     this.log('log.left', { name: folk.name });
+  }
+
+  // ---------- bloco 9: desvio local ----------
+
+  /**
+   * Tem alguém em pé no próximo tile? Espera um minuto, depois tenta contornar
+   * (caminho novo que evita quem está parado); se não tiver jeito, passa.
+   * Devolve true se o folk fica parado neste minuto.
+   */
+  private giveWay(folk: Folk, next: Vec): boolean {
+    const blocker = this.world.folks.find((f) => f !== folk && !f.away && f.x === next.x && f.y === next.y);
+    if (!blocker) return false;
+    // quem anda junto, logo sai da frente; quem está parado ou vem de encontro, não
+    const coming = blocker.path[0]?.x === folk.x && blocker.path[0]?.y === folk.y;
+    const still = blocker.path.length === 0 || coming;
+    folk.blocked = (folk.blocked ?? 0) + 1;
+    if (folk.blocked > 6) return false;
+    if (!still && folk.blocked <= 3) return true;
+    if (folk.blocked >= 2) {
+      const goal = folk.path[folk.path.length - 1];
+      const busy = new Set<number>();
+      for (const f of this.world.folks) {
+        if (f === folk || f.away || (f.x === goal.x && f.y === goal.y)) continue;
+        if (Math.abs(f.x - folk.x) + Math.abs(f.y - folk.y) <= 3) busy.add(f.y * this.nav.w + f.x);
+      }
+      const around = avoiding(this.nav, busy);
+      const path = findPath(around, folk, goal);
+      if (path && path.length <= folk.path.length + 6 && !(path[0].x === next.x && path[0].y === next.y)) {
+        folk.path = path;
+        folk.blocked = 0;
+        return true;
+      }
+    }
+    return true;
+  }
+
+  // ---------- bloco 9: rodas de conversa ----------
+
+  /** Chance de `o` topar entrar na roda que `host` chamou. */
+  private joinChance(o: Folk, host: Folk): number {
+    if (this.urgent(o) || o.collapsed > 0 || talkingWith(o) !== 0) return 0;
+    const head = o.queue[0];
+    if (head?.kind === 'door' || head?.kind === 'leave' || head?.kind === 'work') return 0;
+    if (head?.phase === 'using' && this.interactionOf(head)?.pose === 'lie') return 0;
+    const rel = relationOf(this.world, o.id, host.id);
+    let p = 0.55 + (rel?.friendship ?? 0) / 150 + (moodOf(this.catalog, o.needs) - 50) / 250 + ((o.temper?.outgoing ?? 5) - 5) * 0.04;
+    if (o.visit) p += 0.15;
+    if (this.world.party) p += 0.15;
+    if (head?.source === 'player') p -= 0.3;
+    return Math.max(0, Math.min(0.97, p));
+  }
+
+  /**
+   * Monta uma roda em volta de um tile perto de quem chamou. Cada convidado
+   * topa ou não; sem ninguém, não tem roda.
+   */
+  private startCircle(folkId: number, otherIds: number[], source: Action['source']): boolean {
+    const world = this.world;
+    const folk = this.findFolk(folkId);
+    if (!folk) return false;
+    if (source === 'player') {
+      if (folk.visit) return this.fail('visitor');
+      if (folk.away) return this.fail('away');
+      if (folk.collapsed > 0) return this.fail('collapsed');
+    }
+    const ids = [...new Set(otherIds)].filter((id) => id !== folk.id);
+    if (ids.length === 0 || ids.length > CIRCLE_MAX - 1) return this.fail('invalid');
+    const others = ids
+      .map((id) => this.findFolk(id))
+      .filter((f): f is Folk => !!f && onLot(f) && !(f.visit && !f.visit.admitted) && !f.visit?.service);
+    if (others.length === 0) return this.fail('socialNotNow');
+    const yes: Folk[] = [];
+    for (const o of others) {
+      if (nextFloat(world) < this.joinChance(o, folk)) yes.push(o);
+      else {
+        setThought(o, 'chat', 'no', world.tick, 4, folk.id);
+        if (source === 'player') this.log('log.circleNo', { name: o.name, other: folk.name });
+      }
+    }
+    if (yes.length === 0) {
+      if (source === 'player') this.log('log.circleNobody', { name: folk.name });
+      return source === 'player';
+    }
+    const ok = new Set([folk.id, ...yes.map((f) => f.id)]);
+    const place = findCircleCenter(world, this.nav, folk, ok.size, ok, this.catalog) ?? findCircleCenter(world, this.nav, folk, 2, ok, this.catalog);
+    if (!place) return this.fail('noRoom');
+    const crew = [folk, ...yes].slice(0, place.spots.length);
+    const circle: Circle = {
+      id: world.nextId++,
+      center: place.center,
+      members: [],
+      speaker: 0,
+      topic: pickTopic(world, this.catalog, folk, crew.slice(1)),
+      turnEnds: 0,
+      until: world.tick + CIRCLE_MINUTES + nextInt(world, CIRCLE_EXTRA),
+      started: world.tick,
+    };
+    // cada um fica no lugar livre mais perto de onde está
+    const free = [...place.spots];
+    for (const f of crew) {
+      free.sort((a, b) => {
+        const ta = { x: place.center.x + (a === 1 ? 1 : a === 3 ? -1 : 0), y: place.center.y + (a === 0 ? -1 : a === 2 ? 1 : 0) };
+        const tb = { x: place.center.x + (b === 1 ? 1 : b === 3 ? -1 : 0), y: place.center.y + (b === 0 ? -1 : b === 2 ? 1 : 0) };
+        return Math.abs(ta.x - f.x) + Math.abs(ta.y - f.y) - (Math.abs(tb.x - f.x) + Math.abs(tb.y - f.y)) || a - b;
+      });
+      const old = circleOfFolk(world, f.id);
+      if (old) this.dropFromCircle(f, old, true);
+      circle.members.push({ id: f.id, spot: free.shift()! });
+    }
+    world.circles.push(circle);
+    if (source === 'player') {
+      if (!this.enqueuePlayer(folk, { kind: 'circle', circleId: circle.id })) {
+        world.circles = world.circles.filter((c) => c !== circle);
+        return false;
+      }
+    } else folk.queue.push(this.makeAction({ kind: 'circle', circleId: circle.id }, 'auto'));
+    for (const o of crew.slice(1)) this.pullIntoCircle(o, circle);
+    this.log('log.circleStart', { name: folk.name, n: crew.length });
+    return true;
+  }
+
+  /** Quem topou larga o que fazia por conta própria e vai para a roda. */
+  private pullIntoCircle(o: Folk, c: Circle): void {
+    o.queue = o.queue.filter((a) => a.source !== 'auto');
+    const cur = o.queue[0];
+    if (cur) cur.phase = 'queued';
+    o.queue.unshift(this.makeAction({ kind: 'circle', circleId: c.id }, 'auto'));
+    o.path = [];
+    o.idleTicks = 0;
+  }
+
+  /** Sai da roda (e larga a ação de roda, se ainda está na fila). */
+  private dropFromCircle(folk: Folk, c: Circle, quiet = false): void {
+    c.members = c.members.filter((m) => m.id !== folk.id);
+    const head = folk.queue[0];
+    if (head?.kind === 'circle' && head.circleId === c.id) this.finish(folk);
+    folk.queue = folk.queue.filter((a) => !(a.kind === 'circle' && a.circleId === c.id));
+    if (!quiet && c.speaker === folk.id) c.speaker = 0;
+  }
+
+  private processCircle(folk: Folk, action: Action): void {
+    const c = circleById(this.world, action.circleId);
+    const m = c?.members.find((x) => x.id === folk.id);
+    if (!c || !m) {
+      this.finish(folk);
+      return;
+    }
+    const spot = spotTile(c, m.spot);
+    if (action.phase === 'queued') {
+      if (folk.x === spot.x && folk.y === spot.y) {
+        action.phase = 'using';
+        action.elapsed = 0;
+      } else {
+        const path = findPath(this.nav, folk, spot);
+        if (!path) {
+          this.dropFromCircle(folk, c);
+          return;
+        }
+        folk.path = path;
+        action.phase = 'walking';
+      }
+    }
+    if (action.phase === 'walking') {
+      if (this.stepAlong(folk, action) !== 'arrived') return;
+      if (folk.x !== spot.x || folk.y !== spot.y) {
+        action.phase = 'queued';
+        return;
+      }
+      action.phase = 'using';
+      action.elapsed = 0;
+    }
+    folk.facing = faceCenter(folk, c);
+    action.elapsed++;
+    // apertado (banheiro, fome, sono) ou campainha tocando sem ninguém ir: sai
+    if (action.source === 'auto' && (this.urgent(folk) || (!folk.visit && this.unansweredBell(folk, 4)))) {
+      this.dropFromCircle(folk, c);
+      folk.idleTicks = IDLE_BEFORE_AUTO;
+    }
+  }
+
+  /** Um minuto de cada roda: efeitos, vez de falar, assunto e fim. */
+  private stepCircles(): void {
+    const world = this.world;
+    for (const c of [...world.circles]) {
+      c.members = c.members.filter((m) => {
+        const f = this.findFolk(m.id);
+        return !!f && !f.away && !f.visit?.leaving && f.queue.some((a) => a.kind === 'circle' && a.circleId === c.id);
+      });
+      const present = c.members.map((m) => this.findFolk(m.id)!).filter((f) => inCircle(f, c));
+      const age = world.tick - c.started;
+      const done =
+        world.tick >= c.until ||
+        c.members.length === 0 ||
+        (c.members.length < 2 && age > CIRCLE_GRACE) ||
+        (present.length < 2 && age > CIRCLE_GRACE * 2);
+      if (done) {
+        this.endCircle(c);
+        continue;
+      }
+      if (present.length < 2) continue;
+      let speaker = present.find((f) => f.id === c.speaker);
+      if (!speaker) {
+        speaker = present[0];
+        c.speaker = speaker.id;
+        c.turnEnds = world.tick + CIRCLE_TURN;
+        this.announceTopic(c, present, speaker);
+      }
+      for (const f of present) {
+        applyEffects(f, { effects: CIRCLE_EFFECTS } as InteractionDef);
+        countHabit(f, 'outgoing', 1);
+        if (f !== speaker) f.needs.fun = clampNeed(f.needs.fun + REACTION_FUN[reactionTo(this.catalog, f, c.topic)]);
+      }
+      const up = trainSkill(speaker, CIRCLE_TALK, moodOf(this.catalog, speaker.needs), this.trainBoost(speaker));
+      if (up !== null && !speaker.visit) {
+        this.log('log.skillUp', { name: speaker.name, skill: this.catalog.skills.charisma?.name ?? 'charisma', level: up });
+      }
+      if (world.tick >= c.turnEnds) this.circleTurn(c, present, speaker);
+    }
+  }
+
+  /** Balões da roda: quem fala mostra o assunto; quem ouve, a cara que fez. */
+  private announceTopic(c: Circle, present: Folk[], speaker: Folk): void {
+    const tick = this.world.tick;
+    setThought(speaker, 'topic', c.topic, tick, CIRCLE_TURN);
+    for (const f of present) {
+      if (f === speaker) continue;
+      setThought(f, 'topic', `${c.topic}${topicMark(reactionTo(this.catalog, f, c.topic))}`, tick, CIRCLE_TURN, speaker.id);
+    }
+  }
+
+  /** Fim de uma vez de falar: cada um que ouviu muda o que acha de quem falou. */
+  private circleTurn(c: Circle, present: Folk[], speaker: Folk): void {
+    const world = this.world;
+    let liked = 0;
+    for (const l of present) {
+      if (l === speaker) continue;
+      ensureRelation(world, l.id, speaker.id);
+      ensureRelation(world, speaker.id, l.id);
+      const r = reactionTo(this.catalog, l, c.topic);
+      if (r === 'love' || r === 'like') liked++;
+      const toTarget = applyDelta(world, this.catalog, l, speaker, { friendship: 1 + REACTION_FRIENDSHIP[r] });
+      const toSelf = applyDelta(world, this.catalog, speaker, l, { friendship: r === 'hate' ? 0 : 1 });
+      touch(world, speaker.id, l.id);
+      catchTopic(this.catalog, l, speaker, c.topic, relationOf(world, l.id, speaker.id)?.friendship ?? 0);
+      this.outcomes.push({ fromId: speaker.id, toId: l.id, socialId: 'circle', accepted: r !== 'hate', toTarget, toSelf });
+      if (this.outcomes.length > 50) this.outcomes.shift();
+      if (!speaker.visit) wishOnTalk(world, this.catalog, this.logger, speaker, l.id, this.catalog.socials.chat, true);
+      if (!l.visit) wishOnTalk(world, this.catalog, this.logger, l, speaker.id, this.catalog.socials.chat, true);
+    }
+    // a palavra passa para o próximo da roda
+    const next = present[(present.indexOf(speaker) + 1) % present.length];
+    c.speaker = next.id;
+    c.turnEnds = world.tick + CIRCLE_TURN;
+    // assunto que agradou a maioria pode continuar
+    const keep = liked * 2 >= present.length - 1 && nextFloat(world) < 0.5;
+    if (!keep) {
+      c.topic = pickTopic(
+        world,
+        this.catalog,
+        next,
+        present.filter((f) => f !== next),
+        c.topic,
+      );
+    }
+    this.announceTopic(c, present, next);
+  }
+
+  private endCircle(c: Circle): void {
+    const world = this.world;
+    world.circles = world.circles.filter((x) => x !== c);
+    for (const m of c.members) {
+      const f = this.findFolk(m.id);
+      if (!f) continue;
+      const head = f.queue[0];
+      if (head?.kind === 'circle' && head.circleId === c.id) this.finish(f);
+      f.queue = f.queue.filter((a) => !(a.kind === 'circle' && a.circleId === c.id));
+    }
+  }
+
+  /**
+   * IA: quem está precisando de gente entra numa roda por perto, ou chama
+   * quem está à toa para uma roda nova. Em festa, bem mais.
+   */
+  private circleWish(folk: Folk): boolean {
+    const world = this.world;
+    const v = folk.visit;
+    if (v?.service || (v && !v.admitted) || v?.leaving) return false;
+    const party = !!world.party && world.tick >= world.party.start;
+    if (folk.needs.social >= (party ? 85 : 60) || this.urgent(folk)) return false;
+    if (circleOfFolk(world, folk.id)) return false;
+    for (const c of world.circles) {
+      if (c.members.length >= CIRCLE_MAX) continue;
+      if (Math.abs(c.center.x - folk.x) + Math.abs(c.center.y - folk.y) > CIRCLE_REACH) continue;
+      const fond = c.members.map((m) => relationOf(world, folk.id, m.id)?.friendship);
+      if (!fond.some((f) => f !== undefined)) continue;
+      const avg = fond.reduce<number>((s, f) => s + (f ?? 0), 0) / fond.length;
+      if (avg < -5) continue;
+      if (nextFloat(world) > (party ? 0.6 : 0.35)) continue;
+      const spot = freeSpot(world, this.nav, c, folk.id, this.catalog);
+      if (spot < 0) continue;
+      c.members.push({ id: folk.id, spot });
+      folk.queue.push(this.makeAction({ kind: 'circle', circleId: c.id }, 'auto'));
+      return true;
+    }
+    const people = world.folks.filter((f) => onLot(f) && !f.visit?.service && !(f.visit && !f.visit.admitted));
+    if (people.length < 3) return false;
+    const lonely = folk.needs.social < 35 ? 1.5 : 1;
+    const pull = (party ? 0.5 : 0.22) * lonely * (0.6 + (folk.temper?.outgoing ?? 5) / 12);
+    if (nextFloat(world) > pull) return false;
+    const free = people
+      .filter(
+        (o) =>
+          o !== folk &&
+          !circleOfFolk(world, o.id) &&
+          talkingWith(o) === 0 &&
+          (o.queue.length === 0 || o.queue[0].source === 'auto') &&
+          (relationOf(world, folk.id, o.id)?.friendship ?? -1) >= 0 &&
+          Math.abs(o.x - folk.x) + Math.abs(o.y - folk.y) <= 12,
+      )
+      .sort((a, b) => (relationOf(world, folk.id, b.id)?.friendship ?? 0) - (relationOf(world, folk.id, a.id)?.friendship ?? 0) || a.id - b.id)
+      .slice(0, CIRCLE_MAX - 1);
+    if (free.length < 2) return false;
+    return this.startCircle(folk.id, free.map((f) => f.id), 'auto');
+  }
+
+  // ---------- bloco 9: telefone social ----------
+
+  /** Para quem o folk liga sozinho: o amigo de fora de quem mais gosta (e que não vê há tempo). */
+  private callTarget(folk: Folk): number | undefined {
+    const world = this.world;
+    let best: { id: number; score: number } | null = null;
+    for (const n of world.neighbors) {
+      if (isServiceNeighbor(n) || this.findFolk(n.id)) continue;
+      const rel = relationOf(world, folk.id, n.id);
+      if (!rel || rel.friendship < 5) continue;
+      const days = (world.tick - rel.last) / MINUTES_PER_DAY;
+      const score = rel.friendship + Math.min(3, days) * 8;
+      if (!best || score > best.score) best = { id: n.id, score };
+    }
+    return best?.id;
+  }
+
+  /** Papo pelo telefone: conta como contato (a amizade não esfria) e tem assunto. */
+  private phoneTalk(caller: Folk | Neighbor, hearer: Folk | Neighbor): string {
+    const world = this.world;
+    ensureRelation(world, caller.id, hearer.id);
+    ensureRelation(world, hearer.id, caller.id);
+    const topic = pickTopic(world, this.catalog, caller, [hearer]);
+    const r = reactionTo(this.catalog, hearer, topic);
+    applyDelta(world, this.catalog, hearer, caller, { friendship: 2 + REACTION_FRIENDSHIP[r] });
+    applyDelta(world, this.catalog, caller, hearer, { friendship: 2 });
+    touch(world, caller.id, hearer.id);
+    catchTopic(this.catalog, hearer, caller, topic, relationOf(world, hearer.id, caller.id)?.friendship ?? 0);
+    return topic;
+  }
+
+  private resolveCall(folk: Folk, otherId: number): void {
+    const n = this.world.neighbors.find((x) => x.id === otherId);
+    if (!n || this.findFolk(n.id)) return;
+    const topic = this.phoneTalk(folk, n);
+    const r = reactionTo(this.catalog, n, topic);
+    setThought(folk, 'topic', topic, this.world.tick, 6, n.id);
+    this.log(r === 'hate' ? 'log.callBored' : 'log.called', { name: folk.name, other: n.name, topic: `topic.${topic}` });
+    if (!folk.visit) wishOnTalk(this.world, this.catalog, this.logger, folk, n.id, this.catalog.socials.chat, true);
+  }
+
+  /** Alguém da casa vai atender o telefone tocando (devolve true se foi). */
+  private answerPhoneIfRinging(folk: Folk): boolean {
+    const call = this.world.call;
+    if (!call || call.answeredBy || folk.visit || folk.away) return false;
+    const going = this.world.folks.some((f) => f.queue.some((a) => a.kind === 'use' && this.interactionOf(a)?.special === 'answer'));
+    if (going) return false;
+    const best = this.nearestSpecial(folk, 'answer');
+    if (!best) return false;
+    folk.queue.push(this.makeAction({ kind: 'use', objectId: best.obj.id, interactionId: best.it.id }, 'auto'));
+    return true;
+  }
+
+  /** O telefone toca de vez em quando: amigos ligam para conversar, fofocar ou avisar que vêm. */
+  private stepPhone(): void {
+    const world = this.world;
+    const call = world.call;
+    if (call) {
+      if (call.answeredBy) {
+        const f = this.findFolk(call.answeredBy);
+        const head = f?.queue[0];
+        if (!f || !head || head.kind !== 'use' || this.interactionOf(head)?.special !== 'answer') world.call = null;
+        return;
+      }
+      const coming = world.folks.some((f) => f.queue.some((a) => a.kind === 'use' && this.interactionOf(a)?.special === 'answer'));
+      if (world.tick - call.rang >= RING_MINUTES + (coming ? 15 : 0)) {
+        const n = world.neighbors.find((x) => x.id === call.from);
+        world.call = null;
+        if (!n) return;
+        for (const r of this.residents()) {
+          if (r.away || !relationOf(world, n.id, r.id)) continue;
+          applyDelta(world, this.catalog, n, r, { friendship: -1 });
+        }
+        this.log('log.missedCall', { name: n.name });
+      }
+      return;
+    }
+    const hour = clockOf(world.tick).hour;
+    if (world.tick % 30 !== 0 || hour < 9 || hour >= 21) return;
+    const home = this.residents().filter((r) => !r.away && r.collapsed === 0);
+    if (!home.length || !this.nearestSpecial(home[0], 'answer')) return;
+    if (nextFloat(world) >= CALL_CHANCE) return;
+    const pool = world.neighbors.filter(
+      (n) =>
+        !isServiceNeighbor(n) &&
+        !this.findFolk(n.id) &&
+        !world.pendingVisits.some((v) => v.neighborId === n.id) &&
+        home.some((r) => (relationOf(world, n.id, r.id)?.friendship ?? 0) >= 15),
+    );
+    if (!pool.length) return;
+    const n = pool[nextInt(world, pool.length)];
+    const fav = [...home].sort((a, b) => (relationOf(world, n.id, b.id)?.friendship ?? 0) - (relationOf(world, n.id, a.id)?.friendship ?? 0))[0];
+    const roll = nextFloat(world);
+    const reason = roll < 0.45 && pickGossip(world, this.catalog, n.id, fav.id) ? 'gossip' : roll > 0.8 && hour < 19 ? 'visit' : 'chat';
+    world.call = { from: n.id, rang: world.tick, reason, answeredBy: 0 };
+    this.log('log.phoneRings', { name: n.name });
+  }
+
+  /** Fim da ligação recebida. */
+  private resolveAnswer(folk: Folk): void {
+    const world = this.world;
+    const call = world.call;
+    world.call = null;
+    const n = call && world.neighbors.find((x) => x.id === call.from);
+    if (!call || !n) return;
+    const topic = this.phoneTalk(n, folk);
+    const names = { name: folk.name, other: n.name, topic: `topic.${topic}` };
+    setThought(folk, 'topic', `${topic}${topicMark(reactionTo(this.catalog, folk, topic))}`, world.tick, 6, n.id);
+    const news = call.reason === 'gossip' ? pickGossip(world, this.catalog, n.id, folk.id) : null;
+    if (news) {
+      learnNews(world, this.catalog, this.logger, news, folk.id, 'heard', n.id);
+      this.log('log.callGossip', names);
+    } else if (call.reason === 'visit' && !this.findFolk(n.id) && clockOf(world.tick).hour < 20) {
+      const delay = 30 + nextInt(world, 30);
+      world.pendingVisits.push({ neighborId: n.id, at: world.tick + delay, hostId: folk.id });
+      this.log('log.callVisit', { ...names, minutes: delay });
+    } else this.log('log.callChat', names);
+    if (!folk.visit) wishOnTalk(world, this.catalog, this.logger, folk, n.id, this.catalog.socials.chat, true);
+  }
+
+  // ---------- bloco 9: festas ----------
+
+  /** Fim da ligação para a turma: quem topa vem; a festa fica marcada. */
+  private resolveParty(host: Folk, guestIds: number[]): void {
+    const world = this.world;
+    if (world.party) return;
+    const hour = clockOf(world.tick).hour;
+    if (hour >= 21 || hour < 8) {
+      this.log('log.partyLate', { name: host.name });
+      return;
+    }
+    const start = world.tick + PARTY_LEAD;
+    const party = { host: host.id, start, end: start + PARTY_MINUTES, guests: [] as number[], score: 0, samples: 0, brawls: 0, complaints: 0, buffet: false };
+    const no: string[] = [];
+    for (const id of guestIds) {
+      const n = world.neighbors.find((x) => x.id === id);
+      if (!n || isServiceNeighbor(n)) continue;
+      const here = this.findFolk(n.id);
+      if (here?.visit) {
+        here.visit.party = true;
+        here.visit.until = party.end;
+        party.guests.push(n.id);
+        continue;
+      }
+      if (world.pendingVisits.some((v) => v.neighborId === n.id)) {
+        party.guests.push(n.id);
+        for (const v of world.pendingVisits) if (v.neighborId === n.id) v.party = true;
+        continue;
+      }
+      const rel = relationOf(world, n.id, host.id);
+      const p =
+        0.55 +
+        (rel?.friendship ?? 0) / 120 +
+        reputationOf(world, host.id) / 250 +
+        ((n.temper?.outgoing ?? 5) - 5) * 0.04 +
+        grudge(world, this.catalog, n.id, host.id) * 0.03 -
+        (rel ? 0 : 0.25);
+      if (nextFloat(world) < p) {
+        party.guests.push(n.id);
+        world.pendingVisits.push({ neighborId: n.id, at: start - 10 + nextInt(world, 40), hostId: host.id, party: true });
+      } else no.push(n.name);
+    }
+    if (party.guests.length === 0) {
+      this.log('log.partyNobody', { name: host.name });
+      return;
+    }
+    world.party = party;
+    this.log('log.partyPlanned', { name: host.name, n: party.guests.length, minutes: PARTY_LEAD });
+    if (no.length) this.log('log.partyDeclined', { names: no.map((x) => x.split(' ')[0]).join(', ') });
+    wishOnHost(world, this.catalog, this.logger, host);
+  }
+
+  /** Monta a mesa de petiscos. */
+  private setBuffet(folk: Folk, action: Action): void {
+    const obj = action.objectId !== undefined ? this.findObject(action.objectId) : undefined;
+    if (!obj) return;
+    obj.snacks = BUFFET_PORTIONS;
+    if (this.world.party) this.world.party.buffet = true;
+    this.log('log.buffetSet', { name: folk.name });
+  }
+
+  /** Quem está na festa agora (convidados no lote, já dentro). */
+  private partyGuests(): Folk[] {
+    return this.world.folks.filter((f) => f.visit?.party && f.visit.admitted && !f.visit.leaving);
+  }
+
+  /** Um minuto de festa: música, medição de animação, brigas, barulho e fim. */
+  private stepParty(): void {
+    const world = this.world;
+    const party = world.party;
+    if (!party || world.tick < party.start) return;
+    const since = world.tick - party.start;
+    const host = this.findFolk(party.host);
+    if (since === 0) {
+      this.log('log.partyStart', { name: host?.name ?? '' });
+      // sem música não é festa: liga o som na estação de quem dá a festa
+      const stereos = world.objects.filter((o) => isStereo(this.defOf(o)) && !o.state?.broken);
+      if (stereos.length && !stereos.some((o) => o.tune) && host) {
+        stereos[0].tune = favoriteStation(host).id;
+        this.log('log.partyMusic', { name: host.name });
+      }
+    }
+    const guests = this.partyGuests();
+    if (since > 0 && since % PARTY_SAMPLE === 0 && guests.length) {
+      let sum = 0;
+      for (const g of guests) {
+        const vibe = (g.needs.fun + g.needs.social) / 2;
+        sum += vibe * 0.65 + moodOf(this.catalog, g.needs) * 0.35;
+      }
+      party.score += sum / guests.length;
+      party.samples++;
+    }
+    // panelinhas: rivais na mesma festa acabam brigando
+    if (since > 0 && since % 60 === 20 && guests.length >= 2) this.partyFriction(party, guests);
+    // barulho tarde da noite: algum vizinho reclama
+    const hour = clockOf(world.tick).hour;
+    const late = hour >= QUIET_HOUR || hour < 6;
+    if (late && world.tick % 60 === 0 && world.objects.some((o) => playing(o, this.defOf(o)))) {
+      if (nextFloat(world) < 0.5) this.noiseComplaint(party);
+      if (party.complaints >= COMPLAINTS_TO_END) {
+        this.endParty('noise');
+        return;
+      }
+    }
+    if (world.tick >= party.end) this.endParty('time');
+  }
+
+  private partyFriction(party: NonNullable<World['party']>, guests: Folk[]): void {
+    const world = this.world;
+    const ids = [...guests.map((g) => g.id), ...this.residents().filter((r) => onLot(r)).map((r) => r.id)];
+    for (const { a, b, weight } of partyFriction(world, ids)) {
+      if (nextFloat(world) >= 0.35 * weight) continue;
+      const fa = this.findFolk(a);
+      const fb = this.findFolk(b);
+      if (!fa || !fb || !onLot(fa) || !onLot(fb) || talkingWith(fa) !== 0) continue;
+      // quem tem pavio curto começa
+      const [first, second] = (fb.temper?.warmth ?? 5) < (fa.temper?.warmth ?? 5) ? [fb, fa] : [fa, fb];
+      const old = circleOfFolk(world, first.id);
+      if (old) this.dropFromCircle(first, old, true);
+      first.queue = first.queue.filter((x) => x.source !== 'auto');
+      first.queue.unshift(this.makeAction({ kind: 'social', otherId: second.id, socialId: 'argue' }, 'auto'));
+      first.path = [];
+      party.brawls++;
+      createNews(world, this.catalog, this.logger, 'partyBrawl', first.id, second.id, onLotWitnesses(world, first, [first.id, second.id]));
+      this.log('log.partyBrawl', { name: first.name, other: second.name });
+      return;
+    }
+  }
+
+  private noiseComplaint(party: NonNullable<World['party']>): void {
+    const world = this.world;
+    const grumpy = world.neighbors
+      .filter((n) => !isServiceNeighbor(n) && !party.guests.includes(n.id) && !this.findFolk(n.id))
+      .sort((a, b) => (b.temper?.order ?? 5) - (a.temper?.order ?? 5) || a.id - b.id)[0];
+    if (!grumpy) return;
+    party.complaints++;
+    const host = personOfHost(world, party.host);
+    if (host) applyDelta(world, this.catalog, grumpy, host, { friendship: -4 });
+    addReputation(world, party.host, -2);
+    this.log('log.noiseComplaint', { name: grumpy.name });
+  }
+
+  /** Acabou a festa: nota pela animação média, fama ou fofoca, todo mundo para casa. */
+  private endParty(why: 'time' | 'noise'): void {
+    const world = this.world;
+    const party = world.party;
+    if (!party) return;
+    world.party = null;
+    const guests = this.partyGuests();
+    const avg = party.samples ? party.score / party.samples : 35;
+    const score = Math.max(0, Math.min(100, Math.round(avg - party.brawls * 8 - party.complaints * 5 + (party.buffet ? 4 : 0))));
+    const grade = partyGrade(score);
+    world.lastParty = { tick: world.tick, host: party.host, guests: party.guests.length, score, grade, brawls: party.brawls, complaints: party.complaints };
+    const host = this.findFolk(party.host);
+    const name = host?.name ?? '';
+    const stars = '★'.repeat(grade) + '☆'.repeat(5 - grade);
+    this.log(why === 'noise' ? 'log.partyNoiseEnd' : 'log.partyOver', { name, stars, score });
+    const witnesses = guests.map((g) => g.id);
+    if (grade >= 4) {
+      createNews(world, this.catalog, this.logger, 'greatParty', party.host, 0, witnesses);
+      if (host) for (const g of guests) applyDelta(world, this.catalog, g, host, { friendship: 3 });
+    } else if (grade <= 2) {
+      createNews(world, this.catalog, this.logger, 'flopParty', party.host, 0, witnesses);
+    }
+    for (const g of guests) this.startLeaving(g);
+    for (const f of world.folks) if (f.visit?.party) f.visit.party = false;
+    world.pendingVisits = world.pendingVisits.filter((v) => !v.party);
   }
 
   private faceObject(folk: Folk, action: Action): void {
@@ -2406,3 +3238,34 @@ export class Sim {
     if (t.x !== folk.x || t.y !== folk.y) folk.facing = { x: t.x - folk.x, y: t.y - folk.y };
   }
 }
+
+/** Bloco 9: sinal do balão de assunto (+ gostou, - detestou, nada = tanto faz). */
+export function topicMark(r: Reaction): string {
+  return r === 'love' || r === 'like' ? '+' : r === 'hate' ? '-' : '';
+}
+
+/** Bloco 9: estrelas da festa pela animação média (0 a 100). */
+export function partyGrade(score: number): number {
+  return score >= 74 ? 5 : score >= 62 ? 4 : score >= 48 ? 3 : score >= 34 ? 2 : 1;
+}
+
+/** Quem deu a festa, morador ou não (para a relação com quem reclamou). */
+function personOfHost(world: World, id: number): Pick<Folk, 'id' | 'traits'> | undefined {
+  return world.folks.find((f) => f.id === id) ?? world.neighbors.find((n) => n.id === id);
+}
+
+/** Bloco 9: o mesmo mapa de passagem, com alguns tiles tratados como ocupados. */
+function avoiding(nav: Nav, busy: Set<number>): Nav {
+  if (!busy.size) return nav;
+  const isFree = (x: number, y: number) => nav.isFree(x, y) && !busy.has(y * nav.w + x);
+  return {
+    w: nav.w,
+    h: nav.h,
+    blocked: nav.blocked,
+    isFree,
+    canStep: (ax, ay, bx, by) => nav.canStep(ax, ay, bx, by) && !busy.has(by * nav.w + bx),
+  };
+}
+
+/** Bloco 9: treino de Lábia de quem está com a palavra na roda. */
+const CIRCLE_TALK = { skill: { id: 'charisma', xpPerMinute: 0.2 } } as InteractionDef;

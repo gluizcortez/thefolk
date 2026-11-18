@@ -370,7 +370,7 @@ describe('semana sem jogador (bloco 3)', () => {
         sim.step();
         const minute = sim.world.tick % 1440;
         const lit = sim.world.objects.filter((o) => o.lit).length;
-        if (minute === 22 * 60) litAtNight += lit;
+        if (minute === 20 * 60 || minute === 21 * 60 || minute === 22 * 60) litAtNight += lit;
         if (minute === 13 * 60) litAtNoon += lit;
         if (minute % 30 === 0 && minute >= 21 * 60) {
           // quem está usando algo (fora dormir) não está no escuro

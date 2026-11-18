@@ -7,10 +7,11 @@ import { START_PANTRY } from './services';
 import type { NeighborSeed, RelationSeed } from './world';
 import { freshState } from './upkeep';
 import { NEUTRAL_TEMPER, fullLook, monthFor, temperFromTraits } from './temper';
+import { seedInterests } from './topics';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 12;
+export const SAVE_VERSION = 13;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -196,6 +197,20 @@ const migrations: Record<number, Migration> = {
     addMissingNeighbors(world, ctx);
     const fresh = new Set(world.neighbors.map((n) => n.career?.id).filter((x): x is string => !!x && !before.has(x)));
     seedWorkplaceTies(world, fresh);
+    return { ...save, world: world as unknown as Obj };
+  },
+  // bloco 9: gosto por assunto de cada pessoa (pelo temperamento, traços e
+  // habilidades), rodas de conversa, festa, telefone tocando
+  12: (save, ctx) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    const seed = <T extends Parameters<typeof seedInterests>[1]>(p: T): T =>
+      p.interests || !ctx.catalog ? p : { ...p, interests: seedInterests(ctx.catalog, p) };
+    world.folks = (world.folks ?? []).map((f) => seed(f));
+    world.neighbors = (world.neighbors ?? []).map((n) => seed(n));
+    world.circles = [];
+    world.party = null;
+    world.lastParty = null;
+    world.call = null;
     return { ...save, world: world as unknown as Obj };
   },
 };

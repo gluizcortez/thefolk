@@ -58,3 +58,32 @@ export function iconSvg(id: IconId, size = 18): string {
     : 'fill="currentColor" stroke="currentColor" stroke-width="1.200" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd"';
   return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true"><path d="${ICON_PATHS[id]}" ${style}/></svg>`;
 }
+
+/** Bloco 9: ícones dos assuntos (24x24, só traço). */
+export const TOPIC_PATHS: Record<string, string> = {
+  // nuvem com chuva
+  weather: 'M6 14a4 4 0 0 1 1-7.900A5.500 5.500 0 0 1 17.500 8 3.500 3.500 0 0 1 18 14zM8 17l-1 3M12 17l-1 3M16 17l-1 3',
+  // pata
+  critters: 'M12 13c3 0 5 3 5 5s-2 2-5 2-5 0-5-2 2-5 5-5zM6 9a1.800 2.300 0 1 0 0.010 0zM10 5a1.800 2.300 0 1 0 0.010 0zM14 5a1.800 2.300 0 1 0 0.010 0zM18 9a1.800 2.300 0 1 0 0.010 0z',
+  // panela
+  recipes: 'M4 10h16v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4zM2 10h2M20 10h2M9 7c-1-2 1-2 0-4M14 7c-1-2 1-2 0-4',
+  // bola
+  sports: 'M12 3a9 9 0 1 0 0.010 0zM3.500 9.500c4 1 13 1 17 0M3.500 14.500c4-1 13-1 17 0M12 3c-3 4-3 14 0 18M12 3c3 4 3 14 0 18',
+  // moeda com cifrão próprio
+  money: 'M12 3a9 9 0 1 0 0.010 0zM12 6.500v11M15 9c0-1.500-6-1.500-6 0.500s6 1 6 3-6 2-6 0',
+  // lua e estrela
+  stars: 'M14 4a8 8 0 1 0 6 12 6.500 6.500 0 0 1-6-12zM18 3l0.800 1.700L20.500 5.500l-1.700 0.800L18 8l-0.800-1.700L15.500 5.500l1.700-0.800z',
+  // nota
+  music: 'M9 18V5l11-2v13M9 18a3 2.500 0 1 1-0.010 0M20 16a3 2.500 0 1 1-0.010 0',
+  // cochicho (dois balões)
+  gossip: 'M3 4h11v7H8l-3 3v-3H3zM10 13h11v6h-2v3l-3-3h-6z',
+  // engrenagem simples
+  gadgets: 'M12 8a4 4 0 1 0 0.010 0zM12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2',
+  // dois corações
+  romance: 'M9 18L3.500 12.500A3.300 3.300 0 0 1 9 8.300 3.300 3.300 0 0 1 14.500 12.500zM16 11l-3-3a1.900 1.900 0 0 1 3-2.200 1.900 1.900 0 0 1 3 2.200z',
+};
+
+export function topicSvg(id: string, size = 18): string {
+  const d = TOPIC_PATHS[id] ?? '';
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}

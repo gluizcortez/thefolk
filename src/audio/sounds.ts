@@ -51,6 +51,8 @@ export function actionSound(def: ObjectDef | undefined, it: InteractionDef): Act
       return { start: 'fridge', loop: 'sizzle' };
     case 'meal':
     case 'snack':
+    case 'nibble':
+    case 'setBuffet':
     case 'takeout':
       return art.startsWith('fridge') ? { start: 'fridge', loop: 'clink' } : { loop: 'clink' };
     case 'watch':
@@ -72,6 +74,8 @@ export function actionSound(def: ObjectDef | undefined, it: InteractionDef): Act
     case 'manual':
       return art === 'desk' ? { loop: 'typing' } : { start: 'page' };
     case 'call':
+    case 'answer':
+    case 'party':
     case 'services':
     case 'invite':
       return { start: 'dial', talk: true };
@@ -124,6 +128,11 @@ export function logSound(key: string): SfxName | null {
     'log.needFriends': 'sad',
     'log.rewardUnlocked': 'chime',
     'log.alarm': 'alarm',
+    'log.phoneRings': 'phone',
+    'log.partyStart': 'fanfare',
+    'log.partyBrawl': 'punch',
+    'log.noiseComplaint': 'buzz',
+    'log.missedCall': 'sad',
     'log.collapse': 'thunk',
     'log.repaired': 'hammer',
     'log.groceriesIn': 'door',

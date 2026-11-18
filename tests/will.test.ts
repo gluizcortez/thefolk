@@ -321,7 +321,7 @@ describe('balões (bloco 6)', () => {
 
     const talk = crowd([{ name: 'Ana', x: 2, y: 2 }, { name: 'Bia', x: 4, y: 2 }], { autonomy: false, relations: [{ a: 'Ana', b: 'Bia', friendship: 40 }] });
     const [ana, bia] = talk.world.folks;
-    talk.dispatch({ type: 'queueSocial', folkId: ana.id, otherId: bia.id, socialId: 'chat' });
+    talk.dispatch({ type: 'queueSocial', folkId: ana.id, otherId: bia.id, socialId: 'joke' });
     let chat = null;
     for (let m = 0; m < 10 && !chat; m++) {
       talk.step();

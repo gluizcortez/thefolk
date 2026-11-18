@@ -399,7 +399,7 @@ Vinte e quatro eventos novos, sete deles consequências marcadas dias depois.
 Equipe muda aos domingos (promoção, demissão, novo chefe, recontratação).
 O jornal mostra quatro vagas por dia. Save v12.
 
-## Bloco 9 — Vida social ampliada: festas, grupo e assuntos (save v13)
+## Bloco 9 — Vida social ampliada: festas, grupo e assuntos (save v13) — feito em 18/11/2026
 
 **Lacuna**: conversas são sempre a dois, não há festa nem assunto.
 
@@ -423,6 +423,16 @@ O jornal mostra quatro vagas por dia. Save v12.
 
 **Pronto quando**: festa com 6 convidados roda e recebe nota; conversa em
 grupo funciona; assuntos aparecem; testes.
+
+**Feito**: dez assuntos com gostos de -5 a 5 por pessoa (sementes por id),
+reação no balão e gosto que pega. Roda de até quatro com turnos de cinco
+minutos, formada pelo jogador ou sozinha. Telefone: ligar, receber, atender,
+chamada perdida; ligação conta como contato. Festa pelo telefone com até oito
+convidados, mesa de buffet (16 porções), quatro horas, nota de 1 a 5 pela
+animação média, notícia de festa boa (fama) ou ruim (fofoca), reclamação de
+barulho depois das 22h. Panelinhas e rivais (briga vira notícia). Conversas
+relembrar, aperto de mão, esnobar, mandar embora; cumprimento na porta pela
+relação; desvio local. Save v13.
 
 ## Bloco 10 — Vida a dois: noivado, casamento, morar junto (save v14)
 

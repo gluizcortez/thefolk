@@ -27,3 +27,6 @@ export * from './family';
 export * from './will';
 export * from './wishes';
 export * from './music';
+export * from './topics';
+export * from './circles';
+export * from './cliques';

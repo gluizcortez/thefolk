@@ -366,6 +366,32 @@ npm run preview  # serve o dist/ localmente
   numa conferência, um cometa a confirmar, uma promessa de campanha cobrada).
   Toda semana colegas sobem de cargo, alguém é demitido e arruma outro
   emprego, e chefe demitido é substituído pelo colega mais graduado.
+- **Assuntos (bloco 9)**: dez assuntos (tempo, bichos, receitas, esporte,
+  dinheiro, estrelas, música, fofoca, engenhocas e romance). Cada pessoa gosta
+  de uns e detesta outros; o "papear" escolhe um assunto que aparece no balão,
+  com selo verde ou vermelho pela reação de quem ouve. Assunto em comum rende
+  mais amizade e diversão, e o gosto pega um pouco de quem fala. "Puxar
+  assunto ›" no menu social deixa escolher.
+- **Roda de conversa (bloco 9)**: até quatro pessoas em círculo, com turnos de
+  fala: quem fala escolhe o assunto pela Lábia e cada ouvinte reage. Dá para
+  chamar alguém para uma roda ou entrar numa que já existe; os folks também
+  formam rodas sozinhos, mais ainda numa festa.
+- **Telefone social (bloco 9)**: ligar para alguém (a ligação conta como
+  contato e evita que a amizade esfrie), receber ligações (o telefone toca e
+  balança; quem não atende perde a chamada) com fofoca, convite ou só papo.
+- **Festa (bloco 9)**: no telefone, "Dar uma festa" convida até oito pessoas
+  (com aviso de rivais e atalho para chamar a turma). A mesa de buffet serve
+  petiscos, a música anima, e a festa dura quatro horas. A nota (1 a 5) sai da
+  animação média dos convidados: festa boa dá fama, festa ruim vira fofoca.
+  Depois das 22h o vizinho reclama do barulho, e duas reclamações encerram a
+  festa.
+- **Panelinhas (bloco 9)**: o jogo acha turmas de amigos e pares de rivais no
+  bairro (painel de relações). Rivais na mesma festa brigam e viram notícia.
+- **Mais conversas (bloco 9)**: relembrar (amizade 70+), aperto de mão,
+  esnobar (para quem não se gosta) e mandar embora uma visita; na porta, o
+  cumprimento varia com a relação (beijo, abraço, aperto de mão ou aceno).
+  Folks param de se atravessar: esperam, contornam e se afastam de quem está
+  parado no mesmo lugar.
 
 ## Deploy na Vercel
 
@@ -555,6 +581,15 @@ Decisões principais do núcleo:
   caronas em `game/art/vehicles.ts` (tela em `GameView.updateRides`);
   uniforme em `FolkModel(look, wear, uniform)` com texturas `uni:...`.
   `Outfit` ganhou 'work'. Save v12 (cargo antigo x2, chefes novos).
+- **Festas e grupo (bloco 9)**: assuntos em `data/topics.ts` e gostos em
+  `sim/topics.ts` (`seedInterests`, `reactionTo`, `pickTopic`, `catchTopic`);
+  rodas em `sim/circles.ts` (`Circle`, `CIRCLE_MAX`, lugares N/L/S/O);
+  panelinhas em `sim/cliques.ts` (`findCliques`, `rivalPairs`,
+  `partyFriction`). Em `sim.ts`: `stepCircles`, `stepPhone`, `stepParty`,
+  `endParty`, `partyGrade`, desvio local em `giveWay`/`spreadOut`. Comandos
+  `startCircle`, `joinCircle`, `phoneFriend`, `throwParty`, `answerPhone`.
+  Mesa `buffet` em `art/furniture4.ts`; balão `topic` em `art/textures.ts`
+  (ícones `TOPIC_PATHS` em `ui/icons.ts`). Save v13.
 - **Som, música e saves (bloco 7)**: a parte pura do som de casa fica em
   `sim/music.ts` (`STATIONS`, `favoriteStation`, `danceBonus`, `pressTune`,
   `stereosIn`, `playing`); `WorldObject.tune` é opcional (sem save novo) e
@@ -722,14 +757,25 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
   na promoção, amizade que esfria (pelo Afeto), carona com buzina e uniforme
   por faixa de cargo, recompensas de carreira, eventos em cadeia e equipe que
   sobe e é demitida (save v12).
-- Próximo: bloco 9, festas, conversa em grupo e assuntos.
+- **Bloco 9 (feito)**: dez assuntos com gostos por pessoa, roda de conversa
+  de até quatro, telefone social, festa com convites, buffet, nota, fama ou
+  fofoca e reclamação de barulho, panelinhas e rivais que brigam, conversas
+  novas, cumprimento na porta e desvio local (save v13).
+- Próximo: bloco 10, noivado, casamento e morar junto.
+
+## Limitações conhecidas do bloco 9
+
+- A roda de conversa fica sempre em quatro lugares fixos (norte, sul, leste e
+  oeste) em volta de um ponto livre; numa sala muito cheia ela pode não caber.
+- Uma ligação de cada vez na casa; o telefone não toca enquanto alguém fala.
+- Convidado de festa vem e vai a pé pela calçada; não há carro de festa.
+- O desvio local é simples: duas pessoas num corredor de um tile esperam e
+  contornam, mas em objetos de dois lugares ainda podem se sobrepor um pouco.
 
 ## Limitações conhecidas do bloco 8
 
 - A carona é só cenário: não desvia de nada e várias caronas no mesmo
   horário param no mesmo lugar, uma em cima da outra.
-- Ainda não dá para ligar para os amigos (o telefone social é do bloco 9);
-  amizade se mantém com visita, convite ou conversa no trabalho.
 - Colegas e chefes sobem e caem só aos domingos de madrugada, por sorteio;
   o turno deles não é simulado.
 - Os cargos dos saves antigos dobram (cargo 3 de 5 vira 5 de 10, por

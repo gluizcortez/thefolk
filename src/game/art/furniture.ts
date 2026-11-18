@@ -26,6 +26,10 @@ export interface TickInfo {
   night: number;
   /** bloco 3: a luminária está acesa */
   lit?: boolean;
+  /** bloco 9: telefone tocando */
+  ringing?: boolean;
+  /** bloco 9: porções na mesa de petiscos */
+  stock?: number;
 }
 
 export interface FurnitureModel {
@@ -515,9 +519,13 @@ const phone: FurnitureSpec = {
     g.add(handset);
     return {
       group: g,
-      tick({ using }) {
+      tick({ using, ringing, time }) {
         // durante a ligação o fone está na mão do folk
         handset.visible = !using;
+        // bloco 9: tocando, o fone pula no gancho
+        const hop = ringing && !using && Math.sin(time * 40) > 0 && time % 1.2 < 0.7;
+        handset.position.y = hop ? 0.025 : 0;
+        handset.rotation.z = hop ? Math.sin(time * 70) * 0.08 : 0;
       },
     };
   },

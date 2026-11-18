@@ -259,6 +259,7 @@ const list: ObjectDef[] = [
     ambience: 0,
     interactions: [
       {
+        // bloco 9: liga para um amigo (o jogador escolhe; sozinho, liga para quem gosta mais)
         id: 'call',
         label: 'act.call',
         duration: 40,
@@ -266,6 +267,31 @@ const list: ObjectDef[] = [
         until: 'social',
         cost: 1,
         skill: { id: 'charisma', xpPerMinute: 0.3 },
+        special: 'call',
+        hold: 'phone',
+      },
+      {
+        // bloco 9: atender quem ligou
+        id: 'answer',
+        label: 'act.answer',
+        duration: 20,
+        effects: { social: 2, fun: 0.3 },
+        until: 'social',
+        autonomous: false,
+        hidden: true,
+        special: 'answer',
+        hold: 'phone',
+      },
+      {
+        // bloco 9: ligar para vários e marcar uma festa
+        id: 'party',
+        label: 'act.party',
+        duration: 20,
+        effects: { social: 1.2, fun: 0.4 },
+        autonomous: false,
+        residentOnly: true,
+        special: 'party',
+        hold: 'phone',
       },
       {
         id: 'invite',
@@ -774,6 +800,42 @@ const list: ObjectDef[] = [
         special: 'fair',
       },
     ],
+  },
+  {
+    // bloco 9: mesa de petiscos para festa (montar custa; cada um belisca uma porção)
+    id: 'buffet',
+    name: 'obj.buffet',
+    price: 260,
+    category: 'surfaces',
+    room: 'living',
+    art: 'buffet',
+    size: { w: 2, h: 1 },
+    ambience: 3,
+    slots: 2,
+    interactions: [
+      {
+        id: 'setBuffet',
+        label: 'act.setBuffet',
+        duration: 15,
+        effects: { fun: 0.2 },
+        cost: 60,
+        autonomous: false,
+        residentOnly: true,
+        special: 'buffet',
+        skill: { id: 'cooking', xpPerMinute: 0.4 },
+      },
+      {
+        id: 'nibble',
+        label: 'act.nibble',
+        duration: 8,
+        effects: { hunger: 3.2, fun: 0.4, social: 0.3 },
+        until: 'hunger',
+        snacks: 'eat',
+        hold: 'plate',
+      },
+      clean(),
+    ],
+    upkeep: { dirt: 0.25 },
   },
 ];
 

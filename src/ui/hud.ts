@@ -80,6 +80,19 @@ import {
   interactionReady,
   orderProblem,
   unpaidBills,
+  CIRCLE_MAX,
+  PARTY_MAX_GUESTS,
+  areRivals,
+  circleOfFolk,
+  cliqueOf,
+  findCliques,
+  isServiceNeighbor,
+  onLot,
+  reactionTo,
+  rivalPairs,
+  favoriteTopics,
+  hatedTopics,
+  sharedTopics,
 } from '../sim';
 import type {
   Action,
@@ -96,7 +109,7 @@ import type {
   Speed,
   WorldObject,
 } from '../sim';
-import { iconSvg } from './icons';
+import { iconSvg, topicSvg } from './icons';
 import { SystemCards } from './system';
 import { cue } from '../audio/cues';
 import type { AudioEngine } from '../audio/engine';
@@ -210,6 +223,8 @@ export class Hud {
   private clockDay = el('span', 'clock-day');
   private clockTime = el('span', 'clock-time');
   private clockSky = el('span', 'clock-sky');
+  /** bloco 9: festa acontecendo (ou a nota da última) */
+  private partyEl = el('button', 'party-pill');
   private speedButtons: HTMLButtonElement[] = [];
   private needRows = new Map<NeedId, NeedRow>();
   private nameEl = el('div', 'folk-name');
@@ -322,8 +337,40 @@ export class Hud {
     }
     this.fundsEl.title = t('hud.funds');
     this.fundsEl.addEventListener('click', () => this.togglePanel('job'));
-    card.append(info, this.fundsEl, speeds);
+    card.append(info, this.fundsEl, speeds, this.partyEl);
+    this.partyEl.hidden = true;
+    this.partyEl.addEventListener('click', () => this.togglePanel('relations'));
     this.root.append(card);
+  }
+
+  /** Bloco 9: plaquinha da festa no relógio. */
+  private renderParty(): void {
+    const world = this.ctrl.world;
+    const party = world.party;
+    const last = world.lastParty;
+    let text = '';
+    let title = '';
+    if (party) {
+      const here = world.folks.filter((f) => f.visit?.party && f.visit.admitted).length;
+      const vibe = party.samples ? Math.round(party.score / party.samples) : null;
+      text = world.tick < party.start
+        ? t('party.soon', { time: formatClock(party.start), n: party.guests.length })
+        : t('party.on', { n: here, vibe: vibe === null ? '…' : String(vibe) });
+      title = t('party.until', { time: formatClock(party.end) });
+    } else if (last && world.tick - last.tick < 6 * 60) {
+      text = `${t('party.last')} ${'★'.repeat(last.grade)}${'☆'.repeat(5 - last.grade)}`;
+      title = t('party.lastTip', { score: last.score, n: last.guests, brawls: last.brawls, complaints: last.complaints });
+    }
+    this.partyEl.hidden = !text;
+    if (this.partyEl.textContent !== text) this.partyEl.textContent = text;
+    this.partyEl.title = title;
+    if (world.call && !world.call.answeredBy) {
+      const n = world.neighbors.find((x) => x.id === world.call!.from);
+      this.partyEl.hidden = false;
+      this.partyEl.textContent = t('phone.ringing', { name: n ? first(n.name) : '?' });
+      this.partyEl.title = t('phone.ringingTip');
+      this.partyEl.classList.add('ringing');
+    } else this.partyEl.classList.remove('ringing');
   }
 
   private setSpeed(speed: Speed): void {
@@ -608,6 +655,7 @@ export class Hud {
       this.faceEl.innerHTML = faceSvg(folk.look, 46, mood);
     }
     this.renderHousehold();
+    this.renderParty();
 
     for (const id of NEED_IDS) {
       const row = this.needRows.get(id);
@@ -641,11 +689,18 @@ export class Hud {
       return other ? t('act.doorFor', { name: first(other.name) }) : t('act.door');
     }
     if (action.serviceId) return t(`act.call.${action.serviceId}`);
+    if (action.kind === 'circle') return t('act.circle');
+    if (action.guests) return t('act.partyFor', { n: action.guests.length });
+    if ((action.interactionId === 'call' || action.interactionId === 'answer') && action.otherId !== undefined) {
+      const n = this.ctrl.world.neighbors.find((x) => x.id === action.otherId);
+      if (n) return t(action.interactionId === 'call' ? 'act.callTo' : 'act.answerFrom', { name: first(n.name) });
+    }
     if (action.kind === 'social' || action.kind === 'listen') {
       const other = action.otherId !== undefined ? this.ctrl.sim.findFolk(action.otherId) : undefined;
       const name = other ? first(other.name) : '…';
       if (action.kind === 'listen') return t('act.listen', { name });
       const def = this.ctrl.sim.catalog.socials[action.socialId ?? ''];
+      if (action.topic) return t('act.socialTopic', { topic: t(`topic.${action.topic}`), name });
       return t('act.social', { social: def ? t(def.label) : '…', name });
     }
     if (action.interactionId === 'invite' && action.otherId !== undefined) {
@@ -757,6 +812,21 @@ export class Hud {
     if (shown.length === 0) {
       this.menuEl.append(el('div', 'menu-note', t('menu.nothing')));
     }
+    // bloco 9: telefone tocando: atender vem primeiro
+    const answer = def.interactions.find((i) => i.special === 'answer');
+    if (answer && world.call && !world.call.answeredBy) {
+      const n = world.neighbors.find((x) => x.id === world.call!.from);
+      const b = el('button', 'menu-item ringing');
+      const icon = el('span', 'menu-icon');
+      icon.innerHTML = iconSvg('phone', 16);
+      b.append(icon, el('span', '', t('act.answerFrom', { name: n ? first(n.name) : '?' })));
+      b.addEventListener('click', () => {
+        this.ctrl.commandOrExplain({ type: 'answerPhone', folkId: folk.id });
+        this.closeMenu();
+        this.update();
+      });
+      this.menuEl.append(b);
+    }
     for (const it of shown) {
       const b = el('button', 'menu-item');
       const main = Object.entries(it.effects).sort((a, c) => (c[1] ?? 0) - (a[1] ?? 0))[0];
@@ -793,6 +863,14 @@ export class Hud {
           this.openServicesMenu(x, y);
           return;
         }
+        if (it.special === 'call') {
+          this.openCallMenu(x, y, obj, it.id);
+          return;
+        }
+        if (it.special === 'party') {
+          this.openPartyMenu(x, y);
+          return;
+        }
         this.ctrl.commandOrExplain({
           type: 'queueUse',
           folkId: folk.id,
@@ -802,7 +880,7 @@ export class Hud {
         this.closeMenu();
         this.update();
       });
-      if (it.special === 'invite' || it.special === 'services') b.append(el('span', 'menu-extra', '›'));
+      if (it.special === 'invite' || it.special === 'services' || it.special === 'call' || it.special === 'party') b.append(el('span', 'menu-extra', '›'));
       this.menuEl.append(b);
     }
     this.showMenuAt(x, y);
@@ -977,6 +1055,121 @@ export class Hud {
     this.showMenuAt(x, y);
   }
 
+  /** Bloco 9: escolher o assunto do papo. */
+  private openTopicMenu(x: number, y: number, other: Folk): void {
+    const folk = this.ctrl.folk;
+    const world = this.ctrl.world;
+    const catalog = this.ctrl.sim.catalog;
+    const social = Object.values(catalog.socials).find((d) => d.topic)!;
+    const knows = (relationOf(world, folk.id, other.id)?.friendship ?? 0) >= 30;
+    this.menuEl.replaceChildren(el('div', 'menu-title', t('topic.with', { name: first(other.name) })));
+    if (!knows) this.menuEl.append(el('div', 'menu-note', t('topic.unknown')));
+    for (const id of Object.keys(catalog.topics)) {
+      const b = el('button', 'menu-item');
+      const icon = el('span', 'menu-icon');
+      icon.innerHTML = topicSvg(id, 16);
+      b.append(icon, el('span', '', t(`topic.${id}`)));
+      if (knows) {
+        const r = reactionTo(catalog, other, id);
+        b.append(el('span', `menu-extra react-${r}`, t(`topic.${r}`)));
+      }
+      b.addEventListener('click', () => {
+        this.ctrl.commandOrExplain({ type: 'queueSocial', folkId: folk.id, otherId: other.id, socialId: social.id, topic: id });
+        this.closeMenu();
+        this.update();
+      });
+      this.menuEl.append(b);
+    }
+    this.showMenuAt(x, y);
+  }
+
+  /** Bloco 9: ligar para um amigo (ou deixar o folk escolher). */
+  private openCallMenu(x: number, y: number, obj: WorldObject, interactionId: string): void {
+    const folk = this.ctrl.folk;
+    const world = this.ctrl.world;
+    this.menuEl.replaceChildren(el('div', 'menu-title', t('phone.callTitle')));
+    const any = el('button', 'menu-item');
+    any.append(el('span', 'menu-dot'), el('span', '', t('phone.callAnyone')));
+    any.addEventListener('click', () => {
+      this.ctrl.commandOrExplain({ type: 'queueUse', folkId: folk.id, objectId: obj.id, interactionId });
+      this.closeMenu();
+      this.update();
+    });
+    this.menuEl.append(any);
+    const known = world.neighbors
+      .filter((n) => !isServiceNeighbor(n) && relationOf(world, folk.id, n.id) && !this.ctrl.sim.findFolk(n.id))
+      .sort((a, b) => (relationOf(world, folk.id, b.id)?.friendship ?? 0) - (relationOf(world, folk.id, a.id)?.friendship ?? 0));
+    for (const n of known) {
+      const rel = relationOf(world, folk.id, n.id);
+      const b = el('button', 'menu-item');
+      const face = el('span', 'menu-face');
+      face.innerHTML = faceSvg(n.look, 18);
+      const cooling = rel && world.tick - rel.last >= 1440 && rel.friendship > 0;
+      b.append(face, el('span', '', n.name), el('span', 'menu-extra', `${t(friendshipLabel(rel))}${cooling ? ` · ${t('rel.cooling')}` : ''}`));
+      b.addEventListener('click', () => {
+        this.ctrl.commandOrExplain({ type: 'phoneFriend', folkId: folk.id, neighborId: n.id });
+        this.closeMenu();
+        this.update();
+      });
+      this.menuEl.append(b);
+    }
+    this.showMenuAt(x, y);
+  }
+
+  /** Bloco 9: quem chamar para a festa (com aviso de rivais na mesma lista). */
+  openPartyMenu(x: number, y: number, picked?: Set<number>): void {
+    const folk = this.ctrl.folk;
+    const world = this.ctrl.world;
+    const people = world.neighbors
+      .filter((n) => !isServiceNeighbor(n) && relationOf(world, folk.id, n.id))
+      .sort((a, b) => (relationOf(world, folk.id, b.id)?.friendship ?? 0) - (relationOf(world, folk.id, a.id)?.friendship ?? 0) || a.id - b.id);
+    const chosen = picked ?? new Set(people.filter((n) => (relationOf(world, folk.id, n.id)?.friendship ?? 0) >= 20).slice(0, 6).map((n) => n.id));
+    const cliques = findCliques(world);
+    const nameOf = (id: number) => first(this.nameOf(id));
+    this.menuEl.replaceChildren(el('div', 'menu-title', t('party.title')));
+    if (world.party) {
+      this.menuEl.append(el('div', 'menu-note menu-warn', t('problem.partyOn')));
+      this.showMenuAt(x, y);
+      return;
+    }
+    this.menuEl.append(el('div', 'menu-note party-hint', t('party.hint', { max: PARTY_MAX_GUESTS })));
+    const pairs = rivalPairs(world, [...chosen, folk.id]);
+    if (pairs.length) {
+      this.menuEl.append(el('div', 'menu-note menu-warn party-hint', t('party.rivals', { list: pairs.map(([a, b]) => `${nameOf(a)} × ${nameOf(b)}`).join(', ') })));
+    }
+    const box = el('div', 'party-list');
+    for (const n of people) {
+      const row = el('label', 'menu-item party-row');
+      const check = el('input');
+      check.type = 'checkbox';
+      check.checked = chosen.has(n.id);
+      check.disabled = !check.checked && chosen.size >= PARTY_MAX_GUESTS;
+      check.addEventListener('change', () => {
+        if (check.checked) chosen.add(n.id);
+        else chosen.delete(n.id);
+        this.openPartyMenu(x, y, chosen);
+      });
+      const face = el('span', 'menu-face');
+      face.innerHTML = faceSvg(n.look, 18);
+      const bits = [t(friendshipLabel(relationOf(world, folk.id, n.id)))];
+      const c = cliqueOf(cliques, n.id);
+      if (c) bits.push(t('party.clique', { name: nameOf(c.leader) }));
+      if ([...chosen].some((o) => o !== n.id && areRivals(world, o, n.id))) bits.push('⚡');
+      row.append(check, face, el('span', '', n.name), el('span', 'menu-extra', bits.join(' · ')));
+      box.append(row);
+    }
+    this.menuEl.append(box);
+    const go = el('button', 'btn party-go', t('party.call', { n: chosen.size }));
+    go.disabled = chosen.size === 0;
+    go.addEventListener('click', () => {
+      this.ctrl.commandOrExplain({ type: 'throwParty', folkId: folk.id, guestIds: [...chosen] });
+      this.closeMenu();
+      this.update();
+    });
+    this.menuEl.append(go);
+    this.showMenuAt(x, y);
+  }
+
   /** Texto do balão de dica ao passar o mouse sobre alguém. */
   folkTooltip(other: Folk): string {
     const folk = this.ctrl.folk;
@@ -993,7 +1186,8 @@ export class Hud {
     const th = thoughtOf(other, this.ctrl.world.tick);
     if (th) {
       const who = th.other !== undefined ? this.nameOf(th.other) : '';
-      parts.push(t(`thought.${th.kind}`, { other: who, need: t(`need.${th.icon}`) }));
+      if (th.kind === 'topic') parts.push(t('thought.topic', { topic: t(`topic.${th.icon.replace(/[+-]$/, '')}`) }));
+      else parts.push(t(`thought.${th.kind}`, { other: who, need: t(`need.${th.icon}`) }));
     }
     return parts.join(' · ');
   }
@@ -1041,7 +1235,51 @@ export class Hud {
       });
       this.menuEl.append(b);
     }
+    // bloco 9: assuntos que o folk conhece do outro
+    const catalog = this.ctrl.sim.catalog;
+    if ((rel?.friendship ?? 0) >= 30) {
+      const favs = favoriteTopics(catalog, other).map((id) => t(`topic.${id}`)).join(', ');
+      this.menuEl.append(el('div', 'menu-note topics-note', t('topic.favorites', { list: favs })));
+      const shared = sharedTopics(catalog, folk, other);
+      this.menuEl.append(el('div', 'menu-note topics-note', shared.length ? t('topic.shared', { list: shared.slice(0, 3).map((id) => t(`topic.${id}`)).join(', ') }) : t('topic.noneShared')));
+    }
+    // bloco 9: roda de conversa
+    if (!folk.away && !other.visit?.service) {
+      const theirs = circleOfFolk(world, other.id);
+      const mine = circleOfFolk(world, folk.id);
+      if (theirs && theirs !== mine && theirs.members.length < CIRCLE_MAX) {
+        const b = el('button', 'menu-item');
+        b.append(el('span', 'menu-dot'), el('span', '', t('circle.join')));
+        b.addEventListener('click', () => {
+          this.ctrl.commandOrExplain({ type: 'joinCircle', folkId: folk.id, circleId: theirs.id });
+          this.closeMenu();
+          this.update();
+        });
+        this.menuEl.append(b);
+      } else if (!theirs) {
+        const near = world.folks
+          .filter((f) => f !== folk && f !== other && onLot(f) && !f.visit?.service && !(f.visit && !f.visit.admitted))
+          .sort((a, c) => Math.abs(a.x - other.x) + Math.abs(a.y - other.y) - (Math.abs(c.x - other.x) + Math.abs(c.y - other.y)) || a.id - c.id)
+          .slice(0, CIRCLE_MAX - 2);
+        const crew = [other, ...near];
+        const b = el('button', 'menu-item');
+        b.append(el('span', 'menu-dot'), el('span', '', t('circle.start')), el('span', 'menu-extra', crew.map((f) => first(f.name)).join(', ')));
+        b.title = t('circle.startTip');
+        b.addEventListener('click', () => {
+          this.ctrl.commandOrExplain({ type: 'startCircle', folkId: folk.id, otherIds: crew.map((f) => f.id) });
+          this.closeMenu();
+          this.update();
+        });
+        this.menuEl.append(b);
+      }
+    }
     const list = availableSocials(world, this.ctrl.sim.catalog, folk, other);
+    if (!folk.away && list.some((d) => d.topic)) {
+      const b = el('button', 'menu-item');
+      b.append(el('span', 'menu-dot'), el('span', '', t('soc.talkTopic')), el('span', 'menu-extra', '›'));
+      b.addEventListener('click', () => this.openTopicMenu(x, y, other));
+      this.menuEl.append(b);
+    }
     if (list.length === 0 || folk.away) this.menuEl.append(el('div', 'menu-note', t('social.nothing')));
     else {
       for (const cat of SOCIAL_ORDER) {
@@ -1241,6 +1479,11 @@ export class Hud {
       const tagLine = el('div', 'rel-tags', tags.join(' · '));
       row.append(tagLine);
       if (theirs) row.append(el('div', 'rel-theirs', t('rel.theyFeel', { name: first(p.name), label: this.relSummary(theirs) })));
+      // bloco 9: com amizade, dá para saber do que a pessoa gosta de falar
+      const person = sim.findFolk(p.id) ?? world.neighbors.find((n) => n.id === p.id);
+      if (person && mine.friendship >= 30) {
+        row.append(el('div', 'rel-theirs', t('topic.favorites', { list: favoriteTopics(sim.catalog, person).map((id) => t(`topic.${id}`)).join(', ') })));
+      }
       if (mine.memories.length) {
         const mem = el('div', 'rel-mems');
         mem.append(el('div', 'rel-mem-title', t('rel.memories')));
@@ -1295,6 +1538,23 @@ export class Hud {
         box.append(line);
       }
       this.panelEl.append(box);
+    }
+    // bloco 9: do que o folk gosta de falar e as panelinhas do bairro
+    const catalog9 = this.ctrl.sim.catalog;
+    const favs = favoriteTopics(catalog9, folk).map((id) => t(`topic.${id}`)).join(', ');
+    const hates = hatedTopics(catalog9, folk).map((id) => t(`topic.${id}`)).join(', ');
+    this.panelEl.append(el('div', 'panel-sub', t('topic.title')));
+    this.panelEl.append(el('div', 'panel-note', `${t('topic.favorites', { list: favs })}${hates ? ` · ${t('topic.hates', { list: hates })}` : ''}`));
+    const cliques = findCliques(world);
+    this.panelEl.append(el('div', 'panel-sub', t('clique.title')));
+    if (!cliques.length) this.panelEl.append(el('div', 'panel-note', t('clique.none')));
+    const name = (id: number) => first(this.nameOf(id));
+    for (const c of cliques) {
+      const rivals = c.members.flatMap((a) => cliques.flatMap((o) => (o === c ? [] : o.members.filter((b) => areRivals(world, a, b)))));
+      const line = el('div', 'news pos clique');
+      line.append(el('span', 'rel-mem-day', t('clique.of', { name: name(c.leader) })), el('span', '', c.members.map(name).join(', ')));
+      if (rivals.length) line.append(el('span', 'clique-rivals', ` ⚡ ${[...new Set(rivals)].map(name).join(', ')}`));
+      this.panelEl.append(line);
     }
     this.panelEl.append(el('div', 'panel-sub', t('hud.relations')));
   }

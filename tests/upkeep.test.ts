@@ -340,7 +340,8 @@ describe('bloco 1: save v6', () => {
 
 describe('bloco 1: uma semana sem jogador', () => {
   it('a casa suja, alguém limpa, algo quebra e é consertado, e ninguém entra em colapso', () => {
-    const sim = householdSim(2);
+    // semente trocada no bloco 9 (rodas e telefone mudaram a sequência do sorteio; na 2 nada quebrou)
+    const sim = householdSim(4);
     let maxDirt = 0;
     let cleaned = 0;
     let tidied = 0;

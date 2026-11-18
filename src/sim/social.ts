@@ -21,6 +21,8 @@ export function onLot(folk: Folk): boolean {
 /** Com quem o folk está conversando agora (0 = ninguém). */
 export function talkingWith(folk: Folk): number {
   const a = folk.queue[0];
+  // bloco 9: quem está numa roda de conversa está ocupado com a roda (-1)
+  if (a?.kind === 'circle' && a.phase === 'using') return -1;
   if (!a || a.otherId === undefined) return 0;
   if (a.kind === 'listen') return a.otherId;
   if (a.kind === 'social' && a.phase === 'using') return a.otherId;

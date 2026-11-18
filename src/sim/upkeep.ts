@@ -101,6 +101,8 @@ export function interactionOpen(obj: WorldObject, it: InteractionDef): boolean {
   if (it.tune === 'on') return !obj.tune && !stateOf(obj).broken;
   if (it.tune === 'next') return !!obj.tune && !stateOf(obj).broken;
   if (it.tune === 'off') return !!obj.tune;
+  // bloco 9: só dá para beliscar com petisco na mesa
+  if (it.snacks === 'eat') return (obj.snacks ?? 0) > 0 && !stateOf(obj).broken;
   return !stateOf(obj).broken;
 }
 

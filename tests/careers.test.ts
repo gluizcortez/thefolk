@@ -420,7 +420,7 @@ describe('save v12', () => {
     for (const n of w.neighbors) if (n.career) n.career.level = Math.floor(n.career.level / 2);
     const back = deserialize(raw, { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES, catalog: CATALOG });
     expect(back.version).toBe(SAVE_VERSION);
-    expect(SAVE_VERSION).toBe(12);
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(12);
     expect(back.world.folks[0].job!.level).toBe(6);
     expect(back.world.household.unlocked).toEqual([]);
     for (const name of newBosses) expect(back.world.neighbors.some((n) => n.name === name && n.boss), name).toBe(true);

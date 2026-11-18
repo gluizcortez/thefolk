@@ -52,6 +52,43 @@ function stool(z: number, top: THREE.Material): THREE.Group {
   return g;
 }
 
+// ---------- bloco 9: mesa de petiscos ----------
+
+/** Mesa comprida de festa com toalha; travessas aparecem conforme o que sobrou. */
+const buffet: FurnitureSpec = {
+  build(seed) {
+    const top = colorMat(0xf1e6c6, { gloss: 0.2 });
+    const cloth = colorMat(0xc23a32, { gloss: 0.15 });
+    const leg = texMat('oak', { gloss: 0.4 });
+    const g = group(rbox(1.86, 0.05, 0.8, 0.02, top, 0, 0.72, 0));
+    // toalha caindo pelas bordas, com barrado
+    g.add(box(1.9, 0.22, 0.84, cloth, 0, 0.53, 0), box(1.91, 0.03, 0.85, colorMat(0xf4efdf), 0, 0.53, 0));
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(cyl(0.035, 0.03, 0.53, 8, leg, sx * 0.84, 0, sz * 0.34));
+    const rnd = seeded(seed + 9);
+    const plates: THREE.Object3D[] = [];
+    const foods = [0xe8b830, 0x6aa846, 0xc9382f, 0xe07a2c, 0x8a5a2a, 0xf4efdf];
+    for (let i = 0; i < 6; i++) {
+      const x = -0.66 + i * 0.27;
+      const z = (i % 2 ? 0.14 : -0.14) + (rnd() - 0.5) * 0.05;
+      const plate = group(cyl(0.12, 0.1, 0.02, 14, porcelain(), x, 0.77, z));
+      for (let k = 0; k < 4; k++) {
+        plate.add(ball(0.035, 0.03, 0.035, colorMat(foods[(i + k) % foods.length], { gloss: 0.4 }), x + (rnd() - 0.5) * 0.12, 0.8, z + (rnd() - 0.5) * 0.12, 6));
+      }
+      plates.push(plate);
+      g.add(plate);
+    }
+    // jarra de suco no meio
+    g.add(cyl(0.06, 0.05, 0.2, 10, colorMat(0xf2c14e, { gloss: 0.9 }), 0.0, 0.77, 0));
+    return {
+      group: g,
+      tick({ stock }) {
+        const left = Math.ceil(((stock ?? 0) / 16) * plates.length);
+        plates.forEach((p, i) => (p.visible = i < left));
+      },
+    };
+  },
+};
+
 // ---------- camas ----------
 
 const bedcot: FurnitureSpec = {
@@ -1024,6 +1061,7 @@ const wardrobe: FurnitureSpec = {
 };
 
 export const FURNITURE4: Record<string, FurnitureSpec> = {
+  buffet,
   wardrobe,
   bedcot,
   bedqueen,

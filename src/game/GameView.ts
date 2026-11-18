@@ -43,6 +43,7 @@ import { PAINT, PAL } from './art/palette';
 import { colorOf } from '../sim/furnish';
 import { wearOf } from '../sim/family';
 import { thoughtOf } from '../sim/will';
+import { reactionTo } from '../sim/topics';
 import { stationDef } from '../sim/music';
 import type { Look, UniformDef, Wear } from '../sim/types';
 import { ridesWaiting, uniformOf, vehicleOf } from '../sim/career';
@@ -829,7 +830,14 @@ export class GameView {
     }
     this.syncMess();
     for (const entry of this.objects.values()) {
-      entry.model.tick?.({ time: this.animTime, using: using.get(entry.obj.id), night, lit: !!entry.obj.lit && !entry.obj.state?.broken });
+      entry.model.tick?.({
+        time: this.animTime,
+        using: using.get(entry.obj.id),
+        night,
+        lit: !!entry.obj.lit && !entry.obj.state?.broken,
+        ringing: !!world.call && !world.call.answeredBy,
+        stock: entry.obj.snacks,
+      });
       if (entry.obj.state) entry.fx.update(entry.obj.state, !!entry.def.upkeep?.bin && entry.obj.state.fill >= 100, this.animTime);
       this.updateNotes(entry);
       const s = entry === this.hover.entry ? 1.04 : 1;
@@ -1159,6 +1167,19 @@ export class GameView {
   private socialLook(folk: Folk): SocialLook | undefined {
     const sim = this.ctrl.sim;
     const a: Action | undefined = folk.queue[0];
+    // bloco 9: na roda, quem está com a palavra fala; os outros ouvem e reagem
+    if (a?.kind === 'circle' && a.phase === 'using') {
+      const c = sim.world.circles.find((x) => x.id === a.circleId);
+      const speaker = c && sim.findFolk(c.speaker);
+      if (!c || !speaker) return { anim: 'idle', other: folk };
+      if (speaker === folk) return { anim: 'talk', other: folk };
+      const r = reactionTo(sim.catalog, folk, c.topic);
+      return {
+        anim: r === 'love' ? 'laugh' : 'listen',
+        expr: r === 'hate' ? 'tired' : r === 'love' || r === 'like' ? 'happy' : undefined,
+        other: speaker,
+      };
+    }
     if (!a || a.otherId === undefined) return undefined;
     const other = sim.findFolk(a.otherId);
     if (!other) return undefined;
