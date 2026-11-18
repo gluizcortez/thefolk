@@ -5,6 +5,7 @@ import { NEED_MAX, moodOf } from './needs';
 import { relKey } from './relations';
 import { axisPull } from './temper';
 import { DIRTY_AT, messSenseOf } from './upkeep';
+import { isLitter } from './kitchen';
 import type { Catalog, Folk, InteractionDef, NeedId, Thought, ThoughtKind, World } from './types';
 import { NEED_IDS } from './types';
 
@@ -175,7 +176,7 @@ export function think(world: World, catalog: Catalog, folk: Folk, busyWith?: Int
   }
   // 2) bagunça e sujeira por perto (quem tem Ordem sente mais)
   let dirt = 0;
-  for (const m of world.mess) if (Math.abs(m.x - folk.x) + Math.abs(m.y - folk.y) <= MESS_RADIUS) dirt++;
+  for (const m of world.mess) if (isLitter(m, world.tick) && Math.abs(m.x - folk.x) + Math.abs(m.y - folk.y) <= MESS_RADIUS) dirt++;
   for (const o of world.objects) {
     if ((o.state?.dirt ?? 0) < DIRTY_AT && !(o.state?.broken ?? false)) continue;
     if (Math.abs(o.x - folk.x) + Math.abs(o.y - folk.y) <= MESS_RADIUS) dirt++;

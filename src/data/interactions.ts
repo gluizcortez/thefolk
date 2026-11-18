@@ -55,7 +55,8 @@ export const service = (): InteractionDef => ({
 export const dishes = (): InteractionDef => ({
   id: 'dishes',
   label: 'act.dishes',
-  duration: 4,
+  duration: 2,
+  hold: 'dirtyPlate',
   effects: { hygiene: -0.1 },
   care: 'dishes',
   hidden: true,

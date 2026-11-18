@@ -34,12 +34,28 @@ export function actionSound(def: ObjectDef | undefined, it: InteractionDef): Act
     case 'service':
       return { loop: 'saw', end: 'hammer' };
     case 'dishes':
+    case 'washUp':
       return { loop: 'water' };
+    case 'makeBed':
+      return { start: 'thunk' };
     case 'empty':
     case 'dump':
       return { start: 'thunk' };
   }
+  // plano 2, bloco 6: o cozinhar abre a geladeira; as etapas têm cada uma o seu
+  if (it.cook) return { start: 'fridge', loop: 'sizzle' };
   switch (it.id) {
+    case 'fetchFood':
+      return { start: 'fridge' };
+    case 'stir':
+      return { loop: 'sizzle' };
+    case 'prep':
+    case 'plateUp':
+    case 'eatServed':
+      return { loop: 'clink' };
+    case 'brushTeeth':
+    case 'washHands':
+      return { start: 'switch', loop: 'water' };
     case 'shower':
     case 'wash':
       return { start: 'switch', loop: 'water' };

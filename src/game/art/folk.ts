@@ -155,6 +155,11 @@ export class FolkModel {
   private extinguisher = new THREE.Group();
   private lantern = new THREE.Group();
   private ring = new THREE.Group();
+  /** plano 2, bloco 6: coisas da cozinha, do banheiro e da limpeza (mão direita) */
+  private tools = new Map<HeldProp, THREE.Group>();
+  /** plano 2, bloco 6: panela nas duas mãos e prato sujo, na frente do corpo */
+  private pot = new THREE.Group();
+  private plateDirty = new THREE.Group();
   private faceMat: THREE.MeshPhongMaterial;
   private faceKey = '';
   private faceLook: FaceLook;
@@ -323,6 +328,24 @@ export class FolkModel {
     this.plate.position.set(0, 0.12, 0.3 * (0.5 + k * 0.5));
     this.plate.visible = false;
     this.spine.add(this.plate);
+    // plano 2, bloco 6: prato sujo (com restos) e a panela levada nas duas mãos
+    this.plateDirty.add(
+      cyl(0.13, 0.1, 0.02, 14, china, 0, 0, 0),
+      ball(0.03, 0.012, 0.025, colorMat(0x9a5a2a), 0.03, 0.012, -0.02, 6),
+      ball(0.02, 0.01, 0.02, colorMat(0x6a8a3a), -0.04, 0.012, 0.03, 6),
+    );
+    this.plateDirty.position.copy(this.plate.position);
+    this.plateDirty.visible = false;
+    this.spine.add(this.plateDirty);
+    const steel = colorMat(0xb8bcc4, { gloss: 0.9 });
+    this.pot.add(
+      cyl(0.13, 0.12, 0.13, 14, steel, 0, 0.06, 0),
+      cyl(0.112, 0.112, 0.012, 14, colorMat(0xc9822f, { gloss: 0.4 }), 0, 0.12, 0),
+      box(0.36, 0.022, 0.03, colorMat(0x2a2a2e), 0, 0.1, 0),
+    );
+    this.pot.position.set(0, 0.06, 0.3 * (0.5 + k * 0.5) + 0.04);
+    this.pot.visible = false;
+    this.spine.add(this.pot);
 
     // cabeça: o rosto vai na textura; nariz, orelhas e cabelo são modelados
     this.faceMat = new THREE.MeshPhongMaterial({ map: null, specular: 0x1a1a1a, shininess: 14 });
@@ -482,6 +505,42 @@ export class FolkModel {
         );
         this.lantern.visible = false;
         props.add(this.rag, this.cup, this.bag, this.bottle, this.extinguisher, this.lantern);
+        // plano 2, bloco 6: o que vai na mão direita na cozinha, no banheiro e na limpeza
+        const F = -FOREARM;
+        const wood = colorMat(0x9a6a3a, { gloss: 0.3 });
+        const dark = colorMat(0x2a2a2e, { gloss: 0.5 });
+        const tool = (id: HeldProp, ...parts: THREE.Object3D[]) => {
+          const g = new THREE.Group();
+          g.add(...parts);
+          g.visible = false;
+          this.tools.set(id, g);
+          props.add(g);
+          return g;
+        };
+        tool(
+          'groceries',
+          rbox(0.16, 0.2, 0.12, 0.02, colorMat(0xc9a66b), 0, F - 0.16, 0.06),
+          ball(0.05, 0.06, 0.05, colorMat(0x3f9455), -0.03, F - 0.04, 0.06, 7),
+          ball(0.035, 0.035, 0.035, colorMat(0xd8402a, { gloss: 0.5 }), 0.04, F - 0.05, 0.07, 7),
+        );
+        tool('knife', box(0.022, 0.026, 0.09, dark, 0, F - 0.07, 0.04), box(0.006, 0.03, 0.15, colorMat(0xdfe3ea, { gloss: 1 }), 0, F - 0.07, 0.16));
+        tool('spoon', rod([0, F - 0.05, 0.02], [0, F - 0.2, 0.22], 0.01, wood, 6), ball(0.025, 0.012, 0.035, wood, 0, F - 0.21, 0.24, 6));
+        tool('fork', rod([0, F - 0.06, 0.02], [0, F - 0.1, 0.15], 0.006, colorMat(0xdfe3ea, { gloss: 1 }), 5), box(0.022, 0.004, 0.04, colorMat(0xdfe3ea, { gloss: 1 }), 0, F - 0.11, 0.17));
+        tool('cutlery', rod([0, F - 0.06, 0.02], [0, F - 0.1, 0.15], 0.006, colorMat(0xdfe3ea, { gloss: 1 }), 5), box(0.022, 0.004, 0.04, colorMat(0xdfe3ea, { gloss: 1 }), 0, F - 0.11, 0.17));
+        tool('sponge', rbox(0.07, 0.04, 0.1, 0.01, colorMat(0xe8d040), 0, F - 0.08, 0.04), box(0.07, 0.012, 0.1, colorMat(0x3f8f4a), 0, F - 0.057, 0.04));
+        tool('towel', rbox(0.2, 0.3, 0.025, 0.01, colorMat(0x7ec8e3), 0, F - 0.2, 0.06), box(0.2, 0.02, 0.026, colorMat(0xf4efdf), 0, F - 0.33, 0.06));
+        tool('toothbrush', rod([0, F - 0.06, 0.02], [0, F - 0.06, 0.16], 0.007, colorMat(0x3a8ad8, { gloss: 0.7 }), 5), box(0.012, 0.014, 0.03, colorMat(0xffffff), 0, F - 0.05, 0.16));
+        tool('comb', box(0.012, 0.03, 0.13, dark, 0, F - 0.07, 0.08));
+        tool(
+          'mop',
+          rod([0, F + 0.25, -0.1], [0, F - 0.9, 0.42], 0.014, wood, 6),
+          cyl(0.07, 0.11, 0.08, 8, colorMat(0xe9e4d6), 0, F - 0.97, 0.46),
+        );
+        tool(
+          'broom',
+          rod([0, F + 0.25, -0.1], [0, F - 0.86, 0.4], 0.014, wood, 6),
+          box(0.26, 0.1, 0.05, colorMat(0xc9a040), 0, F - 0.93, 0.43),
+        );
       } else {
         // bloco 10: aliança dourada no anelar da mão esquerda
         const band = new THREE.Mesh(new THREE.TorusGeometry(0.013, 0.005, 5, 10), colorMat(PAL.brass, { gloss: 1 }));
@@ -733,11 +792,16 @@ export class FolkModel {
     this.bottle.visible = hold === 'bottle';
     this.extinguisher.visible = hold === 'extinguisher';
     this.lantern.visible = hold === 'lantern' || f.anim === 'lantern';
+    // plano 2, bloco 6: comer de garfo mostra o prato também; panela e prato sujo nas duas mãos
+    if (hold === 'fork') this.plate.visible = true;
+    this.pot.visible = hold === 'pot';
+    this.plateDirty.visible = hold === 'dirtyPlate';
+    for (const [id, g] of this.tools) g.visible = hold === id;
     this.ring.visible = !!f.ring;
 
     // mãos: segurar algo fecha a mão em volta; o indicador aponta quando pedido
-    const inRight = hold === 'cup' || hold === 'suitcase' || hold === 'bottle' || hold === 'extinguisher' || hold === 'lantern' || hold === 'rag' || hold === 'phone';
-    const both = hold === 'book' || hold === 'plate';
+    const inRight = (!!hold && this.tools.has(hold)) || hold === 'cup' || hold === 'suitcase' || hold === 'bottle' || hold === 'extinguisher' || hold === 'lantern' || hold === 'rag' || hold === 'phone';
+    const both = hold === 'book' || hold === 'plate' || hold === 'fork' || hold === 'pot' || hold === 'dirtyPlate';
     const gripR = inRight || both ? Math.max(p.gripR, 0.72) : p.gripR;
     const gripL = both ? Math.max(p.gripL, 0.72) : p.gripL;
     this.handL.rotation.x = p.wristL;

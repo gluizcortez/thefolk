@@ -7,6 +7,10 @@ import type { WallMode } from '../game/viewMode';
 import { ROOF_COLORS } from '../data/build';
 import { hasText, t } from '../i18n';
 import {
+  DISH_BY_ID,
+  isSpoiled,
+  isWarm,
+  servingsFor,
   DARK_BELOW,
   roofArea,
   roomAt,
@@ -132,6 +136,7 @@ import type {
   CareerLevel,
   Folk,
   Mess,
+  MealAct,
   NeedId,
   ObjectCategory,
   ObjectDef,
@@ -1555,15 +1560,18 @@ export class Hud {
       if (it.cost) extras.push(formatMoney(it.cost));
       if (it.special === 'payBills') extras.push(formatMoney(debtOf(world)));
       if (it.special === 'fair') extras.push(formatMoney(FAIR.price));
-      if (it.skill) extras.push(t(`skill.${it.skill.id}`));
+      // plano 2, bloco 6: o prato diz quanto rende e quanto demora
+      const dish = it.cook ? DISH_BY_ID[it.cook] : undefined;
+      if (dish) extras.push(t('cook.extra', { n: servingsFor(world, dish), min: it.duration }));
+      else if (it.skill) extras.push(t(`skill.${it.skill.id}`));
       if (it.tune === 'next') extras.push(t(stationDef(nextStation(obj.tune))!.name));
       const sub = it.special === 'invite' || it.special === 'services' || it.special === 'call' || it.special === 'party';
       if (sub) extras.push('›');
       items.push({
         label: t(it.label),
-        icon: it.care ? 'hand' : main && (main[1] ?? 0) > 0 ? (main[0] as NeedId) : it.skill ? 'skill' : 'mood',
+        icon: it.care ? 'hand' : dish ? 'hunger' : main && (main[1] ?? 0) > 0 ? (main[0] as NeedId) : it.skill ? 'skill' : 'mood',
         extra: extras.join(' · ') || undefined,
-        why: st.why ? t(`ring.why.${st.why}`, { name: first(folk.name) }) : undefined,
+        why: st.why ? t(`ring.why.${st.why}`, { name: first(folk.name), n: dish?.skill ?? 0 }) : undefined,
         reluctant: st.reluctant ? `${t('refuse.short')}: ${t(`refuse.${st.reluctant}`, { name: folk.name })}` : undefined,
         group: objectGroup(it),
         run: () => {
@@ -1589,6 +1597,9 @@ export class Hud {
     if (s.dirt >= DIRTY_AT) parts.push(t('state.dirty'));
     else if (s.dirt >= 25) parts.push(t('state.grimy'));
     if (def.upkeep?.bin) parts.push(s.fill >= 100 ? t('state.binFull') : t('state.binFill', { pct: Math.round(s.fill) }));
+    // plano 2, bloco 6: louça na pia e cama desfeita
+    if (obj.dishes) parts.push(t('state.sinkDishes', { n: Math.ceil(obj.dishes) }));
+    if (obj.unmade) parts.push(t('state.unmade'));
     // bloco 14: lápide e urna dizem de quem são; lareira acesa
     if (obj.memorial) {
       const who = this.ctrl.world.departed?.find((d) => d.id === obj.memorial!.personId);
@@ -1621,6 +1632,7 @@ export class Hud {
   /** Menu de uma bagunça solta: recolher, secar, catar. */
   openMessMenu(x: number, y: number, mess: Mess): void {
     const folk = this.ctrl.folk;
+    if (mess.kind === 'meal' && mess.meal) return this.openMealMenu(x, y, mess);
     const old = mess.kind === 'paper' && !freshPaper(this.ctrl.world, mess);
     const item: RingItem = {
       label: this.messAction(mess),
@@ -1629,6 +1641,36 @@ export class Hud {
       run: () => this.order({ type: 'queueTidy', folkId: folk.id, messId: mess.id }),
     };
     this.showRing(x, y, this.ringHead(t(old ? 'mess.paperOld' : `mess.${mess.kind}`), []), [item]);
+  }
+
+  /** Plano 2, bloco 6: a travessa servida: servir-se, chamar a família, esquentar, jogar fora. */
+  private openMealMenu(x: number, y: number, mess: Mess): void {
+    const folk = this.ctrl.folk;
+    const meal = mess.meal!;
+    const tick = this.ctrl.world.tick;
+    const spoiled = isSpoiled(meal, tick);
+    const empty = meal.servings <= 0;
+    const order = (act: MealAct) => () => this.order({ type: 'mealAct', folkId: folk.id, messId: mess.id, act });
+    const items: RingItem[] = [];
+    if (!spoiled) {
+      items.push({ label: t('meal.serve'), icon: 'hunger', why: empty ? t('ring.why.noFood') : undefined, run: order('serve') });
+      items.push({ label: t('meal.call'), icon: 'social', why: empty ? t('ring.why.noFood') : undefined, run: order('call') });
+      if (!isWarm(meal, tick)) items.push({ label: t('meal.reheat'), icon: 'fun', run: order('reheat') });
+    }
+    items.push({ label: t('meal.scrap'), icon: 'broom', run: order('scrap') });
+    this.showRing(x, y, this.ringHead(t(`dish.${meal.dish}`), this.mealNotes(mess)), items);
+  }
+
+  /** O que a travessa mostra: porções, temperatura e o ponto. */
+  mealNotes(mess: Mess): { text: string; warn?: boolean }[] {
+    const meal = mess.meal;
+    if (!meal) return [];
+    const tick = this.ctrl.world.tick;
+    const spoiled = isSpoiled(meal, tick);
+    const temp = t(spoiled ? 'meal.spoiled' : meal.burnt ? 'meal.burnt' : isWarm(meal, tick) ? 'meal.warm' : 'meal.cold');
+    const out = [{ text: t('meal.state', { n: meal.servings, total: meal.total, temp }), warn: spoiled || !!meal.burnt }];
+    if (!spoiled) out.push({ text: t('meal.quality', { q: meal.quality }), warn: false });
+    return out;
   }
 
   /** Rótulo da ação de recolher uma bagunça (o jornal do dia é "pegar o jornal"). */

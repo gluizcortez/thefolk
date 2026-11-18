@@ -48,7 +48,7 @@ export const WISHES: Record<string, WishDef> = {
     weight: 2,
     temper: { order: 0.5 },
     traits: { guloso: 1.8 },
-    interactions: ['cook'],
+    interactions: ['stir'],
     amount: 15,
   },
   readSomething: {

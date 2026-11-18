@@ -255,6 +255,9 @@ export const ACTIVITY = {
   sleep: {
     still: true,
     ownLegs: true,
+    // plano 2, bloco 6: vira durante o sono (de lado, de barriga para cima)
+    variants: ['sleep', 'sleep_sideR', 'sleep_back', 'sleep_sideL'],
+    every: 30,
     tracks: {
       lie: 1,
       headX: 0,

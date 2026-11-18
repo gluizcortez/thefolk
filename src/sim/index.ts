@@ -41,3 +41,4 @@ export * from './downtown';
 export * from './life';
 export * from './pace';
 export * from './feelings';
+export * from './kitchen';

@@ -16,7 +16,7 @@ import type { TownPlan } from './town';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 25;
+export const SAVE_VERSION = 26;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -395,6 +395,18 @@ const migrations: Record<number, Migration> = {
       return out;
     };
     return { ...save, world: fix(save.world) as Obj };
+  },
+  // plano 2, bloco 6: o "cozinhar algo quente" do fogão virou um cozinhar por
+  // prato, em etapas. Quem estava cozinhando (ou ia cozinhar) larga a ordem; o
+  // prato no colo dessa receita acaba ali. A louça e a cama começam em ordem.
+  25: (save) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    world.folks = (world.folks ?? []).map((f) => {
+      const out = { ...f, queue: (f.queue ?? []).filter((a) => a.interactionId !== 'cook') };
+      if (out.carry?.interactionId === 'cook') delete out.carry;
+      return out;
+    });
+    return { ...save, world: world as unknown as Obj };
   },
 };
 

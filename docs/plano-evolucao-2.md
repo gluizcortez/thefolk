@@ -345,6 +345,27 @@ novo, perto do detalhe do quarto jogo.
 Pronto: tiras animadas de cozinhar, comer à mesa, banho e dormir a dois;
 testes das etapas (porções, prato esfriando, louça indo para a pia).
 
+**Feito em 18/11/2026** (save v26, uma casa a menos que o plano). O fogão
+tem um "Cozinhar" por prato (oito pratos da casa, liberados pela habilidade,
+com a duração e as porções no menu), e a ação passa sozinha por geladeira
+(pega os ingredientes), bancada (pica na tábua), fogão (panela com vapor,
+mexe e prova) e servir: a travessa fica na bancada ou na mesa mais perto,
+com porções, qualidade, quente por 1h30, fria depois e estragada (com
+moscas) em 12 h. No menu da travessa: Servir-se, Chamar a família (todos da
+casa vêm pegar um prato), Esquentar e Jogar fora. Quem se serve leva o
+prato, come à mesa de garfo (conversa com quem está junto), e o prato sujo
+fica para alguém levar à pia, onde a louça se empilha até Lavar a louça
+(esponja). Privada levanta a tampa, dá descarga e chama lavar as mãos;
+chuveiro em fases (tirar a roupa, ensaboar, enxaguar) e secar com toalha;
+escovar os dentes e se arrumar na pia do banheiro e no espelho. Cama: o
+casal dorme de lados opostos, virados um para o outro, debaixo da coberta,
+quem dorme sozinho vira de posição a cada meia hora, a cama fica desfeita
+(conta no ambiente) até alguém arrumar, e quem é caprichoso arruma ao
+levantar; cochilar deitado no sofá. Vassoura e rodo na mão na limpeza.
+Ficou para depois: banheira e máquina de lavar (não há esses objetos ainda),
+lava-louças, as etapas dos bebês no trocador e esquentar no fogão (hoje
+esquenta no lugar).
+
 ## Bloco 7 — Atividades a fundo II: lazer, estudo, trabalho em casa e convívio (save v28)
 
 - **Computador**: sentar, ligar, digitar com as duas mãos, jogos, procurar

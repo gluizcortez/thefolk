@@ -162,6 +162,28 @@ export interface InteractionDef {
   stages?: StagesDef;
   /** plano 2, bloco 4: variações sorteadas do laço (animações) */
   loops?: string[];
+  /** plano 2, bloco 6: cozinhar este prato (id em HOME_DISHES): vira as etapas geladeira, bancada, fogão e servir */
+  cook?: string;
+  /** plano 2, bloco 6: etapa escondida do cozinhar (pegar, picar, mexer, servir) */
+  step?: CookStep;
+  /** plano 2, bloco 6: comer a porção servida da travessa (a ação traz o prato) */
+  served?: boolean;
+  /** plano 2, bloco 6: animação do laço (nome em game/art/anims) */
+  anim?: string;
+  /** plano 2, bloco 6: fases do laço por minuto (ensaboar, enxaguar), só visual */
+  phases?: PhaseDef[];
+  /** plano 2, bloco 6: o que vem depois, sozinho (lavar as mãos depois da privada) */
+  after?: 'washHands';
+}
+
+/** Plano 2, bloco 6: etapas do cozinhar, cada uma num objeto. */
+export type CookStep = 'fetch' | 'prep' | 'stir' | 'plateUp';
+
+/** Plano 2, bloco 6: uma fase do laço, a partir do minuto `at` do uso. */
+export interface PhaseDef {
+  at: number;
+  anim: string;
+  hold?: HeldProp;
 }
 
 /** Plano 2, bloco 4: uma etapa curta de uma atividade (entrar, sair). */
@@ -241,7 +263,31 @@ export type Outfit = 'day' | 'formal' | 'sleep' | 'swim' | 'work';
 /** O que o folk pode estar vestindo: a roupa de sempre ou o roupão do banho. */
 export type Wear = Outfit | 'bath';
 /** Coisa que aparece na mão do folk. */
-export type HeldProp = 'plate' | 'book' | 'phone' | 'rag' | 'cup' | 'suitcase' | 'bottle' | 'extinguisher' | 'lantern';
+export type HeldProp =
+  | 'plate'
+  | 'book'
+  | 'phone'
+  | 'rag'
+  | 'cup'
+  | 'suitcase'
+  | 'bottle'
+  | 'extinguisher'
+  | 'lantern'
+  // plano 2, bloco 6: cozinha, mesa, banheiro e limpeza
+  | 'groceries'
+  | 'knife'
+  | 'spoon'
+  | 'pot'
+  | 'fork'
+  /** só o garfo (o prato está na mesa) */
+  | 'cutlery'
+  | 'dirtyPlate'
+  | 'sponge'
+  | 'towel'
+  | 'toothbrush'
+  | 'comb'
+  | 'mop'
+  | 'broom';
 
 // ---------- Bloco 11: bebês, crianças e escola ----------
 
@@ -413,10 +459,45 @@ export interface DuoDef {
  * Bloco 13: 'water' rega a planta, 'harvest' colhe os frutos (vão para a
  * despensa) e 'replant' replanta o que secou de vez.
  */
-export type CareKind = 'clean' | 'repair' | 'service' | 'empty' | 'dishes' | 'dump' | 'water' | 'harvest' | 'replant';
+export type CareKind =
+  | 'clean'
+  | 'repair'
+  | 'service'
+  | 'empty'
+  | 'dishes'
+  | 'dump'
+  | 'water'
+  | 'harvest'
+  | 'replant'
+  // plano 2, bloco 6: lavar a louça empilhada na pia e arrumar a cama desfeita
+  | 'washUp'
+  | 'makeBed';
 
 /** Bagunça solta: prato sujo, poça, lixo no chão. */
-export type MessKind = 'plate' | 'puddle' | 'trash' | 'paper' | 'ash';
+/** Plano 2, bloco 6: 'meal' = prato pronto servido (travessa com porções), que não é sujeira até estragar. */
+export type MessKind = 'plate' | 'puddle' | 'trash' | 'paper' | 'ash' | 'meal';
+
+/** Plano 2, bloco 6: a travessa que saiu do fogão. */
+export interface MealInfo {
+  /** prato (id em HOME_DISHES, sim/kitchen.ts) */
+  dish: string;
+  /** porções que ainda tem */
+  servings: number;
+  /** porções com que saiu do fogão */
+  total: number;
+  /** 0 a 100: como ficou */
+  quality: number;
+  /** passou do ponto */
+  burnt?: boolean;
+  /** quente até este tick (depois, fria) */
+  warmUntil: number;
+  /** estraga neste tick */
+  spoilAt: number;
+  /** objeto em que está (bancada, fogão, mesa) */
+  on: number;
+  /** quem cozinhou */
+  cook: number;
+}
 
 /** Como um objeto se suja e se gasta com o uso (por minuto de uso). */
 export interface UpkeepDef {
@@ -1256,6 +1337,10 @@ export interface WorldObject {
   blaze?: number;
   /** bloco 14: lápide ou urna de alguém */
   memorial?: Memorial;
+  /** plano 2, bloco 6: pratos sujos esperando na pia */
+  dishes?: number;
+  /** plano 2, bloco 6: cama desfeita (alguém levantou e não arrumou) */
+  unmade?: boolean;
 }
 
 /** Bloco 14: de que se morre (e quase se morre). */
@@ -1359,6 +1444,8 @@ export interface Mess {
   tick: number;
   /** quem deixou (0 = ninguém em especial) */
   by: number;
+  /** plano 2, bloco 6: travessa de comida pronta (kind 'meal') */
+  meal?: MealInfo;
 }
 
 export type ActionPhase = 'queued' | 'walking' | 'using';
@@ -1368,7 +1455,49 @@ export type ActionPhase = 'queued' | 'walking' | 'using';
  * 'social' = puxar conversa com `otherId`; 'listen' = dar atenção a quem puxou;
  * 'leave' = visita indo embora.
  */
-export type ActionKind = 'use' | 'goto' | 'work' | 'social' | 'listen' | 'leave' | 'tidy' | 'door' | 'circle' | 'school' | 'douse' | 'panic';
+export type ActionKind =
+  | 'use'
+  | 'goto'
+  | 'work'
+  | 'social'
+  | 'listen'
+  | 'leave'
+  | 'tidy'
+  | 'door'
+  | 'circle'
+  | 'school'
+  | 'douse'
+  | 'panic'
+  // plano 2, bloco 6: mexer na travessa servida (servir-se, chamar a família, esquentar, jogar fora)
+  | 'meal';
+
+/** Plano 2, bloco 6: o que fazer com a travessa. */
+export type MealAct = 'serve' | 'call' | 'reheat' | 'scrap';
+
+/** Plano 2, bloco 6: o cozinhar em andamento, de objeto em objeto. */
+export interface CookJob {
+  dish: string;
+  /** etapa da vez */
+  step: CookStep;
+  /** fogão escolhido */
+  stove: number;
+  /** porções (tiradas da despensa ao pegar os ingredientes) */
+  servings: number;
+  /** minutos da etapa da vez */
+  minutes: number;
+  /** bônus do fogão na qualidade */
+  bonus: number;
+  /** passou do ponto no fogão */
+  burnt?: boolean;
+}
+
+/** Plano 2, bloco 6: a porção que o folk pegou da travessa. */
+export interface ServedPlate {
+  dish: string;
+  quality: number;
+  cold: boolean;
+  burnt?: boolean;
+}
 
 export interface Action {
   id: number;
@@ -1414,6 +1543,12 @@ export interface Action {
   stageLeft?: number;
   /** plano 2, bloco 4: tarefa encadeada que espera a saída terminar */
   then?: string;
+  /** plano 2, bloco 6: cozinhando (etapas em objetos diferentes) */
+  cook?: CookJob;
+  /** plano 2, bloco 6: prato servido da travessa, a caminho da mesa ou comendo */
+  served?: ServedPlate;
+  /** plano 2, bloco 6: o que fazer com a travessa (kind 'meal', a travessa é `messId`) */
+  mealAct?: MealAct;
   phase: ActionPhase;
   elapsed: number;
 }
@@ -1480,6 +1615,8 @@ export interface Folk {
   scorch?: number;
   /** bloco 14: minutos com a fome no zero */
   starving?: number;
+  /** plano 2, bloco 6: a última porção da travessa que comeu (para o gosto ficar na boca) */
+  lastMeal?: { dish: string; quality: number; tick: number; burnt?: boolean };
   /** bloco 14: preso na piscina sem escadinha (um tile de água da piscina) */
   adrift?: Vec;
   /** bloco 14: caído, esperando o Seu Sereno */
@@ -1978,6 +2115,8 @@ export type Command =
   | { type: 'queueUse'; folkId: number; objectId: number; interactionId: string; append?: boolean }
   | { type: 'queueGoto'; folkId: number; x: number; y: number; append?: boolean }
   | { type: 'queueTidy'; folkId: number; messId: number; append?: boolean }
+  // plano 2, bloco 6: travessa servida
+  | { type: 'mealAct'; folkId: number; messId: number; act: MealAct; append?: boolean }
   | { type: 'callService'; folkId: number; service: ServiceOrder; append?: boolean }
   | { type: 'dismissService'; service: 'maid' | 'gardener' }
   | { type: 'answerDoor'; folkId: number; otherId: number; welcome: boolean; append?: boolean }

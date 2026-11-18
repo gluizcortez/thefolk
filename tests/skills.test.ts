@@ -41,8 +41,8 @@ describe('habilidades', () => {
   });
 
   it('quem cozinha melhor mata mais a fome por minuto', () => {
-    const novice = openField(6, 6, [{ defId: 'stove', x: 2, y: 2 }], { x: 2, y: 3, needs: { hunger: 10 } });
-    const chef = openField(6, 6, [{ defId: 'stove', x: 2, y: 2 }], {
+    const novice = openField(6, 6, [{ defId: 'fridge', x: 2, y: 2 }], { x: 2, y: 3, needs: { hunger: 10 } });
+    const chef = openField(6, 6, [{ defId: 'fridge', x: 2, y: 2 }], {
       x: 2,
       y: 3,
       needs: { hunger: 10 },
@@ -50,7 +50,7 @@ describe('habilidades', () => {
     });
     for (const sim of [novice, chef]) {
       const folk = sim.world.folks[0];
-      sim.dispatch({ type: 'queueUse', folkId: folk.id, objectId: sim.world.objects[0].id, interactionId: 'cook' });
+      sim.dispatch({ type: 'queueUse', folkId: folk.id, objectId: sim.world.objects[0].id, interactionId: 'meal' });
       run(sim, 12);
     }
     expect(chef.world.folks[0].needs.hunger).toBeGreaterThan(novice.world.folks[0].needs.hunger + 5);

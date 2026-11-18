@@ -97,7 +97,7 @@ describe('idades e o que cada um faz (bloco 11)', () => {
     const child = { age: 'child' as const, kid: { homework: 'due' } as Folk['kid'] };
     const adult = { age: undefined, kid: undefined };
     expect(kidAllows(baby, it_('fridge', 'snack'))).toBe(false);
-    expect(kidAllows(child, it_('stove', 'cook'))).toBe(false);
+    expect(kidAllows(child, it_('stove', 'cook_pasta'))).toBe(false);
     expect(kidAllows(child, it_('desk', 'freelance'))).toBe(false);
     expect(kidAllows(child, it_('fridge', 'snack'))).toBe(true);
     expect(kidAllows(child, it_('spintop', 'spinTop'))).toBe(true);

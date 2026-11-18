@@ -498,6 +498,17 @@ npm run preview  # serve o dist/ localmente
   come o prato que trouxe. "Chamar para ver junto" no menu de outra pessoa.
   Clicar no próprio folk sentado: Levantar, Ler um livro aqui, Ligar daqui.
   Som ("Ouvir música") e lareira ("Olhar o fogo") seguem a mesma lógica.
+- **Cozinha, mesa, banheiro e cama (plano 2, bloco 6)**: o fogão mostra um
+  "Cozinhar" por prato (sanduíche, ovos, macarrão, sopa, panqueca, arroz com
+  frango, peixada e torta de palmito), liberado pela habilidade. O folk pega
+  os ingredientes na geladeira, pica na bancada, mexe a panela e deixa a
+  travessa na bancada ou mesa mais perto, com porções; ela esfria em 1h30 e
+  estraga em 12 h. Clicar na travessa: Servir-se, Chamar a família, Esquentar,
+  Jogar fora. Come-se à mesa com garfo, e o prato sujo vai para a pia, onde a
+  louça empilha até alguém lavar. Privada com tampa, descarga e lavar as mãos;
+  chuveiro em fases e toalha; escovar os dentes e se arrumar no espelho. O
+  casal dorme de lados opostos sob a coberta, a cama fica desfeita até alguém
+  arrumar, e dá para cochilar deitado no sofá.
 - **Peças novas (bloco 12)**: meia parede (fecha o passo sem dividir o
   cômodo), coluna nos cantos, porta de vidro, porta dupla, arco (passagem sem
   folha), janela alta (+6 de ambiente) e basculante (+2).
@@ -608,6 +619,7 @@ src/
     clock.ts        relógio e velocidades
     pace.ts         plano 2: quando dá para pular e os gestos de quem espera ordem
     activity.ts     plano 2: lugares nos objetos, área de visão, postura, etapas e canais da TV
+    kitchen.ts      plano 2: pratos da casa, etapas do cozinhar, travessa com porções, esfriar e estragar
     rng.ts          RNG com seed (mulberry32)
     world.ts        criação do mundo a partir de um mapa em texto
     save.ts         formato de save versionado e migrações
@@ -666,6 +678,13 @@ Decisões principais do núcleo:
   fogo rendem a quem está sentado em frente. `windDown` faz a ordem nova e o
   cancelar passarem pela etapa de saída. As interações de assistir, os canais
   e "Sentar" entram nos objetos por `data/activities.ts`.
+- **Etapas das tarefas** (plano 2, bloco 6): `data/chores.ts` acrescenta aos
+  objetos as interações por prato e as etapas escondidas (`step`: fetch, prep,
+  stir, plateUp), as fases do chuveiro (`phases`), as etapas da privada e o
+  `after: 'washHands'`. No Sim, a ação de cozinhar leva um `CookJob` e muda de
+  objeto (`retarget`) sem mexer na fila; a travessa é uma `Mess` do tipo
+  `meal` com `MealInfo`, e servir transforma a ação em `eatServed` com o
+  `ServedPlate` na mão. Regras puras em `sim/kitchen.ts`.
 - **Jogador de teste** (`tests/helpers/player.ts`): as semanas inteiras dos
   testes rodam com um roteiro que manda como um jogador atento (atende porta
   e telefone, apaga fogo, cuida do bebê, manda dormir às 23h e comer com fome

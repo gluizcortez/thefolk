@@ -32,6 +32,7 @@ const ORDER_TYPES = new Set<Command['type']>([
   'queueUse',
   'queueGoto',
   'queueTidy',
+  'mealAct',
   'callService',
   'answerDoor',
   'queueSocial',

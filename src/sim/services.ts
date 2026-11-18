@@ -9,6 +9,7 @@ import { NEED_MAX } from './needs';
 import { findPathToAny } from './pathfinding';
 import { nextFloat, nextInt } from './rng';
 import { careAvailable, interactionOpen, messTaken, messTiles, stateOf } from './upkeep';
+import { isLitter } from './kitchen';
 import type {
   Bill,
   Catalog,
@@ -526,7 +527,7 @@ export function serviceTask(world: World, catalog: Catalog, folk: Folk, nav: Nav
   }
   if (kind === 'maid') {
     for (const mess of world.mess) {
-      if (freshPaper(world, mess) || messTaken(world, mess.id, folk)) continue;
+      if (freshPaper(world, mess) || !isLitter(mess, world.tick) || messTaken(world, mess.id, folk)) continue;
       consider({ messId: mess.id }, 60, messTiles(world, nav, mess));
     }
   }

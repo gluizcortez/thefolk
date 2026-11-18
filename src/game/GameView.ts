@@ -18,6 +18,8 @@ import {
   roomFaces,
   wallBehind,
   wearsRing,
+  isSpoiled,
+  isWarm,
   STAIR_RUN,
   edgeLevel,
   levelOfRow,
@@ -31,7 +33,10 @@ import type {
   BuildCommand,
   Folk,
   InteractionDef,
+  HeldProp,
+  MealAct,
   Mess,
+  MessKind,
   NeedId,
   ObjectDef,
   RelDelta,
@@ -60,7 +65,7 @@ import { wearOf } from '../sim/family';
 import { thoughtOf } from '../sim/will';
 import { reactionTo } from '../sim/topics';
 import { stationDef } from '../sim/music';
-import { isWatch, spotCell, spotFace, spotsOf } from '../sim/activity';
+import { isWatch, spotCell, spotFace, spotsOf, stagesOf } from '../sim/activity';
 import type { Age, Look, UniformDef, Wear } from '../sim/types';
 import { SCHOOL_BUS, ridesWaiting, uniformOf, vehicleOf } from '../sim/career';
 import { cribOf } from '../sim/kids';
@@ -72,6 +77,8 @@ import { flames } from './art/peril';
 import { fireAt } from '../sim/peril';
 import type { Fire, Spirit } from '../sim/types';
 import { WearFx, buildMess } from './art/upkeep';
+import { buildBoard, buildCover, buildDishStack, buildMeal, buildPot, buildRumple } from './art/chores';
+import type { Animated } from './art/chores';
 import type { GameController } from './controller';
 import { TownView } from './town';
 import { shownWallMode } from './viewMode';
@@ -152,6 +159,46 @@ const CARE_ANIMS: Record<string, FolkAnim> = {
   water: 'reach',
   harvest: 'reach',
   replant: 'scrub',
+};
+
+/** Plano 2, bloco 6: como se recolhe cada bagunça (rodo, vassoura, prato na mão). */
+const TIDY_LOOK: Partial<Record<MessKind, { anim: FolkAnim; hold?: HeldProp }>> = {
+  puddle: { anim: 'mop', hold: 'mop' },
+  trash: { anim: 'sweep', hold: 'broom' },
+  ash: { anim: 'sweep', hold: 'broom' },
+  plate: { anim: 'reach_low', hold: 'dirtyPlate' },
+  paper: { anim: 'reach_low' },
+  meal: { anim: 'serve', hold: 'pot' },
+};
+
+/** Plano 2, bloco 6: o corpo em cada coisa que se faz com a travessa. */
+const MEAL_LOOK: Record<MealAct, { anim: FolkAnim; hold?: HeldProp }> = {
+  serve: { anim: 'scoop', hold: 'plate' },
+  call: { anim: 'callOut' },
+  reheat: { anim: 'stir', hold: 'spoon' },
+  scrap: { anim: 'serve', hold: 'pot' },
+};
+
+/** Plano 2, bloco 6: deitado no sofá, de ponta a ponta, a cabeça no braço da esquerda. */
+function couchLie(spec: FurnitureSpec): Anchor | undefined {
+  const sit = spec.sit;
+  if (!sit || sit.length < 2) return undefined;
+  const right = Math.max(...sit.map((a) => a.x));
+  return { x: right + 0.42, y: sit[0].y + 0.05, z: sit[0].z, heading: Math.PI / 2 };
+}
+
+/** Plano 2, bloco 6: altura do tampo onde vão a panela, a tábua, a travessa e a louça. */
+const CHORE_TOP: Record<string, number> = {
+  stove: 0.9,
+  stovecheap: 0.9,
+  stoveluxe: 0.92,
+  counter: 0.92,
+  kitchensink: 0.92,
+  sink: 0.86,
+  dinette: 0.77,
+  tablefold: 0.76,
+  table: 0.76,
+  tablemarble: 0.78,
 };
 
 /** Altura do tampo das superfícies, para o prato ficar em cima (o resto vai no chão). */
@@ -276,6 +323,11 @@ export class GameView {
   /** pratos, poças e lixo soltos pela casa */
   private messRoot = new THREE.Group();
   private messSig = '';
+  /** plano 2, bloco 6: travessas que soltam vapor (ou juntam moscas) */
+  private mealFx: Animated[] = [];
+  /** plano 2, bloco 6: panela no fogão, tábua na bancada, louça na pia, cama desfeita */
+  private choreRoot = new THREE.Group();
+  private choreFx = new Map<number, { key: string; fx: Animated }>();
   private folks = new Map<number, FolkEntry>();
   private ring = new THREE.Group();
   private hoverTile: THREE.Mesh;
@@ -434,6 +486,9 @@ export class GameView {
     this.rebuildObjects();
     this.worldRoot.add(this.messRoot);
     this.messSig = '';
+    this.worldRoot.add(this.choreRoot);
+    this.choreFx.clear();
+    this.choreRoot.clear();
 
     this.syncFolks();
 
@@ -693,7 +748,9 @@ export class GameView {
         const tip = this.hover.folk
           ? this.hud.folkTooltip(this.hover.folk)
           : this.hover.mess
-            ? t(`mess.${this.hover.mess.kind}`)
+            ? this.hover.mess.meal
+              ? `${t(`dish.${this.hover.mess.meal.dish}`)} · ${this.hud.mealNotes(this.hover.mess)[0]?.text ?? ''}`
+              : t(`mess.${this.hover.mess.kind}`)
             : this.hover.entry
               ? this.hud.objectTooltip(this.hover.entry.obj)
               : null;
@@ -1016,13 +1073,17 @@ export class GameView {
   private syncMess(): void {
     const world = this.ctrl.world;
     const mess = world.mess ?? [];
-    const sig = mess.map((m) => m.id).join(',') + `|${this.ctrl.objectsVersion}`;
+    const tick = world.tick;
+    const sig =
+      mess.map((m) => (m.meal ? `${m.id}:${m.meal.servings}:${isWarm(m.meal, tick) ? 1 : 0}${isSpoiled(m.meal, tick) ? 1 : 0}` : m.id)).join(',') +
+      `|${this.ctrl.objectsVersion}`;
     if (sig === this.messSig) return;
     this.messSig = sig;
     this.messRoot.traverse((o) => {
       if (o instanceof THREE.Mesh) o.geometry.dispose();
     });
     this.messRoot.clear();
+    this.mealFx = [];
     for (const m of mess) {
       // em cima de mesa ou bancada, o prato fica no tampo
       let top = 0;
@@ -1032,8 +1093,18 @@ export class GameView {
         if (m.x >= e.obj.x && m.y >= e.obj.y && m.x < e.obj.x + size.w && m.y < e.obj.y + size.h) top = SURFACE_TOP[e.def.art];
       }
       const stack = mess.filter((o) => o.x === m.x && o.y === m.y && o.id < m.id).length;
-      const g = buildMess(m.kind, m.id, top);
-      const jitter = ((m.id * 37) % 7) / 7 - 0.5;
+      let g: THREE.Group;
+      if (m.meal) {
+        // plano 2, bloco 6: a travessa: cheia ou pela metade, quente, fria ou estragada
+        const fx = buildMeal(
+          { dish: m.meal.dish, fill: m.meal.servings / Math.max(1, m.meal.total), warm: isWarm(m.meal, tick), spoiled: isSpoiled(m.meal, tick), burnt: !!m.meal.burnt },
+          m.id,
+        );
+        this.mealFx.push(fx);
+        g = fx.group;
+        if (top === 0) top = CHORE_TOP[this.objects.get(m.meal.on)?.def.art ?? ''] ?? 0;
+      } else g = buildMess(m.kind, m.id, top);
+      const jitter = m.meal ? 0 : ((m.id * 37) % 7) / 7 - 0.5;
       const at = sceneZ(world.grid, m.y);
       g.position.set(m.x + 0.5 + jitter * 0.3, at.base + top + (m.kind === 'plate' ? stack * 0.03 : m.kind === 'paper' ? stack * 0.11 : 0), at.z + 0.5 - jitter * 0.25);
       g.userData.messId = m.id;
@@ -1041,6 +1112,67 @@ export class GameView {
       this.messRoot.add(g);
     }
     if (this.hover.mess && !mess.includes(this.hover.mess)) this.hover = {};
+  }
+
+  /**
+   * Plano 2, bloco 6: o que as atividades deixam nos objetos: panela com
+   * vapor no fogão de quem está mexendo, tábua com legumes na bancada de quem
+   * está picando, a louça esperando na pia e a cama desfeita.
+   */
+  private syncChores(): void {
+    const world = this.ctrl.world;
+    const want = new Map<number, string>();
+    // plano 2, bloco 6: quem está deitado na cama fica debaixo da coberta
+    const covers = new Map<number, number[]>();
+    for (const folk of world.folks) {
+      const a = folk.queue[0];
+      if (a?.phase !== 'using' || a.objectId === undefined || a.stage) continue;
+      const it = this.ctrl.sim.interactionOf(a);
+      const e = this.objects.get(a.objectId);
+      if (it?.pose === 'lie' && it.onObject && e?.def.category === 'beds') covers.set(a.objectId, [...(covers.get(a.objectId) ?? []), a.slot ?? 0]);
+    }
+    for (const [id, slots] of covers) want.set(id, `cover:${slots.sort().join('.')}`);
+    for (const folk of world.folks) {
+      const a = folk.queue[0];
+      if (a?.phase !== 'using' || a.objectId === undefined || !a.cook) continue;
+      if (a.interactionId === 'stir') want.set(a.objectId, `pot:${a.cook.dish}`);
+      else if (a.interactionId === 'prep') want.set(a.objectId, 'board');
+    }
+    for (const entry of this.objects.values()) {
+      const o = entry.obj;
+      if (want.has(o.id)) continue;
+      if (o.dishes) want.set(o.id, `dishes:${Math.ceil(o.dishes)}`);
+      else if (o.unmade && entry.spec.lie) want.set(o.id, `rumple:${entry.def.size.w}`);
+    }
+    for (const [id, cur] of this.choreFx) {
+      if (want.get(id) === cur.key) continue;
+      this.choreRoot.remove(cur.fx.group);
+      cur.fx.group.traverse((x) => {
+        if (x instanceof THREE.Mesh) x.geometry.dispose();
+      });
+      this.choreFx.delete(id);
+    }
+    for (const [id, key] of want) {
+      const entry = this.objects.get(id);
+      if (!entry) continue;
+      let cur = this.choreFx.get(id);
+      if (!cur) {
+        const [kind, arg] = key.split(':');
+        const lies = (arg ?? '').split('.').map((n) => entry.spec.lies?.[Number(n)] ?? entry.spec.lie ?? { x: 0, y: 0.5, z: 0.9, heading: 0 });
+        const fx =
+          kind === 'cover' ? buildCover(lies, id) : kind === 'pot' ? buildPot(arg, id) : kind === 'board' ? buildBoard(id) : kind === 'dishes' ? buildDishStack(Number(arg)) : buildRumple(Number(arg), id);
+        const top = kind === 'cover' ? 0 : kind === 'rumple' ? (entry.spec.lie?.y ?? 0.5) - 0.11 : (CHORE_TOP[entry.def.art] ?? entry.height);
+        // pilha na pia vai para o lado da cuba; o resto no meio do tampo
+        const at = this.anchorToWorld(entry, { x: kind === 'dishes' ? 0.18 : 0, y: top, z: kind === 'rumple' ? 0.1 : 0, heading: 0 });
+        fx.group.position.set(at.x, at.y, at.z);
+        fx.group.rotation.y = entry.turn;
+        this.choreRoot.add(fx.group);
+        cur = { key, fx };
+        this.choreFx.set(id, cur);
+      }
+      cur.fx.group.visible = entry.level <= this.ctrl.viewLevel;
+      cur.fx.tick?.(this.animTime);
+    }
   }
 
   private addPing(x: number, y: number): void {
@@ -1114,6 +1246,8 @@ export class GameView {
     }
     this.syncMess();
     for (const m of this.messRoot.children) m.visible = (m.userData.level ?? 0) <= this.ctrl.viewLevel;
+    for (const f of this.mealFx) f.tick?.(this.animTime);
+    this.syncChores();
     for (const entry of this.objects.values()) {
       entry.model.tick?.({
         time: this.animTime,
@@ -1686,6 +1820,8 @@ export class GameView {
     let anim: FolkAnim = 'idle';
     let expr: Expression | undefined;
     let onObject = false;
+    // plano 2, bloco 6: o que vai na mão pela fase, etapa ou tarefa (ganha da interação)
+    let held: HeldProp | undefined;
     // plano 2, bloco 5: boca falando e para onde olhar
     let speaking = false;
     const social = it ? undefined : this.socialLook(folk);
@@ -1724,12 +1860,13 @@ export class GameView {
     } else if (it && entry) {
       anim =
         (seatId !== undefined ? 'sit' : undefined) ??
+        (it.anim && isAnim(it.anim) ? it.anim : undefined) ??
         ANIMS[`${entry.def.art}:${it.id}`] ??
         (it.care ? CARE_ANIMS[it.care] : undefined) ??
         (it.pose === 'sit' ? 'sit' : it.pose === 'lie' ? 'sleep' : it.pose === 'dance' ? 'dance' : 'reach');
       if (it.onObject || seatId !== undefined) {
         let anchor: Anchor | undefined;
-        if (anim === 'sleep') anchor = (action?.slot !== undefined ? entry.spec.lies?.[action.slot] : undefined) ?? entry.spec.lie;
+        if (anim === 'sleep') anchor = (action?.slot !== undefined ? entry.spec.lies?.[action.slot] : undefined) ?? entry.spec.lie ?? couchLie(entry.spec);
         else if (anim === 'sit' && entry.spec.sit && action?.slot !== undefined && entry.spec.sit[action.slot]) {
           anchor = entry.spec.sit[action.slot];
         } else if (anim === 'sit' && entry.spec.sit) {
@@ -1749,6 +1886,15 @@ export class GameView {
           onObject = true;
         }
       }
+      // plano 2, bloco 6: fases do laço (tirar a roupa, ensaboar, enxaguar)
+      if (it.phases && action && !action.stage) {
+        let ph = it.phases[0];
+        for (const p of it.phases) if (action.elapsed >= p.at) ph = p;
+        if (ph && isAnim(ph.anim)) {
+          anim = ph.anim;
+          held = ph.hold;
+        }
+      }
       // bloco 13: nadando (volta pela piscina) e pulando do trampolim
       if (it.pose === 'swim' || it.pose === 'dive') {
         const swim = this.swimPlace(folk, entry, it.pose, place);
@@ -1757,9 +1903,21 @@ export class GameView {
         onObject = true;
       }
     } else if (action?.kind === 'tidy' && action.phase === 'using') {
-      anim = 'scrub';
+      // plano 2, bloco 6: rodo na poça, vassoura no lixo e na cinza, o prato na mão
+      const kind = sim.world.mess.find((m) => m.id === action.messId)?.kind;
+      const how = kind ? TIDY_LOOK[kind] : undefined;
+      anim = how?.anim ?? 'scrub';
+      held = how?.hold;
+    } else if (action?.kind === 'meal' && action.phase === 'using') {
+      // plano 2, bloco 6: servir-se, chamar a família, esquentar e jogar fora
+      const look = MEAL_LOOK[action.mealAct ?? 'serve'];
+      anim = look.anim;
+      held = look.hold;
+      if (action.mealAct === 'call') speaking = true;
     } else if (folk.px !== folk.x || folk.py !== folk.y) {
       anim = 'walk';
+      // plano 2, bloco 6: levando o prato servido até a mesa
+      if (action?.served) held = 'plate';
     } else if (social) {
       anim = social.anim;
       expr = social.expr;
@@ -1784,13 +1942,31 @@ export class GameView {
       seated = true;
       const tick = sim.world.tick;
       const sitting = action?.stage === 'enter' && action.slot === folk.posture!.spot;
-      if (folk.posture!.rising !== undefined || sitting) anim = 'perch';
+      // plano 2, bloco 6: etapa própria (levantar a tampa, dar descarga) é de pé, na frente
+      const own = it && action?.stage ? stagesOf(it)[action.stage] : undefined;
+      if (own?.anim && isAnim(own.anim)) {
+        anim = own.anim;
+        held = own.hold;
+        const c = entry?.center;
+        place = { x: fx, y: fy, z: fz, heading: c ? Math.atan2(c.x - fx, c.z - fz) : Math.atan2(folk.facing.x, folk.facing.y) };
+        seated = false;
+      } else if (folk.posture!.rising !== undefined || sitting) anim = 'perch';
       else {
         if (anim === 'idle' || anim === 'walk' || anim === 'reach' || anim.startsWith('g_')) anim = 'sit';
         const watching = isWatch(it) || (anim === 'sit' && !!sim.watchedBy(folk));
         if (watching && (anim === 'sit' || anim === 'watch')) anim = 'watch';
         if (it?.channel && action && action.elapsed === 0) anim = 'remote';
         if (folk.carry && (anim === 'sit' || anim === 'watch') && Math.sin(this.animTime * 0.9 + folk.id) > -0.3) anim = 'eat';
+        // plano 2, bloco 6: à mesa, come de garfo; com companhia, conversa entre uma garfada e outra
+        if (action?.eatAt !== undefined && action.phase === 'using' && !action.stage && anim === 'sit') {
+          const company = sim.world.folks.some((f) => f !== folk && f.queue[0]?.eatAt === action.eatAt && f.queue[0]?.phase === 'using');
+          anim = company && Math.sin(this.animTime * 0.45 + folk.id * 1.7) > 0.35 ? 'eat_chat' : 'eat';
+          if (anim === 'eat_chat') speaking = true;
+          // à mesa o prato fica no tampo: na mão, só o garfo
+          const table = seatId !== undefined && this.objects.get(seatId)?.def.category === 'surfaces';
+          if (table) held = 'cutlery';
+          else if (!held && it?.hold === 'plate') held = 'fork';
+        }
         const r = folk.react;
         if (r && r.until > tick && (anim === 'watch' || anim === 'sit' || anim === 'eat')) {
           anim = r.kind;
@@ -1802,6 +1978,15 @@ export class GameView {
       anim = 'perch';
       place = { x: fx, y: fy, z: fz, heading: Math.atan2(folk.facing.x, folk.facing.y) };
       onObject = false;
+    } else if (it && action?.stage) {
+      // plano 2, bloco 6: etapas de pé na frente do objeto (tampa e descarga, toalha)
+      const st = stagesOf(it)[action.stage];
+      if (st?.anim && isAnim(st.anim)) {
+        anim = st.anim;
+        held = st.hold;
+        place = { x: fx, y: fy, z: fz, heading: Math.atan2(folk.facing.x, folk.facing.y) };
+        onObject = false;
+      }
     } else if (it?.channel && action && action.elapsed === 0) anim = 'remote';
 
     // bloco 6: o balão de agora pode pedir um gesto (recusa, comemoração) e mexe na cara
@@ -1847,7 +2032,7 @@ export class GameView {
         ? 'extinguisher'
         : folk.visit?.service?.kind === 'reaper'
           ? 'lantern'
-          : (it?.hold ?? (folk.carry ? 'plate' : undefined));
+          : (held ?? it?.hold ?? (folk.carry ? 'plate' : undefined));
     // plano 2, bloco 5: o jeito de andar vem de como o folk está
     if (anim === 'walk') anim = walkStyle(folk, action, mood);
     if (!isAnim(anim)) anim = 'idle';
@@ -1857,8 +2042,17 @@ export class GameView {
     if (family === 'phone' || (it && family === 'talk')) speaking = true;
     const otherView = social && social.other !== folk ? this.folks.get(social.other.id) : undefined;
     const lookAt = otherView ? { x: otherView.model.group.position.x, z: otherView.model.group.position.z } : undefined;
+    // plano 2, bloco 6: o casal na mesma cama dorme virado um para o outro
+    let shown: FolkAnim = anim;
+    if (anim === 'sleep' && action?.slot !== undefined && entry && (entry.spec.lies?.length ?? 0) > 1) {
+      const together = sim.world.folks.some((f) => f !== folk && f.queue[0]?.objectId === action.objectId && f.queue[0]?.phase === 'using' && !f.queue[0]?.stage);
+      if (together) shown = action.slot === 0 ? 'sleep_sideR' : 'sleep_sideL';
+    }
+    // para as capturas e para conferir de olho (dev)
+    view.model.group.userData.anim = shown;
+    view.model.group.userData.hold = hold;
     view.model.update({
-      anim,
+      anim: shown,
       ...place,
       mood,
       time,
@@ -2564,7 +2758,7 @@ export class GameView {
   }
 
   /** Plano 2, bloco 5: quadros de uma animação, de corpo inteiro (capturas e testes de olho). */
-  poseStrip(look: Look, anim: FolkAnim, times: number[], opts: { seated?: boolean; heading?: number; mood?: number; w?: number; h?: number; expr?: Expression; speaking?: boolean } = {}): string[] {
+  poseStrip(look: Look, anim: FolkAnim, times: number[], opts: { seated?: boolean; heading?: number; mood?: number; w?: number; h?: number; expr?: Expression; speaking?: boolean; hold?: HeldProp } = {}): string[] {
     const w = opts.w ?? 120;
     const h = opts.h ?? 200;
     const scene = new THREE.Scene();
@@ -2582,7 +2776,7 @@ export class GameView {
     const out: string[] = [];
     let t = times[0] - 1;
     const frame = (time: number, dt: number) =>
-      model.update({ anim, x: 0, y: opts.seated ? 0.42 : 0, z: 0, heading: opts.heading ?? 0.9, mood: opts.mood ?? 65, time, dt, seated: opts.seated, expr: opts.expr, speaking: opts.speaking, seed: 1 });
+      model.update({ anim, x: 0, y: opts.seated ? 0.42 : 0, z: 0, heading: opts.heading ?? 0.9, mood: opts.mood ?? 65, time, dt, seated: opts.seated, expr: opts.expr, speaking: opts.speaking, seed: 1, hold: opts.hold });
     for (const goal of times) {
       while (t < goal) {
         t = Math.min(goal, t + 1 / 60);

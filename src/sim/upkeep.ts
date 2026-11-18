@@ -7,6 +7,7 @@ import { nextFloat } from './rng';
 import { skillLevel } from './skills';
 import { AUTO_WATER_BELOW } from './garden';
 import type { Catalog, Folk, InteractionDef, Mess, MessKind, ObjectDef, ObjectState, Vec, World, WorldObject } from './types';
+import { SINK_DISH_AMBIENCE, SINK_STACK, SPOILED_AMBIENCE, UNMADE_AMBIENCE, WASH_MINUTES, isLitter, isSpoiled } from './kitchen';
 
 // Bloco 1, casa viva: objetos sujam e gastam com o uso, quebram com o
 // desgaste e pedem conserto; pratos, poças e lixo ficam pela casa até alguém
@@ -87,6 +88,11 @@ export function careAvailable(obj: WorldObject, it: InteractionDef): boolean {
     case 'dishes':
     case 'dump':
       return true;
+    // plano 2, bloco 6: louça na pia e cama desfeita
+    case 'washUp':
+      return (obj.dishes ?? 0) > 0.01;
+    case 'makeBed':
+      return !!obj.unmade;
     // bloco 13: plantas (veja sim/garden.ts)
     case 'water':
       return !!obj.plant && obj.plant.health > 0 && obj.plant.water < 90;
@@ -144,7 +150,8 @@ export function breakChance(s: ObjectState): number {
 
 
 /** O que encadear depois de uma ação (lavar o prato, levar o saco à calçada). */
-export type Chain = 'dishes' | 'dump' | null;
+/** plano 2, bloco 6: lavar as mãos depois da privada e arrumar a cama ao levantar */
+export type Chain = 'dishes' | 'dump' | 'washHands' | 'makeBed' | null;
 
 /**
  * Fim de um uso normal: o objeto pode quebrar, o folk pode deixar um prato
@@ -168,7 +175,7 @@ export function afterUse(
   let chain: Chain = null;
   if (it.trash) addTrash(world, catalog, log, folk, it.trash);
   if (it.leaves && !folk.visit) {
-    const chance = it.leaves.chance * (1 - 0.06 * skillLevel(folk, TIDINESS));
+    const chance = it.served ? 1 : it.leaves.chance * (1 - 0.06 * skillLevel(folk, TIDINESS));
     if (nextFloat(world) < chance) {
       if (it.leaves.kind === 'plate') {
         // quem é caprichoso costuma lavar o próprio prato na hora
@@ -287,6 +294,17 @@ export function careTick(
       if (s.wear > 0) return false;
       if (jeito >= PATCH_BELOW) s.patched = false;
       return true;
+    case 'washUp': {
+      // um prato a cada WASH_MINUTES (menos com Capricho)
+      const rate = (1 + 0.1 * skillLevel(folk, TIDINESS)) / WASH_MINUTES;
+      obj.dishes = Math.max(0, (obj.dishes ?? 0) - rate);
+      if (obj.dishes > 0.01) return false;
+      delete obj.dishes;
+      return true;
+    }
+    case 'makeBed':
+      delete obj.unmade;
+      return true;
     case 'water':
       // bloco 13: regar enche a planta de água (veja sim/garden.ts)
       if (!obj.plant) return true;
@@ -325,6 +343,8 @@ export function shock(folk: Folk, log: Logger, tick?: number): void {
 
 /** Fim de um cuidado que dura um tempo fixo (esvaziar, lavar, jogar fora). */
 export function afterCare(obj: WorldObject, it: InteractionDef): Chain {
+  // plano 2, bloco 6: o prato sujo fica na pia (pilha cheia: lava na hora)
+  if (it.care === 'dishes') obj.dishes = Math.min(SINK_STACK, (obj.dishes ?? 0) + 1);
   if (it.care === 'empty') {
     stateOf(obj).fill = 0;
     return 'dump';
@@ -336,7 +356,7 @@ export function afterCare(obj: WorldObject, it: InteractionDef): Chain {
 
 /** Minutos para recolher cada tipo de bagunça, pelo Capricho. */
 export function tidyMinutes(kind: MessKind, folk: Folk): number {
-  const base = kind === 'plate' ? 2 : kind === 'puddle' ? 8 : kind === 'paper' ? 3 : kind === 'ash' ? 10 : 5;
+  const base = kind === 'meal' ? 2 : kind === 'plate' ? 2 : kind === 'puddle' ? 8 : kind === 'paper' ? 3 : kind === 'ash' ? 10 : 5;
   return Math.max(1, Math.round(base * (1 - 0.06 * skillLevel(folk, TIDINESS))));
 }
 
@@ -380,6 +400,16 @@ export function finishTidy(world: World, catalog: Catalog, log: Logger, folk: Fo
     }
   }
   if (mess.kind === 'plate') return hasCare(world, catalog, 'dishes') ? 'dishes' : null;
+  // plano 2, bloco 6: a travessa (estragada ou jogada fora) vai para a lixeira
+  if (mess.kind === 'meal') {
+    const bin = nearestBin(world, catalog, folk);
+    const add = 4 + 2 * (mess.meal?.servings ?? 0);
+    if (bin && stateOf(bin).fill + add <= BIN_FULL) {
+      stateOf(bin).fill += add;
+      return hasCare(world, catalog, 'dishes') ? 'dishes' : null;
+    }
+    return 'dump';
+  }
   if (mess.kind === 'trash') {
     const bin = nearestBin(world, catalog, folk);
     if (bin && stateOf(bin).fill + 10 <= BIN_FULL) {
@@ -394,7 +424,13 @@ export function finishTidy(world: World, catalog: Catalog, log: Logger, folk: Fo
 // ---------- ambiente ----------
 
 /** Quanto a bagunça de cada tipo pesa no ambiente em volta. */
-export const MESS_AMBIENCE: Record<MessKind, number> = { plate: -5, puddle: -6, trash: -9, paper: -2, ash: -8 };
+export const MESS_AMBIENCE: Record<MessKind, number> = { plate: -5, puddle: -6, trash: -9, paper: -2, ash: -8, meal: 0 };
+
+/** Plano 2, bloco 6: o quanto a bagunça pesa agora (a travessa só pesa estragada). */
+export function messAmbience(mess: Mess, tick: number): number {
+  if (mess.kind === 'meal') return mess.meal && isSpoiled(mess.meal, tick) ? SPOILED_AMBIENCE : 0;
+  return MESS_AMBIENCE[mess.kind];
+}
 
 /** Quanto o estado do objeto tira do ambiente (sujeira, quebrado, lixo fedendo). */
 export function stateAmbience(obj: WorldObject, def: ObjectDef): number {
@@ -403,6 +439,9 @@ export function stateAmbience(obj: WorldObject, def: ObjectDef): number {
   let v = 0;
   if (s.dirt > AUTO_CLEAN_AT) v -= (s.dirt - AUTO_CLEAN_AT) * 0.2;
   if (s.broken) v -= 10;
+  // plano 2, bloco 6: louça esperando na pia e cama desfeita
+  if (obj.dishes) v += Math.ceil(obj.dishes) * SINK_DISH_AMBIENCE;
+  if (obj.unmade) v += UNMADE_AMBIENCE;
   if (def.upkeep?.bin) {
     if (s.fill >= BIN_FULL) v -= 30;
     else if (s.fill >= 75) v -= 8;
@@ -412,7 +451,7 @@ export function stateAmbience(obj: WorldObject, def: ObjectDef): number {
 
 /** Bagunça no lote que conta para a casa (0 = um brinco). */
 export function messLevel(world: World, catalog: Catalog): number {
-  let v = world.mess.length * 6;
+  let v = world.mess.filter((m) => isLitter(m, world.tick)).length * 6;
   for (const obj of world.objects) {
     const def = catalog.objects[obj.defId];
     if (def) v -= stateAmbience(obj, def);

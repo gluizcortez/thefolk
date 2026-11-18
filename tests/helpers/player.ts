@@ -129,7 +129,7 @@ export class TestPlayer {
     // sono: às 23h ou quando a energia cai muito
     const bedtime = hour >= 23 || hour < 6;
     if ((bedtime && n.energy < 90) || n.energy < 25) {
-      if (this.use(folk, (it) => isSleep(it))) return;
+      if (this.use(folk, (it) => isSleep(it), (it) => (it.id === 'sleep' ? 0 : 1))) return;
     }
     if (this.baby(folk)) return;
     if (this.homework(folk, hour)) return;

@@ -10,12 +10,12 @@
  * - `ringPoints` e `ringCenter`: onde fica cada fatia e onde o anel cabe.
  */
 import type { Catalog, Folk, InteractionDef, NeedId, SocialDef, World, WorldObject } from '../sim';
-import { interactionOpen, interactionReady, isAdult, kidAllows, refusal, relationOf, socialAllowed, stateOf } from '../sim';
+import { DISH_BY_ID, interactionOpen, interactionReady, isAdult, kidAllows, knowsDish, refusal, relationOf, socialAllowed, stateOf } from '../sim';
 
 /** Opções que cabem soltas no anel antes de agrupar. */
 export const RING_MAX = 6;
 
-export type Unavailable = 'age' | 'broken' | 'noFood' | 'noTakeout' | 'fairClosed' | 'noBills' | 'notNight' | 'notNow';
+export type Unavailable = 'age' | 'broken' | 'noFood' | 'noTakeout' | 'fairClosed' | 'noBills' | 'notNight' | 'notNow' | 'skill';
 
 export interface InteractionState {
   show: boolean;
@@ -54,12 +54,17 @@ export function interactionState(world: World, catalog: Catalog, folk: Folk, obj
     return grey('notNow');
   }
   if (!interactionOpen(obj, it)) return grey('notNow');
+  // plano 2, bloco 6: prato que o folk ainda não sabe fazer
+  const dish = it.cook ? DISH_BY_ID[it.cook] : undefined;
+  if (dish && !knowsDish(folk, dish)) return grey('skill');
   return { show: true, why: null, reluctant: refusal(catalog, folk, it, world.tick) };
 }
 
 /** Grupo de uma interação de objeto no anel (quando passa de RING_MAX). */
 export function objectGroup(it: InteractionDef): string {
   if (it.care) return 'care';
+  // plano 2, bloco 6: os pratos do fogão ficam juntos numa fatia
+  if (it.cook) return 'cook';
   if (it.special === 'call' || it.special === 'services' || it.special === 'invite' || it.special === 'party' || it.special === 'answer') return 'phone';
   if (it.special === 'buyGift' || it.special === 'buyClothes' || it.special === 'buyParcel' || it.special === 'fair' || it.special === 'dine') return 'shop';
   if (it.skill) return 'learn';
@@ -96,6 +101,8 @@ export function ringSlots<T extends RingEntry>(items: T[], max = RING_MAX): Ring
     }
     g.items.push(item);
   }
+  // tudo num grupo só (o submenu de um grupo, ou um fogão só com pratos): mostra as fatias soltas
+  if (slots.length === 1) return items.map((item) => ({ kind: 'item', item }));
   return slots.map((s) => (s.kind === 'group' && s.items.length === 1 ? { kind: 'item', item: s.items[0] } : s));
 }
 

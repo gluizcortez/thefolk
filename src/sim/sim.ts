@@ -25,6 +25,23 @@ import {
   viewOf,
 } from './activity';
 import { SKIP_SPEED, canSkip } from './pace';
+import {
+  DISH_BY_ID,
+  FETCH_MINUTES,
+  PLATE_UP_MINUTES,
+  REHEAT_MINUTES,
+  SERVE_MINUTES,
+  burnChance,
+  dishQuality,
+  isSpoiled,
+  knowsDish,
+  mealSpot,
+  reheat,
+  servedFactor,
+  serveMeal,
+  servingsFor,
+  takeServing,
+} from './kitchen';
 import type { BuildCommand, BuildProblem, GridChange } from './build';
 import { applyChange, checkGrid, invertChange, isBuildCommand, planBuild, touchesNav } from './build';
 import { WEATHER_HOUR, freshPlant, gardenHour, harvest, replant, rollWeather } from './garden';
@@ -229,6 +246,9 @@ import type {
   DinerOrder,
   Folk,
   InteractionDef,
+  MealAct,
+  Mess,
+  ServedPlate,
   NeedId,
   Needs,
   Neighbor,
@@ -253,6 +273,8 @@ import {
   freshState,
   interactionOpen,
   messTiles,
+  tidyOf,
+  addTrash,
   tidyMinutes,
   finishTidy,
   wearTick,
@@ -542,7 +564,7 @@ const COLLAPSE_ENERGY_PER_MINUTE = 0.3;
 
 type ActionSeed = Pick<
   Action,
-  'kind' | 'objectId' | 'interactionId' | 'target' | 'otherId' | 'socialId' | 'messId' | 'serviceId' | 'welcome' | 'circleId' | 'topic' | 'guests' | 'wedding' | 'armed' | 'slot'
+  'kind' | 'objectId' | 'interactionId' | 'target' | 'otherId' | 'socialId' | 'messId' | 'serviceId' | 'welcome' | 'circleId' | 'topic' | 'guests' | 'wedding' | 'armed' | 'slot' | 'mealAct'
 >;
 
 /** minutos de conversa na porta antes de decidir */
@@ -761,6 +783,8 @@ export class Sim {
           if (this.household().length >= MAX_RESIDENTS) return this.fail('houseFull');
           if (!freeCrib(this.world, this.catalog)) return this.fail('noCrib');
         }
+        // plano 2, bloco 6: prato acima da Cozinha do folk
+        if (it.cook && DISH_BY_ID[it.cook] && !knowsDish(folk, DISH_BY_ID[it.cook])) return this.fail('skillTooLow');
         if (!interactionOpen(obj, it)) return this.fail(it.care || it.light || it.baby ? 'nothingToDo' : 'broken');
         if (!interactionReady(this.world, it)) {
           return this.fail(it.special === 'payBills' ? 'noBills' : it.special === 'fair' ? 'closed' : it.night ? 'daytime' : 'noFood');
@@ -783,6 +807,8 @@ export class Sim {
         if (!this.world.mess.some((m) => m.id === cmd.messId)) return this.fail('noMess');
         return this.enqueuePlayer(folk, { kind: 'tidy', messId: cmd.messId });
       }
+      case 'mealAct':
+        return this.mealCommand(cmd.folkId, cmd.messId, cmd.act);
       case 'callService':
         return this.callService(cmd.folkId, cmd.service);
       case 'dismissService': {
@@ -2208,6 +2234,10 @@ export class Sim {
       this.processTidy(folk, action);
       return;
     }
+    if (action.kind === 'meal') {
+      this.processMeal(folk, action);
+      return;
+    }
     if (action.kind === 'door') {
       this.processDoor(folk, action);
       return;
@@ -2226,6 +2256,10 @@ export class Sim {
       return;
     }
 
+    // plano 2, bloco 6: cozinhar começa pela geladeira
+    if (action.phase === 'queued' && action.kind === 'use' && !action.cook && this.interactionOf(action)?.cook) {
+      if (!this.startCook(folk, action)) return;
+    }
     if (action.phase === 'queued') {
       const path = this.planPath(folk, action);
       if (!path) {
@@ -2309,7 +2343,7 @@ export class Sim {
       const pre = this.interactionOf(action);
       const seatId = action.seatAt ?? (obj && odef && sitsOn(pre) && isSeat(odef) ? obj.id : pre?.seated ? folk.posture?.objectId : undefined);
       if (seatId !== undefined && !pre?.seated && !this.seatFree(folk, action, seatId)) return;
-      const shared = isWatch(pre) || pre?.channel === 'off' || !!pre?.seated || seatId !== undefined;
+      const shared = isWatch(pre) || pre?.channel === 'off' || !!pre?.seated || !!pre?.served || seatId !== undefined;
       if (!shared && obj && odef && this.usingCount(obj.id, folk) >= (odef.slots ?? 1)) {
         // ocupado: espera um pouco e desiste
         action.waited = (action.waited ?? 0) + 1;
@@ -2341,7 +2375,7 @@ export class Sim {
           return;
         }
       }
-      if (it && action.source === 'player' && this.refuse(folk, it)) {
+      if (it && action.source === 'player' && !it.step && !action.served && this.refuse(folk, it)) {
         // bloco 6: chegou lá e não quis (o humor caiu no caminho)
         this.log(`log.refused.${this.lastRefusal}`, { name: folk.name });
         this.finish(folk);
@@ -2356,7 +2390,18 @@ export class Sim {
         }
         this.world.household.funds -= cost;
       }
+      // plano 2, bloco 6: cochilar no sofá pega o sofá inteiro
+      if (obj && odef && it?.pose === 'lie' && odef.category === 'seating' && this.sofaTaken(folk, obj)) {
+        action.waited = (action.waited ?? 0) + 1;
+        if (action.waited > WAIT_LIMIT) {
+          this.log('log.objectBusy', { name: folk.name, object: odef.name });
+          this.finish(folk);
+        }
+        return;
+      }
       if (it) consumeFor(this.world, it);
+      // plano 2, bloco 6: deitou, a cama fica desfeita
+      if (obj && odef && it?.pose === 'lie' && it.onObject && odef.category === 'beds') obj.unmade = true;
       // bloco 14: quem cozinha mal pode pôr fogo no fogão
       if (obj && odef && it && this.cookingFire(folk, obj, odef, it)) return;
       // bloco 9: petisco sai da mesa; atender e ligar já sabem com quem falam
@@ -2441,7 +2486,9 @@ export class Sim {
       }
       // bloco 16: no restaurante, só come depois que o prato chega
       if (it.special === 'dine' && this.dineWait(folk, action, it)) return;
-      applyEffects(folk, it);
+      // plano 2, bloco 6: a porção servida rende pelo prato, pelo ponto e pela temperatura
+      if (action.served) applyEffects(folk, { effects: this.servedEffects(action.served) } as InteractionDef);
+      else applyEffects(folk, it);
       // plano 2, bloco 4: assistindo: o canal muda a diversão, ensina e faz reagir
       if (isWatch(it)) {
         const shown = this.findObject(action.objectId!);
@@ -2497,6 +2544,11 @@ export class Sim {
       }
       this.trainCare(folk, it);
       action.elapsed++;
+      // plano 2, bloco 6: etapa do cozinhar acabou: passa para a próxima (em outro objeto)
+      if (action.cook && it.step) {
+        if (action.elapsed >= action.cook.minutes) this.nextCookStep(folk, action, it);
+        return;
+      }
       const full = it.until !== undefined && folk.needs[it.until] >= NEED_MAX;
       if (action.elapsed >= it.duration || full) {
         // bloco 5: guarda-roupa troca a roupa de sempre
@@ -2519,6 +2571,10 @@ export class Sim {
           if (it.pose === 'dive') this.afterDive(folk, used, usedDef);
           next = it.care ? afterCare(used, it) : afterUse(this.world, this.catalog, this.logger, folk, used, usedDef, it);
         }
+        if (action.served) this.ateServed(folk, action.served);
+        // plano 2, bloco 6: depois da privada lava as mãos; quem é caprichoso arruma a cama ao levantar
+        if (!next && it.after && !folk.visit) next = it.after;
+        if (!next && !folk.visit && used && usedDef?.category === 'beds' && used.unmade && it.pose === 'lie' && tidyOf(this.catalog, folk) >= 1.2) next = 'makeBed';
         // plano 2, bloco 4: com etapa de saída (levantar da cama), a tarefa seguinte espera
         const exit = stagesOf(it).exit;
         if (exit) {
@@ -2615,9 +2671,12 @@ export class Sim {
     if (!next) return;
     let best: { obj: WorldObject; it: InteractionDef; d: number } | null = null;
     for (const obj of this.world.objects) {
-      const it = this.defOf(obj)?.interactions.find((i) => i.care === next);
+      const it = this.defOf(obj)?.interactions.find((i) => i.care === next || (!i.care && i.id === next));
       if (!it) continue;
+      // plano 2, bloco 6: arrumar só a cama em que dormiu; lavar as mãos só na pia perto
+      if (next === 'makeBed' && (!obj.unmade || Math.abs(obj.x - folk.x) + Math.abs(obj.y - folk.y) > 3)) continue;
       const d = Math.abs(obj.x - folk.x) + Math.abs(obj.y - folk.y);
+      if (next === 'washHands' && d > 8) continue;
       if (!best || d < best.d) best = { obj, it, d };
     }
     if (best) {
@@ -5730,8 +5789,289 @@ export class Sim {
   }
 
   /** Cozinhar mal põe fogo no fogão: a comida se perde e começa o fogo. */
+  // ---------- plano 2, bloco 6: cozinha e mesa ----------
+
+  /** O objeto com esta interação mais perto de `at` (fora `skip`). */
+  private nearestWith(id: string, at: Vec, skip?: WorldObject, reach = Infinity): WorldObject | undefined {
+    let best: WorldObject | undefined;
+    let bestD = Infinity;
+    for (const obj of this.world.objects) {
+      if (obj === skip) continue;
+      const def = this.defOf(obj);
+      if (!def || obj.state?.broken || !def.interactions.some((i) => i.id === id)) continue;
+      const d = Math.abs(obj.x - at.x) + Math.abs(obj.y - at.y);
+      if (d < bestD && d <= reach) {
+        bestD = d;
+        best = obj;
+      }
+    }
+    return best;
+  }
+
+  /** Muda a ação para a etapa seguinte, noutro objeto (mesma ação: a fila não mexe). */
+  private retarget(folk: Folk, action: Action, obj: WorldObject, interactionId: string, minutes: number): void {
+    action.objectId = obj.id;
+    action.interactionId = interactionId;
+    action.phase = 'queued';
+    action.elapsed = 0;
+    action.lightChecked = false;
+    delete action.slot;
+    delete action.waited;
+    folk.path = [];
+    if (action.cook) action.cook.minutes = minutes;
+  }
+
+  /**
+   * Plano 2, bloco 6: começa a cozinhar. A ordem é no fogão, mas o folk vai
+   * primeiro à geladeira pegar os ingredientes (as porções saem da despensa
+   * ali), depois à bancada picar, volta ao fogão mexer a panela e por fim
+   * serve a travessa na bancada. Devolve false se não deu para começar.
+   */
+  private startCook(folk: Folk, action: Action): boolean {
+    const stove = this.findObject(action.objectId!);
+    const it = this.interactionOf(action)!;
+    const dish = DISH_BY_ID[it.cook!];
+    if (!stove || !dish) {
+      this.finish(folk);
+      return false;
+    }
+    if (!knowsDish(folk, dish)) {
+      this.log('log.dishTooHard', { name: folk.name, dish: `dish.${dish.id}` });
+      this.finish(folk);
+      return false;
+    }
+    if (this.world.household.pantry < 1) {
+      this.log('log.noFood', { name: folk.name });
+      this.finish(folk);
+      return false;
+    }
+    const stoveDef = this.defOf(stove);
+    const xp = stoveDef?.interactions.find((i) => i.id === 'stir')?.skill?.xpPerMinute ?? 1.2;
+    const servings = Math.min(servingsFor(this.world, dish), this.world.household.pantry);
+    action.cook = { dish: dish.id, step: 'fetch', stove: stove.id, servings, minutes: FETCH_MINUTES, bonus: Math.round((xp - 1.2) * 12) };
+    const fridge = this.nearestWith('fetchFood', stove);
+    if (fridge) this.retarget(folk, action, fridge, 'fetchFood', FETCH_MINUTES);
+    else {
+      this.takeGroceries(folk, action);
+      this.goPrep(folk, action, stove);
+    }
+    return true;
+  }
+
+  /** Tira as porções da despensa (se acabou no caminho, faz o que der). */
+  private takeGroceries(_folk: Folk, action: Action): boolean {
+    const job = action.cook!;
+    const house = this.world.household;
+    job.servings = Math.min(job.servings, house.pantry);
+    if (job.servings < 1) return false;
+    house.pantry -= job.servings;
+    return true;
+  }
+
+  private goPrep(folk: Folk, action: Action, stove: WorldObject): void {
+    const job = action.cook!;
+    job.step = 'prep';
+    const dish = DISH_BY_ID[job.dish];
+    const board = this.nearestWith('prep', stove, stove, 6) ?? stove;
+    this.retarget(folk, action, board, 'prep', dish.prep);
+  }
+
+  /** Fim de uma etapa do cozinhar: vai para a próxima, ou serve a travessa. */
+  private nextCookStep(folk: Folk, action: Action, it: InteractionDef): void {
+    const job = action.cook!;
+    const stove = this.findObject(job.stove);
+    const dish = DISH_BY_ID[job.dish];
+    if (!stove || !dish) {
+      this.finish(folk);
+      return;
+    }
+    if (it.step === 'fetch') {
+      if (!this.takeGroceries(folk, action)) {
+        this.log('log.noFood', { name: folk.name });
+        this.finish(folk);
+        return;
+      }
+      this.goPrep(folk, action, stove);
+      return;
+    }
+    if (it.step === 'prep') {
+      job.step = 'stir';
+      this.retarget(folk, action, stove, 'stir', dish.cook);
+      return;
+    }
+    if (it.step === 'stir') {
+      const level = skillLevel(folk, 'cooking');
+      job.burnt = nextFloat(this.world) < burnChance(level, dish);
+      job.step = 'plateUp';
+      const spot = mealSpot(this.world, this.catalog, stove);
+      this.retarget(folk, action, spot.obj, 'plateUp', PLATE_UP_MINUTES);
+      return;
+    }
+    // servir: a travessa fica onde ele está servindo (ou na bancada mais perto)
+    const here = this.findObject(action.objectId!) ?? stove;
+    const spot = this.defOf(here)?.interactions.some((i) => i.served) ? this.freeMealTile(here) : null;
+    const place = spot ?? mealSpot(this.world, this.catalog, stove);
+    const quality = dishQuality(this.world, skillLevel(folk, 'cooking'), job.bonus, moodOf(this.catalog, folk.needs), !!job.burnt);
+    serveMeal(this.world, place.obj, place.x, place.y, dish.id, job.servings, quality, !!job.burnt, folk.id);
+    this.log(job.burnt ? 'log.cookedBurnt' : quality >= 75 ? 'log.cookedGreat' : 'log.cooked', { name: folk.name, dish: `dish.${dish.id}`, n: job.servings });
+    if (!folk.visit) addTrash(this.world, this.catalog, this.logger, folk, 6);
+    this.finish(folk);
+  }
+
+  /** Um tile do objeto sem travessa em cima. */
+  private freeMealTile(obj: WorldObject): { obj: WorldObject; x: number; y: number } | null {
+    const def = this.defOf(obj);
+    if (!def) return null;
+    for (const t of footprint(obj, def)) {
+      if (!this.world.mess.some((m) => m.kind === 'meal' && m.x === t.x && m.y === t.y)) return { obj, x: t.x, y: t.y };
+    }
+    return null;
+  }
+
+  /** O que uma porção servida faz por minuto. */
+  private servedEffects(p: ServedPlate): Partial<Needs> {
+    const dish = DISH_BY_ID[p.dish];
+    const k = servedFactor(p);
+    const fun = p.burnt ? -0.25 : (dish?.fun ?? 0) * (p.quality / 70) - (p.cold ? 0.05 : 0);
+    return { hunger: (dish?.hunger ?? 2.4) * k, fun, energy: -0.02 };
+  }
+
+  /** Acabou o prato: o gosto fica (muito bom anima, queimado desanima). */
+  private ateServed(folk: Folk, p: ServedPlate): void {
+    folk.lastMeal = { dish: p.dish, quality: p.quality, tick: this.world.tick, burnt: p.burnt };
+    if (folk.visit) return;
+    if (p.burnt || p.quality < 25) {
+      folk.needs.fun = Math.max(0, folk.needs.fun - 6);
+      this.log('log.ateAwful', { name: folk.name, dish: `dish.${p.dish}` });
+    } else if (p.quality >= 75) {
+      folk.needs.fun = Math.min(NEED_MAX, folk.needs.fun + 6);
+      this.log('log.ateTasty', { name: folk.name, dish: `dish.${p.dish}` });
+    }
+  }
+
+  /** Alguém já sentado ou deitado neste sofá? */
+  private sofaTaken(folk: Folk, obj: WorldObject): boolean {
+    return this.world.folks.some(
+      (f) => f !== folk && (f.posture?.objectId === obj.id || (f.queue[0]?.objectId === obj.id && f.queue[0].phase === 'using')),
+    );
+  }
+
+  /** Comando da travessa: servir-se, chamar a família, esquentar ou jogar fora. */
+  private mealCommand(folkId: number, messId: number, act: MealAct): boolean {
+    const folk = this.findFolk(folkId);
+    if (!folk) return false;
+    if (folk.visit) return this.fail('visitor');
+    const mess = this.world.mess.find((m) => m.id === messId && m.kind === 'meal');
+    if (!mess?.meal) return this.fail('noMess');
+    const spoiled = isSpoiled(mess.meal, this.world.tick);
+    if ((act === 'serve' || act === 'call') && (spoiled || mess.meal.servings <= 0)) return this.fail('noFood');
+    if (act === 'reheat' && spoiled) return this.fail('noFood');
+    if (folk.age === 'baby') return this.fail('baby');
+    if (act === 'reheat' && folk.age === 'child') return this.fail('tooYoung');
+    return this.enqueuePlayer(folk, { kind: 'meal', messId, mealAct: act });
+  }
+
+  /**
+   * Plano 2, bloco 6: mexer na travessa. Servir-se: vai até ela, põe a porção
+   * no prato e leva para a mesa (vira a ação de comer). Chamar a família: grita
+   * da onde está e todo mundo da casa que pode vem se servir. Esquentar e
+   * jogar fora: vai até ela e faz.
+   */
+  private processMeal(folk: Folk, action: Action): void {
+    const mess = this.world.mess.find((m) => m.id === action.messId && m.kind === 'meal');
+    if (!mess?.meal) {
+      this.finish(folk);
+      return;
+    }
+    if (action.mealAct === 'call') {
+      action.phase = 'using';
+      action.elapsed++;
+      if (action.elapsed < 2) return;
+      this.callToMeal(folk, mess);
+      this.finish(folk);
+      // quem chamou também se serve
+      folk.queue.unshift(this.makeAction({ kind: 'meal', messId: mess.id, mealAct: 'serve' } as ActionSeed, action.source));
+      return;
+    }
+    if (action.phase === 'queued') {
+      const path = findPathToAny(this.nav, folk, messTiles(this.world, this.nav, mess));
+      if (!path) {
+        this.log('log.noPath', { name: folk.name });
+        this.finish(folk);
+        return;
+      }
+      folk.path = path;
+      action.phase = 'walking';
+    }
+    if (action.phase === 'walking') {
+      const moved = this.stepAlong(folk, action);
+      if (moved !== 'arrived') return;
+      action.phase = 'using';
+      action.elapsed = 0;
+      if (mess.x !== folk.x || mess.y !== folk.y) folk.facing = { x: Math.sign(mess.x - folk.x), y: Math.sign(mess.y - folk.y) };
+      return;
+    }
+    action.elapsed++;
+    const tick = this.world.tick;
+    if (action.mealAct === 'reheat') {
+      if (action.elapsed < REHEAT_MINUTES) return;
+      reheat(mess.meal, tick);
+      this.log('log.reheated', { name: folk.name, dish: `dish.${mess.meal.dish}` });
+      this.finish(folk);
+      return;
+    }
+    if (action.mealAct === 'scrap') {
+      if (action.elapsed < 2) return;
+      const next = finishTidy(this.world, this.catalog, this.logger, folk, mess);
+      this.log('log.scrapped', { name: folk.name, dish: `dish.${mess.meal.dish}` });
+      this.finish(folk);
+      this.chain(folk, next, action.source);
+      return;
+    }
+    // servir-se
+    if (action.elapsed < SERVE_MINUTES) return;
+    const plate = takeServing(mess, tick);
+    const on = this.findObject(mess.meal.on);
+    if (!plate || !on) {
+      this.log('log.noFood', { name: folk.name });
+      this.finish(folk);
+      return;
+    }
+    // a travessa vazia vira louça na pia (ou fica para alguém levar)
+    if (mess.meal.servings <= 0) {
+      this.world.mess = this.world.mess.filter((m) => m !== mess);
+      addMess(this.world, 'plate', mess.x, mess.y, mess.meal.cook);
+    }
+    action.kind = 'use';
+    action.objectId = on.id;
+    action.interactionId = 'eatServed';
+    action.served = plate;
+    delete action.mealAct;
+    delete action.messId;
+    action.phase = 'walking';
+    action.elapsed = 0;
+    folk.path = [];
+  }
+
+  /** "A comida está na mesa!": quem está em casa, acordado e à toa vem se servir. */
+  private callToMeal(caller: Folk, mess: Mess): void {
+    const meal = mess.meal!;
+    let called = 0;
+    for (const f of this.household()) {
+      if (f === caller || f.away || f.age === 'baby' || f.collapsed > 0 || f.down || f.adrift) continue;
+      if (called >= meal.servings - 1) break;
+      const head = f.queue[0];
+      const it = head && this.interactionOf(head);
+      if (head && ((it && isSleep(it)) || head.kind === 'work' || head.kind === 'school' || head.kind === 'meal' || head.served)) continue;
+      if (f.queue.length >= MAX_QUEUE) continue;
+      f.queue.push(this.makeAction({ kind: 'meal', messId: mess.id, mealAct: 'serve' } as ActionSeed, 'player'));
+      called++;
+    }
+    this.log(called > 0 ? 'log.calledToMeal' : 'log.calledNobody', { name: caller.name, dish: `dish.${meal.dish}` });
+  }
+
   private cookingFire(folk: Folk, obj: WorldObject, def: ObjectDef, it: InteractionDef): boolean {
-    if (folk.visit || !it.portions || it.skill?.id !== 'cooking') return false;
+    if (folk.visit || !(it.step === 'stir' || (it.portions && !it.cook)) || it.skill?.id !== 'cooking') return false;
     if (def.line !== 'stove' && def.id !== 'stove' && def.id !== 'grill') return false;
     if (nextFloat(this.world) >= cookFireChance(skillLevel(folk, 'cooking'))) return false;
     const t = nearestFootprintTile(obj, def, folk);

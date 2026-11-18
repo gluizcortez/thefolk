@@ -2,6 +2,7 @@ import type { Nav } from './grid';
 import { useTiles } from './grid';
 import { NEED_MAX, clampNeed, moodOf, needWeight } from './needs';
 import { careAvailable, careDrive, messScore, messTaken, messTiles, objectCareScore } from './upkeep';
+import { isLitter } from './kitchen';
 import { canUse, houseOptions } from './services';
 import { skillBoost } from './skills';
 import { findPathToAny } from './pathfinding';
@@ -239,7 +240,7 @@ export function scoreOptions(world: World, catalog: Catalog, folk: Folk, nav: Na
   }
   if (drive > 0) {
     for (const mess of world.mess) {
-      if (messTaken(world, mess.id, folk)) continue;
+      if (!isLitter(mess, world.tick) || messTaken(world, mess.id, folk)) continue;
       const path = findPathToAny(nav, folk, messTiles(world, nav, mess));
       if (!path) continue;
       const score = (messScore(mess, world.tick) * drive) / (1 + DISTANCE_COST * path.length);

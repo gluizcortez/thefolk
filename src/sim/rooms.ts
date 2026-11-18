@@ -5,7 +5,7 @@
 
 import { daylightAt } from './clock';
 import { blocksFloor, edgeKey, footprint, inBounds, isDoorway, isWindow, rowsOf, splitsRoom } from './grid';
-import { MESS_AMBIENCE, messSenseOf, stateAmbience } from './upkeep';
+import { messAmbience, messSenseOf, stateAmbience } from './upkeep';
 import { plantAmbience } from './garden';
 import type { Catalog, Folk, Grid, ObjectDef, RoomTaste, Side, Vec, World, WorldObject } from './types';
 
@@ -272,7 +272,7 @@ export function roomScore(world: World, catalog: Catalog, map: RoomMap, room: Ro
   for (const m of world.mess ?? []) {
     if (roomAt(map, m.x, m.y) !== room) continue;
     if (room.outdoor && !near(m)) continue;
-    mess += MESS_AMBIENCE[m.kind];
+    mess += messAmbience(m, world.tick);
   }
   const objects = OBJECTS_CAP * (1 - Math.exp(-positive / OBJECTS_CAP)) + negative;
   const out: RoomScore = {
@@ -344,7 +344,7 @@ export function roomKind(world: World, catalog: Catalog, map: RoomMap, room: Roo
   const ranked = [...votes.entries()].sort((a, b) => b[1] - a[1]);
   if (ranked.length === 0) return [room.tiles <= 8 ? 'hall' : 'empty'];
   const [first, second] = ranked;
-  if (second && second[1] >= 2 && second[1] >= first[1] - 1) return [first[0], second[0]];
+  if (second && second[1] >= 2 && second[1] >= Math.min(first[1] - 1, first[1] * 0.6)) return [first[0], second[0]];
   return [first[0]];
 }
 

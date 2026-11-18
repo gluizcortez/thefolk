@@ -217,7 +217,7 @@ describe('som de cada coisa (bloco 7)', () => {
     }
     expect(missing).toEqual([]);
     expect(actionSound(CATALOG.objects.toilet, CATALOG.objects.toilet.interactions.find((i) => i.id === 'use')!)?.end).toBe('flush');
-    expect(actionSound(CATALOG.objects.stove, CATALOG.objects.stove.interactions.find((i) => i.id === 'cook')!)?.loop).toBe('sizzle');
+    expect(actionSound(CATALOG.objects.stove, CATALOG.objects.stove.interactions.find((i) => i.id === 'stir')!)?.loop).toBe('sizzle');
   });
 
   it('campainha, telefone, caixa registradora e passos pelo piso', () => {

@@ -28,6 +28,8 @@ export interface Feeling {
 export const LOW_NEED = 25;
 /** Depois de um susto com fantasma, fica assustado por tanto tempo (minutos). */
 export const SCARE_FEEL = 3 * 60;
+/** Plano 2, bloco 6: o gosto da comida (boa ou ruim) dura tanto (minutos). */
+export const MEAL_FEEL = 3 * 60;
 
 const NEED_FEEL: Record<NeedId, string> = {
   hunger: 'hungry',
@@ -67,6 +69,13 @@ export function feelingsOf(world: World, catalog: Catalog, folk: Folk): Feeling[
       if (!room.outdoor && score.level < DARK_BELOW) out.push({ id: 'dark', icon: 'energy', tone: 'bad' });
       if (room.outdoor && raining(world)) out.push({ id: 'rain', icon: 'swim', tone: 'calm' });
     }
+  }
+  // plano 2, bloco 6: o gosto da última refeição servida fica um tempo
+  const meal = folk.lastMeal;
+  if (meal && tick - meal.tick < MEAL_FEEL) {
+    const dish = `dish.${meal.dish}`;
+    if (meal.burnt || meal.quality < 25) out.push({ id: 'awfulMeal', icon: 'hunger', tone: 'bad', until: meal.tick + MEAL_FEEL, params: { dish } });
+    else if (meal.quality >= 75) out.push({ id: 'tasty', icon: 'hunger', tone: 'good', until: meal.tick + MEAL_FEEL, params: { dish } });
   }
   if (isInspired(folk, tick)) out.push({ id: 'inspired', icon: 'spark', tone: 'good', until: folk.inspired });
   if (folk.wishes.length > 0 && folk.wishes.every((w) => w.done)) out.push({ id: 'wishesDone', icon: 'yes', tone: 'good' });

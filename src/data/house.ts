@@ -66,6 +66,8 @@ export function starterHouse(seed = 20001): WorldSeed {
       { defId: 'kitchensink', x: 11, y: 2 },
       { defId: 'stove', x: 12, y: 2 },
       { defId: 'fridge', x: 13, y: 2 },
+      // plano 2, bloco 6: bancada para picar e servir a travessa
+      { defId: 'counter', x: 11, y: 5 },
       { defId: 'phone', x: 3, y: 6 },
       // plano 2, bloco 4: o sofá vira para a TV (antes ficava de costas para a parede, sem vista para ela)
       { defId: 'sofa', x: 6, y: 7, rot: 3 },
