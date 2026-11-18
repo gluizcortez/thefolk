@@ -1045,6 +1045,12 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
   e marcos, bairro envelhecendo junto (save v21). Com ele o plano de
   evolução (`docs/plano-evolucao.md`) está completo.
 
+O segundo plano está em [docs/plano-evolucao-2.md](docs/plano-evolucao-2.md):
+15 blocos que mantêm o visual e trazem a jogabilidade para perto dos jogos
+mais novos do gênero (jogador comanda tudo, tempo mais lento, HUD nova,
+atividades em etapas com animação, folks e objetos modulares, criador com
+traços e cidade aberta com o bairro dentro dela).
+
 ## Limitações conhecidas do bloco 17
 
 - O relógio da vida só se escolhe no jogo novo; saves antigos abrem com ele
