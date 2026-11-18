@@ -52,7 +52,7 @@ const snuggle = (comfort: number): InteractionDef => ({
 });
 
 /** Bloco 5: trocar de roupa no guarda-roupa. */
-const dress = (outfit: Outfit): InteractionDef => ({
+export const dress = (outfit: Outfit): InteractionDef => ({
   id: `dress_${outfit}`,
   label: `act.dress.${outfit}`,
   duration: 4,
@@ -61,7 +61,7 @@ const dress = (outfit: Outfit): InteractionDef => ({
   residentOnly: true,
   dress: outfit,
 });
-const rest = (comfort: number, energy = 0, duration = 60): InteractionDef => ({
+export const rest = (comfort: number, energy = 0, duration = 60): InteractionDef => ({
   id: 'rest',
   label: 'act.rest',
   duration,
@@ -70,7 +70,7 @@ const rest = (comfort: number, energy = 0, duration = 60): InteractionDef => ({
   pose: 'sit',
   onObject: true,
 });
-const sit = (comfort: number): InteractionDef => ({
+export const sit = (comfort: number): InteractionDef => ({
   id: 'sit',
   label: 'act.sit',
   duration: 40,

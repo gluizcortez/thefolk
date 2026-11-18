@@ -51,7 +51,9 @@ import type { Hud } from '../ui/hud';
 import { FolkModel } from './art/folk';
 import type { FolkAnim } from './art/folk';
 import { isAnim } from './art/anims';
-import { buildFurniture, furnitureSpec } from './art/furniture';
+import { buildFurniture, furnitureSpec, objectArt } from './art/furniture';
+import { LIFT_STEP, clampNudge, hasSurface, supportAt, zonesOf } from '../sim/modular';
+import { styleFromColor } from '../sim/style';
 import type { Anchor, FurnitureModel, FurnitureSpec } from './art/furniture';
 import { COVER_ART, FLOOR_ART, HALF_H, House, LEVEL_H, LOW_H, POOL_SURFACE, TH, WALL_H, sceneZ } from './art/house';
 import { CHILD_SCALE, TEEN_SCALE } from './art/folk';
@@ -59,8 +61,7 @@ import { poolOf, poolTiles } from '../sim/yard';
 import { raining } from '../sim/garden';
 import { isLineTool, isOpeningTool } from './controller';
 import { texMat } from './art/build';
-import { PAINT, PAL } from './art/palette';
-import { colorOf } from '../sim/furnish';
+import { PAL } from './art/palette';
 import { wearOf } from '../sim/family';
 import { thoughtOf } from '../sim/will';
 import { reactionTo } from '../sim/topics';
@@ -220,6 +221,11 @@ const CHORE_TOP: Record<string, number> = {
   tablemarble: 0.78,
 };
 
+/** Plano 2, bloco 8: altura do tampo de um objeto posto (kit sabe a sua; os antigos, pela tabela). */
+function surfaceTop(e: { def: ObjectDef; spec: FurnitureSpec }): number {
+  return SURFACE_TOP[e.def.art] ?? (hasSurface(e.def) ? e.spec.top : undefined) ?? 0.76;
+}
+
 /** Altura do tampo das superfícies, para o prato ficar em cima (o resto vai no chão). */
 const SURFACE_TOP: Record<string, number> = {
   dinette: 0.77,
@@ -357,7 +363,9 @@ export class GameView {
   private hoverPadKey = '';
   private pings: Ping[] = [];
   /** objeto fantasma do modo compra, seguindo o mouse */
-  private ghost: { key: string; group: THREE.Group } | null = null;
+  private ghost: { key: string; group: THREE.Group; spec?: FurnitureSpec } | null = null;
+  /** plano 2, bloco 8: onde o mouse está dentro do tile (0..1), para soltar o enfeite */
+  private subTile: { x: number; y: number } | null = null;
   private ghostPad: THREE.Mesh;
   private ghostTile: { x: number; y: number } | null = null;
   private builtObjects = -1;
@@ -612,19 +620,31 @@ export class GameView {
     });
     this.objectsRoot.clear();
     this.objects.clear();
-    for (const obj of this.ctrl.world.objects) {
+    const world = this.ctrl.world;
+    // plano 2, bloco 8: os enfeites vão depois dos tampos (para saber a altura)
+    const order = [...world.objects].sort((a, b) => Number(this.ctrl.sim.defOf(a)?.layer === 'surface') - Number(this.ctrl.sim.defOf(b)?.layer === 'surface'));
+    for (const obj of order) {
       const def = this.ctrl.sim.defOf(obj);
       if (!def) continue;
-      const spec = furnitureSpec(def.art);
-      const paint = colorOf(obj, def);
-      const model = buildFurniture(def.art, obj.id, paint ? PAINT[paint] : undefined);
+      const { model, spec } = objectArt(def, obj.id, { parts: obj.parts, style: obj.style });
       const size = objectSize(def, obj.rot);
       // bloco 12: o objeto vai para a altura do andar dele
-      const at = sceneZ(this.ctrl.world.grid, obj.y);
+      const at = sceneZ(world.grid, obj.y);
       const center = new THREE.Vector3(obj.x + size.w / 2, at.base, at.z + size.h / 2);
-      const turn = (spec.facing === 'E' ? Math.PI / 2 : 0) + obj.rot * (Math.PI / 2);
+      let turn = (spec.facing === 'E' ? Math.PI / 2 : 0) + obj.rot * (Math.PI / 2);
       const height = Math.max(0.3, new THREE.Box3().setFromObject(model.group).max.y);
       model.group.position.copy(center);
+      // plano 2, bloco 8: enfeite em cima do tampo, solto no tile e girado em oitavos
+      if (def.layer === 'surface') {
+        const sup = supportAt(world, this.ctrl.sim.catalog, obj.x, obj.y);
+        const se = sup ? this.objects.get(sup.id) : undefined;
+        model.group.position.y += se ? surfaceTop(se) : 0.75;
+        model.group.position.x += obj.nudge?.dx ?? 0;
+        model.group.position.z += obj.nudge?.dy ?? 0;
+      }
+      if (def.turns8) turn = (spec.facing === 'E' ? Math.PI / 2 : 0) + (obj.turn8 ?? obj.rot * 2) * (Math.PI / 4);
+      // plano 2, bloco 8: objeto de parede em qualquer altura
+      if (def.layer === 'wall' && obj.lift) model.group.position.y += obj.lift * LIFT_STEP;
       model.group.rotation.y = turn;
       model.group.userData.objectId = obj.id;
       const fx = new WearFx(size.w, size.h, height, obj.id);
@@ -866,13 +886,16 @@ export class GameView {
           this.ctrl.rotateCamera(-1);
           break;
         // bloco 12: sobe e desce o andar que se vê
+        // plano 2, bloco 8: segurando um objeto de parede, sobe e desce ele
         case 'PageUp':
           e.preventDefault();
-          this.ctrl.changeLevel(1);
+          if (this.liftingWall()) this.ctrl.liftPlacing(1);
+          else this.ctrl.changeLevel(1);
           break;
         case 'PageDown':
           e.preventDefault();
-          this.ctrl.changeLevel(-1);
+          if (this.liftingWall()) this.ctrl.liftPlacing(-1);
+          else this.ctrl.changeLevel(-1);
           break;
         // plano 2, bloco 3: modos de vista (Home sobe as paredes, End desce; P fixa)
         case 'Home':
@@ -1024,6 +1047,12 @@ export class GameView {
     return this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -h), new THREE.Vector3());
   }
 
+  /** Plano 2, bloco 8: está segurando um quadro, prateleira ou relógio. */
+  private liftingWall(): boolean {
+    const p = this.ctrl.placing;
+    return !!p && this.ctrl.sim.catalog.objects[p.defId]?.layer === 'wall';
+  }
+
   /** Plano 2, bloco 3: ferramenta de marcar ou tirar laje na mão. */
   private slabTool(): boolean {
     return this.ctrl.mode === 'build' && (this.ctrl.buildTool === 'slab' || this.ctrl.buildTool === 'unslab');
@@ -1043,10 +1072,15 @@ export class GameView {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
-    const ground = this.levelPoint();
+    const def = this.ctrl.placing ? this.ctrl.sim.catalog.objects[this.ctrl.placing.defId] : undefined;
+    // plano 2, bloco 8: o enfeite mira na altura dos tampos, e a posição dentro do tile vale
+    const lift = def?.layer === 'surface' ? 0.76 : 0;
+    const ground = lift
+      ? this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -(this.ctrl.viewLevel * LEVEL_H + lift)), new THREE.Vector3())
+      : this.levelPoint();
     if (!ground || !this.ctrl.placing) return null;
+    this.subTile = { x: ground.x - Math.floor(ground.x), y: ground.z - Math.floor(ground.z) };
     // o tile sob o mouse fica no centro do objeto
-    const def = this.ctrl.sim.catalog.objects[this.ctrl.placing.defId];
     const size = def ? objectSize(def, this.ctrl.placing.rot) : { w: 1, h: 1 };
     const x = Math.floor(ground.x - (size.w - 1) / 2);
     const z = Math.floor(ground.z - (size.h - 1) / 2);
@@ -1111,9 +1145,9 @@ export class GameView {
       // em cima de mesa ou bancada, o prato fica no tampo
       let top = 0;
       for (const e of this.objects.values()) {
-        if (SURFACE_TOP[e.def.art] === undefined) continue;
+        if (SURFACE_TOP[e.def.art] === undefined && !hasSurface(e.def)) continue;
         const size = objectSize(e.def, e.obj.rot);
-        if (m.x >= e.obj.x && m.y >= e.obj.y && m.x < e.obj.x + size.w && m.y < e.obj.y + size.h) top = SURFACE_TOP[e.def.art];
+        if (m.x >= e.obj.x && m.y >= e.obj.y && m.x < e.obj.x + size.w && m.y < e.obj.y + size.h) top = surfaceTop(e);
       }
       const stack = mess.filter((o) => o.x === m.x && o.y === m.y && o.id < m.id).length;
       let g: THREE.Group;
@@ -1290,6 +1324,8 @@ export class GameView {
         alarm: this.alarmFor(entry.def.safety),
         screen: entry.obj.state?.broken ? undefined : screens.get(entry.obj.id),
         canvas: entry.obj.canvas ? { seed: entry.obj.canvas.seed, progress: entry.obj.canvas.progress } : undefined,
+        running: (entry.obj.running ?? 0) > world.tick,
+        load: entry.obj.laundry ?? entry.obj.dishes,
       });
       if (entry.obj.state) entry.fx.update(entry.obj.state, !!entry.def.upkeep?.bin && entry.obj.state.fill >= 100, this.animTime);
       this.updateNotes(entry);
@@ -2366,11 +2402,13 @@ export class GameView {
       return;
     }
     const moving = placing.moveId !== undefined ? this.ctrl.sim.findObject(placing.moveId) : undefined;
-    const paint = moving ? colorOf(moving, def) : (placing.color ?? def.colors?.[0]);
-    const key = `${placing.defId}|${placing.moveId ?? ''}|${paint ?? ''}`;
+    // plano 2, bloco 8: o fantasma já mostra as peças e o estilo escolhidos
+    const look = moving ? { parts: moving.parts, style: moving.style } : { parts: placing.parts, style: placing.style ?? styleFromColor(zonesOf(def), placing.color) };
+    const key = `${placing.defId}|${placing.moveId ?? ''}|${JSON.stringify(look)}`;
     if (this.ghost?.key !== key) {
       this.clearGhost();
-      const group = buildFurniture(def.art, placing.moveId ?? 1, paint ? PAINT[paint] : undefined).group;
+      const built = objectArt(def, placing.moveId ?? 1, look);
+      const group = built.model.group;
       group.traverse((o) => {
         if (!(o instanceof THREE.Mesh)) return;
         const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -2385,27 +2423,46 @@ export class GameView {
         o.raycast = () => {};
       });
       this.scene.add(group);
-      this.ghost = { key, group };
+      this.ghost = { key, group, spec: built.spec };
     }
     // o objeto que está sendo movido some do lugar antigo
     for (const e of this.objects.values()) e.model.group.visible = e.obj.id !== placing.moveId && this.shown(e);
 
+    const edges = this.ctrl.world.grid.edges;
     // quadro e relógio viram sozinhos para a parede mais perto do tile
     if (def.layer === 'wall') {
-      const edges = this.ctrl.world.grid.edges;
       if (edges[wallBehind({ x: tile.x, y: tile.y, rot: placing.rot })] !== 'wall') {
         const r = ([0, 1, 2, 3] as const).find((rot) => edges[wallBehind({ x: tile.x, y: tile.y, rot })] === 'wall');
         if (r !== undefined) placing.rot = r;
       }
+    } else if (placing.autoRot && !def.layer && def.size.w === 1 && def.size.h === 1) {
+      // plano 2, bloco 8: móvel de um tile encosta sozinho na parede (de costas para ela)
+      const r = ([0, 1, 2, 3] as const).find((rot) => edges[wallBehind({ x: tile.x, y: tile.y, rot })] === 'wall');
+      if (r !== undefined) placing.rot = r;
+    } else if (placing.autoRot && !def.layer && def.useSides?.length === 1) {
+      const r = ([0, 1, 2, 3] as const).find((rot) => edges[wallBehind({ x: tile.x, y: tile.y, rot })] === 'wall');
+      if (r !== undefined) placing.rot = r;
     }
-    const spec = furnitureSpec(def.art);
+    const ghost = this.ghost!;
+    const spec = ghost.spec ?? furnitureSpec(def.art);
     const size = objectSize(def, placing.rot);
-    const g = this.ghost.group;
+    const g = ghost.group;
     const at = sceneZ(this.ctrl.world.grid, tile.y);
     g.position.set(tile.x + size.w / 2, at.base + 0.02, at.z + size.h / 2);
     g.rotation.y = (spec.facing === 'E' ? Math.PI / 2 : 0) + placing.rot * (Math.PI / 2);
-    const ok = checkPlacement(this.ctrl.world, this.ctrl.sim.catalog, placing.defId, tile.x, tile.y, placing.rot, placing.moveId).ok;
-    const affordable = placing.moveId !== undefined || this.ctrl.world.household.funds >= def.price;
+    if (def.turns8) g.rotation.y = (spec.facing === 'E' ? Math.PI / 2 : 0) + (placing.turn8 ?? placing.rot * 2) * (Math.PI / 4);
+    if (def.layer === 'surface') {
+      // plano 2, bloco 8: o enfeite segue o mouse dentro do tile, em cima do tampo
+      placing.nudge = clampNudge(this.subTile ? { dx: this.subTile.x - 0.5, dy: this.subTile.y - 0.5 } : undefined);
+      const sup = supportAt(this.ctrl.world, this.ctrl.sim.catalog, tile.x, tile.y, placing.moveId);
+      const se = sup ? this.objects.get(sup.id) : undefined;
+      g.position.y = at.base + (se ? surfaceTop(se) : 0.02);
+      g.position.x += placing.nudge?.dx ?? 0;
+      g.position.z += placing.nudge?.dy ?? 0;
+    }
+    if (def.layer === 'wall' && placing.lift) g.position.y += placing.lift * LIFT_STEP;
+    const ok = checkPlacement(this.ctrl.world, this.ctrl.sim.catalog, placing.defId, tile.x, tile.y, placing.rot, placing.moveId, placing.lift).ok;
+    const affordable = placing.moveId !== undefined || this.ctrl.world.household.funds >= this.ctrl.placingPrice();
     this.ghostPad.visible = true;
     this.ghostPad.position.set(tile.x + size.w / 2, at.base + 0.04, at.z + size.h / 2);
     this.ghostPad.scale.set(size.w, size.h, 1);

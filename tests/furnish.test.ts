@@ -78,12 +78,13 @@ describe('catálogo em faixas (bloco 4)', () => {
     expect(taskFits(CATALOG, folk, 'gig', 'fridgeluxe')).toBe(false);
   });
 
-  it('a cor escolhida na compra fica no objeto; cor que não existe é ignorada', () => {
+  it('a cor escolhida na compra vira o estilo do tecido (plano 2, bloco 8); cor que não existe é ignorada', () => {
     const sim = openField(8, 8, [], { x: 0, y: 0 }, 1, 5000);
     expect(sim.dispatch({ type: 'buy', defId: 'sofa', x: 2, y: 2, rot: 0, color: 'green' })).toBe(true);
     expect(sim.dispatch({ type: 'buy', defId: 'sofa', x: 2, y: 5, rot: 0, color: 'neon' })).toBe(true);
-    expect(sim.world.objects[0].color).toBe('green');
-    expect(sim.world.objects[1].color).toBeUndefined();
+    expect(sim.world.objects[0].style?.seat?.color).toBe('green');
+    expect(sim.world.objects[0].color).toBeUndefined();
+    expect(sim.world.objects[1].style).toBeUndefined();
   });
 });
 

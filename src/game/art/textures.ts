@@ -1,3 +1,4 @@
+import { finishSpec } from './finish';
 import * as THREE from 'three';
 import { FORMAL, HAIR, PAJAMA, PAL, PANTS, SHIRT, SKIN, SWIM, css, seeded, shade } from './palette';
 import { ICON_PATHS, STROKED, TOPIC_PATHS } from '../../ui/icons';
@@ -2484,6 +2485,11 @@ function specFor(name: string): Spec | undefined {
       };
       const st: FaceState = { expr: parts[12] as Expression, closed: parts[13] === '1', talk: Number(parts[14]) as 0 | 1 | 2, gaze: Number(parts[15]) as -1 | 0 | 1 };
       return { w: 256, h: 128, paint: face(look, st), grain: 3 };
+    }
+    // plano 2, bloco 8: fin:material:padrão (tecidos, madeira, pedras e fórmica)
+    case 'fin': {
+      const f = finishSpec(parts[1], parts[2] ?? 'plain');
+      return f ? { w: f.w, h: f.h, paint: f.paint, repeat: f.repeat, grain: f.grain } : undefined;
     }
     // plano 2, bloco 7: pc:modo:quadro e easel:semente:etapa
     case 'pc':

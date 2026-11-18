@@ -395,6 +395,14 @@ import {
   schoolDelta,
 } from './kids';
 import type { BabyCare, Expecting } from './types';
+import type { KitParts } from './parts';
+import type { ObjStyle, ZoneDef } from './style';
+import { MAX_SAVED_STYLES, ROLE_ZONES, cleanStyle, styleFromColor } from './style';
+import { DISHWASHER_LOAD } from './upkeep';
+import { cleanLook, itemsOn, placementExtras, priceWith, setExtras, zonesOf } from './modular';
+import { kitZones } from './parts';
+import type { KitKind } from './parts';
+import { KINDS } from './parts';
 import {
   SEAT_REACH,
   TABLE_BONUS,
@@ -457,6 +465,9 @@ export type CommandProblem =
   | 'undoBuyEmpty'
   | 'daytime'
   | 'undoBuyBlocked'
+  // plano 2, bloco 8: tampo com enfeite em cima não sai; estilo que não monta
+  | 'surfaceBusy'
+  | 'badParts'
   | 'refused'
   | 'noSpark'
   | 'locked'
@@ -566,6 +577,13 @@ const AUTO_RECHECK = 10;
 const CRITICAL_NEED = 15;
 const COLLAPSE_MINUTES = 150;
 /** quantas obras ficam guardadas para desfazer */
+/** Plano 2, bloco 8: toda zona que existe (para guardar estilos de qualquer objeto). */
+const ALL_ZONES: ZoneDef[] = (() => {
+  const raw = [...Object.values(ROLE_ZONES), ...(Object.keys(KINDS) as KitKind[]).flatMap((k) => kitZones(k))];
+  const ids = [...new Set(raw.map((z) => z.id))];
+  return ids.map((id) => ({ id, families: [...new Set(raw.filter((z) => z.id === id).flatMap((z) => z.families))], base: { mat: '' } }));
+})();
+
 const UNDO_LIMIT = 40;
 const COLLAPSE_ENERGY_PER_MINUTE = 0.3;
 
@@ -585,7 +603,7 @@ const SERVICE_STAY = 8 * 60;
 type BuyUndo =
   | { kind: 'buy'; objectId: number; cost: number }
   | { kind: 'sell'; obj: WorldObject; got: number }
-  | { kind: 'move'; objectId: number; x: number; y: number; rot: WorldObject['rot'] };
+  | { kind: 'move'; objectId: number; x: number; y: number; rot: WorldObject['rot']; extras?: { nudge?: { dx: number; dy: number }; turn8?: number; lift?: number } };
 
 /** treino de Capricho enquanto recolhe bagunça */
 const TIDY_GAIN = { skill: { id: TIDINESS, xpPerMinute: 0.8 } } as InteractionDef;
@@ -968,7 +986,26 @@ export class Sim {
         return this.enqueuePlayer(folk, { kind: 'use', objectId: best.obj.id, interactionId: best.it.id });
       }
       case 'buy':
-        return this.buy(cmd.defId, cmd.x, cmd.y, cmd.rot, cmd.color);
+        return this.buy(cmd.defId, cmd.x, cmd.y, cmd.rot, cmd.color, cmd);
+      case 'restyle':
+        return this.restyle(cmd.objectId, cmd.parts, cmd.style);
+      case 'saveStyle': {
+        const style = cleanStyle(ALL_ZONES, cmd.style);
+        if (!style) return this.fail('invalid');
+        const hh = this.world.household;
+        const list = (hh.styles ??= []);
+        const id = list.reduce((m, s) => Math.max(m, s.id), 0) + 1;
+        list.push({ id, name: cmd.name.trim().slice(0, 24) || `#${id}`, style });
+        while (list.length > MAX_SAVED_STYLES) list.shift();
+        return true;
+      }
+      case 'dropStyle': {
+        const list = this.world.household.styles ?? [];
+        const i = list.findIndex((s) => s.id === cmd.styleId);
+        if (i < 0) return false;
+        list.splice(i, 1);
+        return true;
+      }
       case 'undoBuy':
         return this.undoBuy();
       case 'closeBuy':
@@ -980,12 +1017,25 @@ export class Sim {
         const obj = this.findObject(cmd.objectId);
         if (!obj) return false;
         if (objectBusy(this.world, obj.id)) return this.fail('inUse');
-        const check = checkPlacement(this.world, this.catalog, obj.defId, cmd.x, cmd.y, cmd.rot, obj.id);
+        const mdef = this.defOf(obj);
+        if (!mdef) return false;
+        const extras = placementExtras(mdef, cmd);
+        const check = checkPlacement(this.world, this.catalog, obj.defId, cmd.x, cmd.y, cmd.rot, obj.id, extras.lift);
         if (!check.ok) return this.fail(check.problem ?? 'invalid');
-        this.pushBuyUndo({ kind: 'move', objectId: obj.id, x: obj.x, y: obj.y, rot: obj.rot });
+        // plano 2, bloco 8: o tampo leva junto o que está em cima (se couber no lugar novo)
+        const riders = itemsOn(this.world, this.catalog, obj);
+        if (riders.length && (cmd.x !== obj.x || cmd.y !== obj.y || cmd.rot !== obj.rot)) {
+          if (cmd.rot !== obj.rot) return this.fail('surfaceBusy');
+        }
+        this.pushBuyUndo({ kind: 'move', objectId: obj.id, x: obj.x, y: obj.y, rot: obj.rot, extras: { nudge: obj.nudge, turn8: obj.turn8, lift: obj.lift } });
+        for (const r of riders) {
+          r.x += cmd.x - obj.x;
+          r.y += cmd.y - obj.y;
+        }
         obj.x = cmd.x;
         obj.y = cmd.y;
         obj.rot = cmd.rot;
+        setExtras(obj, extras);
         this.replanAll();
         return true;
       }
@@ -1143,20 +1193,36 @@ export class Sim {
 
   // ---------- compra e venda ----------
 
-  private buy(defId: string, x: number, y: number, rot: WorldObject['rot'], color?: string): boolean {
+  private buy(
+    defId: string,
+    x: number,
+    y: number,
+    rot: WorldObject['rot'],
+    color?: string,
+    extra: { parts?: KitParts; style?: ObjStyle; nudge?: { dx: number; dy: number }; turn8?: number; lift?: number } = {},
+  ): boolean {
     const def = this.catalog.objects[defId];
     if (!def || def.buyable === false) return false;
     if (def.reward && !(this.world.household.unlocked ?? []).includes(def.id)) return this.fail('locked');
-    if (this.world.household.funds < def.price) return this.fail('funds');
-    const check = checkPlacement(this.world, this.catalog, defId, x, y, rot);
+    // plano 2, bloco 8: a cor do bloco 4 vira estilo; peças que não montam não passam
+    const look = cleanLook(def, extra.parts, extra.style ?? styleFromColor(zonesOf(def), color && def.colors?.includes(color) ? color : undefined));
+    if (extra.parts && def.kit && !look.parts && Object.keys(extra.parts).some((k) => extra.parts![k as keyof KitParts] !== def.kit!.parts[k as keyof KitParts])) {
+      return this.fail('badParts');
+    }
+    const price = priceWith(def, look.parts, look.style);
+    if (this.world.household.funds < price) return this.fail('funds');
+    const extras = placementExtras(def, extra);
+    const check = checkPlacement(this.world, this.catalog, defId, x, y, rot, undefined, extras.lift);
     if (!check.ok) return this.fail(check.problem ?? 'invalid');
-    const obj: WorldObject = { id: this.world.nextId++, defId, x, y, rot, paid: def.price, state: freshState(), bought: this.world.tick, used: 0, uses: {} };
-    if (color && def.colors?.includes(color)) obj.color = color;
+    const obj: WorldObject = { id: this.world.nextId++, defId, x, y, rot, paid: price, state: freshState(), bought: this.world.tick, used: 0, uses: {} };
+    if (look.parts) obj.parts = look.parts;
+    if (look.style) obj.style = look.style;
+    Object.assign(obj, extras);
     // bloco 13: planta comprada chega muda (o vaso já vem crescido)
     if (def.plant) obj.plant = freshPlant(def.plant);
     this.world.objects.push(obj);
-    this.world.household.funds -= def.price;
-    this.pushBuyUndo({ kind: 'buy', objectId: obj.id, cost: def.price });
+    this.world.household.funds -= price;
+    this.pushBuyUndo({ kind: 'buy', objectId: obj.id, cost: price });
     wishOnBuy(this.world, this.catalog, this.logger, def.category);
     this.replanAll();
     return true;
@@ -1169,6 +1235,7 @@ export class Sim {
     // bloco 14: a escadinha sai mesmo com gente nadando, e quem estava na água fica preso
     const swimmers = def.pool === 'in' ? this.world.folks.filter((f) => f.queue[0]?.phase === 'using' && f.queue[0].objectId === objectId) : [];
     if (swimmers.length === 0 && objectBusy(this.world, objectId)) return this.fail('inUse');
+    if (itemsOn(this.world, this.catalog, obj).length) return this.fail('surfaceBusy');
     const value = sellValue(this.world, obj, def);
     this.world.household.funds += value;
     this.pushBuyUndo({ kind: 'sell', obj: JSON.parse(JSON.stringify(obj)) as WorldObject, got: value });
@@ -1231,10 +1298,42 @@ export class Sim {
     if (objectBusy(this.world, obj.id)) return this.fail('inUse');
     if (!checkPlacement(this.world, this.catalog, obj.defId, last.x, last.y, last.rot, obj.id).ok) return this.fail('undoBuyBlocked');
     this.buyStack.pop();
+    for (const r of itemsOn(this.world, this.catalog, obj)) {
+      r.x += last.x - obj.x;
+      r.y += last.y - obj.y;
+    }
     obj.x = last.x;
     obj.y = last.y;
     obj.rot = last.rot;
+    if (last.extras) setExtras(obj, placementExtras(this.defOf(obj) ?? ({} as ObjectDef), last.extras));
     this.replanAll();
+    return true;
+  }
+
+  /**
+   * Plano 2, bloco 8: troca peças e estilo de um objeto que já está na casa.
+   * Paga só o que ficou mais caro (nada volta quando fica mais simples).
+   */
+  private restyle(objectId: number, parts?: KitParts, style?: ObjStyle): boolean {
+    const obj = this.findObject(objectId);
+    const def = obj && this.defOf(obj);
+    if (!obj || !def) return false;
+    if (objectBusy(this.world, obj.id)) return this.fail('inUse');
+    const look = cleanLook(def, parts, style);
+    if (parts && def.kit && !look.parts && Object.keys(parts).some((k) => parts[k as keyof KitParts] !== def.kit!.parts[k as keyof KitParts])) {
+      return this.fail('badParts');
+    }
+    const before = priceWith(def, obj.parts, obj.style);
+    const after = priceWith(def, look.parts, look.style);
+    const cost = Math.max(0, after - before);
+    if (this.world.household.funds < cost) return this.fail('funds');
+    this.world.household.funds -= cost;
+    obj.paid += cost;
+    delete obj.parts;
+    delete obj.style;
+    delete obj.color;
+    if (look.parts) obj.parts = look.parts;
+    if (look.style) obj.style = look.style;
     return true;
   }
 
@@ -2716,8 +2815,13 @@ export class Sim {
       if (!it) continue;
       // plano 2, bloco 6: arrumar só a cama em que dormiu; lavar as mãos só na pia perto
       if (next === 'makeBed' && (!obj.unmade || Math.abs(obj.x - folk.x) + Math.abs(obj.y - folk.y) > 3)) continue;
-      const d = Math.abs(obj.x - folk.x) + Math.abs(obj.y - folk.y);
+      let d = Math.abs(obj.x - folk.x) + Math.abs(obj.y - folk.y);
       if (next === 'washHands' && d > 8) continue;
+      // plano 2, bloco 8: o prato vai para a lava-louças, se tiver espaço
+      if (next === 'dishes' && this.defOf(obj)?.machine === 'dishes') {
+        if ((obj.dishes ?? 0) >= DISHWASHER_LOAD) continue;
+        d -= 6;
+      }
       if (!best || d < best.d) best = { obj, it, d };
     }
     if (best) {

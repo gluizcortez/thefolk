@@ -1,3 +1,4 @@
+import { MODULAR_OBJECTS, SURFACE_IDS, withKit } from './modular';
 import { PERIL_OBJECTS } from './peril';
 import { DOWNTOWN_OBJECTS } from './downtown';
 import type { ObjectDef } from '../sim/types';
@@ -938,4 +939,12 @@ const list: ObjectDef[] = [
   },
 ];
 
-export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries([...list, ...FURNITURE, ...REWARDS, ...KID_OBJECTS, ...YARD_OBJECTS, ...PERIL_OBJECTS, ...DOWNTOWN_OBJECTS, ...HOBBY_OBJECTS].map((o) => [o.id, withHobbies(withChores(withActivities(o)))]));
+/** Plano 2, bloco 8: kit nos móveis antigos e tampo nas mesas que não são kit. */
+const modular = (o: ObjectDef): ObjectDef => {
+  const k = withKit(o);
+  return SURFACE_IDS.has(k.id) ? { ...k, surface: true } : k;
+};
+
+export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries(
+  [...list, ...FURNITURE, ...REWARDS, ...KID_OBJECTS, ...YARD_OBJECTS, ...PERIL_OBJECTS, ...DOWNTOWN_OBJECTS, ...HOBBY_OBJECTS, ...MODULAR_OBJECTS].map((o) => [o.id, withHobbies(withChores(withActivities(modular(o))))]),
+);

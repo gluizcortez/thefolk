@@ -2,6 +2,8 @@ import type { VenuePlan } from './downtown';
 // Tipos do núcleo de simulação. Nada aqui (nem em sim/) pode importar Three.js ou DOM.
 // Todo o estado (`World`) é um objeto puro e serializável em JSON.
 import type { FamilyDraft } from './family';
+import type { KitDef, KitParts } from './parts';
+import type { ObjStyle, SavedStyle } from './style';
 
 export const NEED_IDS = [
   'hunger',
@@ -526,7 +528,9 @@ export type CareKind =
   | 'replant'
   // plano 2, bloco 6: lavar a louça empilhada na pia e arrumar a cama desfeita
   | 'washUp'
-  | 'makeBed';
+  | 'makeBed'
+  // plano 2, bloco 8: ligar a lava-louças ou a máquina de lavar
+  | 'runMachine';
 
 /** Bagunça solta: prato sujo, poça, lixo no chão. */
 /** Plano 2, bloco 6: 'meal' = prato pronto servido (travessa com porções), que não é sujeira até estragar. */
@@ -668,6 +672,17 @@ export interface ObjectDef {
   hearth?: boolean;
   /** bloco 14: lápide ou urna (não se compra; nasce quando alguém morre) */
   memorial?: boolean;
+  /** plano 2, bloco 8: montado por peças (tipo, peças e estilo de fábrica) */
+  kit?: KitDef;
+  /**
+   * plano 2, bloco 8: tem tampo onde se põe enfeite, abajur, livro (camada
+   * 'surface'). Sem campo: os kits com tampo têm.
+   */
+  surface?: boolean;
+  /** plano 2, bloco 8: enfeite gira em oito direções (camada 'surface') */
+  turns8?: boolean;
+  /** plano 2, bloco 8: máquina que junta louça ou roupa e lava sozinha depois de ligada */
+  machine?: 'dishes' | 'laundry';
 }
 
 /** Bloco 13: tipo de planta (muda o desenho e o jeito de crescer). */
@@ -700,7 +715,8 @@ export interface PlantState {
   ripen: number;
 }
 
-export type ObjectLayer = 'wall' | 'floor' | 'ceiling';
+/** plano 2, bloco 8: 'surface' = vai em cima do tampo de outro objeto (enfeite, abajur). */
+export type ObjectLayer = 'wall' | 'floor' | 'ceiling' | 'surface';
 
 export interface SkillDef {
   id: string;
@@ -1389,8 +1405,17 @@ export interface WorldObject {
   state: ObjectState;
   /** bloco 3: luminária acesa */
   lit?: boolean;
-  /** bloco 4: cor escolhida na compra (padrão: a primeira de `colors`) */
+  /** bloco 4: cor escolhida na compra (desde o plano 2, bloco 8, vira `style`) */
   color?: string;
+  /** plano 2, bloco 8: peças escolhidas (só as que diferem do kit) */
+  parts?: KitParts;
+  /** plano 2, bloco 8: material, cor e padrão por zona (só o que difere da fábrica) */
+  style?: ObjStyle;
+  /** plano 2, bloco 8: enfeite: deslocamento dentro do tile (-0.35..0.35) e giro em oitavos */
+  nudge?: { dx: number; dy: number };
+  turn8?: number;
+  /** plano 2, bloco 8: objeto de parede: degraus de 0,25 m acima do padrão (pode ser negativo) */
+  lift?: number;
   /** bloco 4: tick da compra (sem isso, veio com a casa) */
   bought?: number;
   /** bloco 4: minutos de uso desde que chegou (desvaloriza) */
@@ -1417,6 +1442,10 @@ export interface WorldObject {
   dishes?: number;
   /** plano 2, bloco 6: cama desfeita (alguém levantou e não arrumou) */
   unmade?: boolean;
+  /** plano 2, bloco 8: roupa suja no cesto da máquina de lavar */
+  laundry?: number;
+  /** plano 2, bloco 8: máquina ligada até tal tick */
+  running?: number;
   /** plano 2, bloco 7: quadro no cavalete (pintando ou pronto) */
   canvas?: Canvas;
 }
@@ -1895,6 +1924,8 @@ export interface Household {
   expecting?: Expecting | null;
   /** bloco 17: álbum da família (vai junto na mudança e na troca de família) */
   album?: AlbumEntry[];
+  /** plano 2, bloco 8: estilos salvos para usar de novo */
+  styles?: SavedStyle[];
 }
 
 export interface LogEntry {
@@ -2230,11 +2261,16 @@ export type Command =
   /** plano 2, bloco 2: arrastar na fila; `to` é a nova posição (1 em diante, a atual não sai do lugar) */
   | { type: 'moveQueued'; folkId: number; actionId: number; to: number }
   | { type: 'setSpeed'; speed: Speed }
-  | { type: 'buy'; defId: string; x: number; y: number; rot: Rotation; color?: string }
+  | { type: 'buy'; defId: string; x: number; y: number; rot: Rotation; color?: string; parts?: KitParts; style?: ObjStyle; nudge?: { dx: number; dy: number }; turn8?: number; lift?: number }
+  /** plano 2, bloco 8: trocar peças e estilo de um objeto já posto (paga a diferença) */
+  | { type: 'restyle'; objectId: number; parts?: KitParts; style?: ObjStyle }
+  /** plano 2, bloco 8: guardar ou apagar um estilo */
+  | { type: 'saveStyle'; name: string; style: ObjStyle }
+  | { type: 'dropStyle'; styleId: number }
   | { type: 'undoBuy' }
   | { type: 'closeBuy' }
   | { type: 'sell'; objectId: number }
-  | { type: 'move'; objectId: number; x: number; y: number; rot: Rotation }
+  | { type: 'move'; objectId: number; x: number; y: number; rot: Rotation; nudge?: { dx: number; dy: number }; turn8?: number; lift?: number }
   | { type: 'queueSocial'; folkId: number; otherId: number; socialId: string; topic?: string; append?: boolean }
   | { type: 'invite'; folkId: number; neighborId: number; append?: boolean }
   | { type: 'takeJob'; folkId: number; careerId: string }

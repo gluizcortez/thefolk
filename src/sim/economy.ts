@@ -4,6 +4,7 @@ import { roomAt, roomsOf } from './rooms';
 import { poolProblem } from './yard';
 import { freshState } from './upkeep';
 import { currentValue, resaleValue } from './furnish';
+import { LIFT_GAP, supportAt } from './modular';
 import type { Catalog, ObjectDef, Rotation, Vec, World, WorldObject } from './types';
 
 /** símbolo da moeda (tostões) */
@@ -56,7 +57,9 @@ export type PlaceProblem =
   | 'needsRoof'
   // bloco 13: peça de piscina fora da água, móvel em cima da água
   | 'needsPool'
-  | 'onWater';
+  | 'onWater'
+  // plano 2, bloco 8: enfeite fora de um tampo
+  | 'needsSurface';
 
 export interface PlaceCheck {
   ok: boolean;
@@ -114,10 +117,11 @@ export function checkPlacement(
   y: number,
   rot: Rotation,
   ignoreId?: number,
+  lift?: number,
 ): PlaceCheck {
   const def = catalog.objects[defId];
   if (!def) return { ok: false, problem: 'unknown' };
-  if (def.layer) return checkLayered(world, catalog, def, x, y, rot, ignoreId);
+  if (def.layer) return checkLayered(world, catalog, def, x, y, rot, ignoreId, lift);
   const others: World = { ...world, objects: world.objects.filter((o) => o.id !== ignoreId) };
   const before = buildNav(others, catalog);
   const tiles = footprint({ x, y, rot }, def);
@@ -191,6 +195,7 @@ function checkLayered(
   y: number,
   rot: Rotation,
   ignoreId?: number,
+  lift?: number,
 ): PlaceCheck {
   const tiles = footprint({ x, y, rot }, def);
   const taken = new Set<string>();
@@ -198,6 +203,8 @@ function checkLayered(
     if (o.id === ignoreId) continue;
     const od = catalog.objects[o.defId];
     if (!od || od.layer !== def.layer) continue;
+    // plano 2, bloco 8: na parede, um em cima do outro só se chocam se estão perto
+    if (def.layer === 'wall' && Math.abs((o.lift ?? 0) - (lift ?? 0)) >= LIFT_GAP) continue;
     for (const t of footprint(o, od)) taken.add(`${t.x},${t.y}`);
   }
   for (const t of tiles) {
@@ -218,6 +225,10 @@ function checkLayered(
   }
   if (def.layer === 'wall') {
     if (world.grid.edges[wallBehind({ x, y, rot })] !== 'wall') return { ok: false, problem: 'needsWall' };
+  }
+  // plano 2, bloco 8: enfeite precisa de um tampo embaixo
+  if (def.layer === 'surface') {
+    for (const t of tiles) if (!supportAt(world, catalog, t.x, t.y)) return { ok: false, problem: 'needsSurface' };
   }
   if (def.layer === 'ceiling') {
     const room = roomAt(roomsOf(world, catalog), x, y);

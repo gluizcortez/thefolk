@@ -1,8 +1,9 @@
-import { HAIR, PAINT, SHIRT, SKIN, css } from '../game/art/palette';
+import { HAIR, SHIRT, SKIN } from '../game/art/palette';
 import { COVER_ART, FLOOR_ART } from '../game/art/house';
 import type { BuildTool, FocusTarget, GameController } from '../game/controller';
 import { OPENING_TOOLS, isOpeningTool } from '../game/controller';
 import { WALL_MODES, isWallMode } from '../game/viewMode';
+import { StyleEditor } from './styleEditor';
 import type { WallMode } from '../game/viewMode';
 import { ROOF_COLORS } from '../data/build';
 import { hasText, t } from '../i18n';
@@ -511,6 +512,8 @@ export class Hud {
   /** quem está aberto ou fechado no painel de relações (o jogador escolhe) */
   private relOpen = new Map<number, boolean>();
   private catalogEl = el('div', 'card catalog');
+  /** plano 2, bloco 8: editor de peças e estilo */
+  readonly styleEditor: StyleEditor;
   private catalogTabs = el('div', 'catalog-tabs');
   private catalogItems = el('div', 'catalog-items');
   private catalogHint = el('div', 'catalog-hint');
@@ -549,6 +552,11 @@ export class Hud {
   ) {
     this.system = new SystemCards(ctrl);
     this.system.onChange = () => this.renderPop();
+    this.styleEditor = new StyleEditor(ctrl);
+    this.styleEditor.onClose = () => {
+      this.catalogSig = '';
+      this.renderCatalog();
+    };
     this.tab = this.prefs.tab;
     ctrl.wallMode = this.prefs.walls;
     ctrl.wallPinned = this.prefs.pin;
@@ -1295,6 +1303,7 @@ export class Hud {
     const levelText = t(`hud.level.${this.ctrl.viewLevel}`);
     if (this.levelLabel.textContent !== levelText) this.levelLabel.textContent = levelText;
     this.renderWallModes();
+    this.styleEditor.update();
 
     // bloco 13: o dia mostra quando está chovendo
     const dayText = t('hud.dayShortWeek', { day: clock.day, weekday: t(`weekday.${(clock.day - 1) % 7}`) }) + (raining(world) ? ' ☂' : '');
@@ -3697,7 +3706,7 @@ export class Hud {
     foot.append(this.catalogHint, this.colorRow);
     this.catalogEl.append(head, this.catalogItems, foot);
     this.catalogEl.hidden = true;
-    this.root.append(this.catalogEl);
+    this.root.append(this.catalogEl, this.styleEditor.el);
   }
 
   private renderCatalog(): void {
@@ -3707,7 +3716,7 @@ export class Hud {
     const funds = this.ctrl.world.household.funds;
     const placing = this.ctrl.placing;
     const depth = this.ctrl.sim.buyUndoDepth;
-    const sig = `${(this.ctrl.world.household.unlocked ?? []).length}|${this.category}|${this.tierFilter}|${funds}|${placing?.defId ?? ''}|${placing?.moveId ?? ''}|${placing?.color ?? ''}|${depth}`;
+    const sig = `${(this.ctrl.world.household.unlocked ?? []).length}|${this.category}|${this.tierFilter}|${funds}|${placing?.defId ?? ''}|${placing?.moveId ?? ''}|${placing?.color ?? ''}|${depth}|${JSON.stringify(placing?.style ?? null)}|${JSON.stringify(placing?.parts ?? null)}`;
     if (sig === this.catalogSig) return;
     this.catalogSig = sig;
     for (const b of this.catalogTabs.children) {
@@ -3733,26 +3742,21 @@ export class Hud {
     for (const def of defs) this.catalogItems.append(this.catalogItem(def, funds));
   }
 
-  /** Bloco 4: amostras de cor do objeto que vai ser posto. */
+  /**
+   * Plano 2, bloco 8: em vez das amostras de cor do bloco 4, o botão que abre
+   * o editor de peças e estilo, o preço com o estilo e a dica de girar/subir.
+   */
   private renderColors(): void {
     const placing = this.ctrl.placing;
     const def = placing && placing.moveId === undefined ? this.ctrl.sim.catalog.objects[placing.defId] : undefined;
     this.colorRow.replaceChildren();
-    this.colorRow.hidden = !def?.colors?.length;
-    if (!def?.colors?.length || !placing) return;
-    this.colorRow.append(el('span', 'color-label', t('buy.color')));
-    const current = placing.color ?? def.colors[0];
-    for (const c of def.colors) {
-      const b = el('button', 'swatch');
-      b.style.background = css(PAINT[c] ?? 0x888888);
-      b.title = t(`color.${c}`);
-      b.classList.toggle('on', c === current);
-      b.addEventListener('click', () => {
-        this.ctrl.setPlacingColor(c);
-        this.renderCatalog();
-      });
-      this.colorRow.append(b);
-    }
+    this.colorRow.hidden = !def;
+    if (!def || !placing) return;
+    const custom = el('button', 'chip go', `✎ ${t('buy.customize')}`);
+    custom.addEventListener('click', () => this.styleEditor.editPlacing());
+    this.colorRow.append(custom, el('span', 'color-label', formatMoney(this.ctrl.placingPrice())));
+    if (def.layer === 'wall') this.colorRow.append(el('span', 'color-label', t('buy.lift')));
+    if (def.turns8) this.colorRow.append(el('span', 'color-label', t('buy.turn8')));
   }
 
   private catalogItem(def: ObjectDef, funds: number): HTMLElement {
@@ -3828,8 +3832,13 @@ export class Hud {
     };
     add(t('buy.move'), () => this.ctrl.startPlacing(obj.defId, obj.id));
     add(t('buy.rotate'), () => {
-      this.ctrl.commandOrExplain({ type: 'move', objectId: obj.id, x: obj.x, y: obj.y, rot: ((obj.rot + 1) % 4) as WorldObject['rot'] });
+      // plano 2, bloco 8: enfeite gira em oitavos
+      if (def.turns8) {
+        const turn8 = ((obj.turn8 ?? obj.rot * 2) + 1) % 8;
+        this.ctrl.commandOrExplain({ type: 'move', objectId: obj.id, x: obj.x, y: obj.y, rot: (turn8 >> 1) as WorldObject['rot'], turn8, nudge: obj.nudge, lift: obj.lift });
+      } else this.ctrl.commandOrExplain({ type: 'move', objectId: obj.id, x: obj.x, y: obj.y, rot: ((obj.rot + 1) % 4) as WorldObject['rot'], nudge: obj.nudge, turn8: obj.turn8, lift: obj.lift });
     });
+    add(`✎ ${t('buy.customize')}`, () => this.styleEditor.editObject(obj));
     const price = formatMoney(sellValue(this.ctrl.world, obj, def));
     add(t('buy.sell', { price }), () => {
       if (this.ctrl.commandOrExplain({ type: 'sell', objectId: obj.id })) {

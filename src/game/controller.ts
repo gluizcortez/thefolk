@@ -1,3 +1,7 @@
+import type { KitParts } from '../sim/parts';
+import type { ObjStyle } from '../sim/style';
+import { styleFromColor } from '../sim/style';
+import { LIFT_MAX, LIFT_MIN, cleanLook, priceWith, zonesOf } from '../sim/modular';
 import { CATALOG } from '../data/catalog';
 import { starterHouse } from '../data/house';
 import { familySeed } from '../data/family';
@@ -79,6 +83,16 @@ export interface Placing {
   moveId?: number;
   /** bloco 4: cor escolhida no catálogo */
   color?: string;
+  /** plano 2, bloco 8: peças e estilo escolhidos no editor */
+  parts?: KitParts;
+  style?: ObjStyle;
+  /** plano 2, bloco 8: enfeite solto no tampo (deslocamento e giro em oitavos) */
+  nudge?: { dx: number; dy: number };
+  turn8?: number;
+  /** plano 2, bloco 8: altura do objeto de parede (degraus) */
+  lift?: number;
+  /** plano 2, bloco 8: ainda não girou à mão (encosta sozinho na parede) */
+  autoRot?: boolean;
 }
 import type { WallMode } from './viewMode';
 import { stepWallMode } from './viewMode';
@@ -367,13 +381,55 @@ export class GameController {
 
   startPlacing(defId: string, moveId?: number): void {
     const obj = moveId !== undefined ? this.sim.findObject(moveId) : undefined;
-    const color = moveId === undefined && this.placing?.defId === defId ? this.placing.color : undefined;
-    this.placing = { defId, rot: obj?.rot ?? 0, moveId, color };
+    const prev = moveId === undefined && this.placing?.defId === defId && this.placing.moveId === undefined ? this.placing : undefined;
+    this.placing = {
+      defId,
+      rot: obj?.rot ?? prev?.rot ?? 0,
+      moveId,
+      color: prev?.color,
+      parts: prev?.parts,
+      style: prev?.style,
+      turn8: obj?.turn8 ?? prev?.turn8,
+      lift: obj?.lift ?? prev?.lift,
+      nudge: obj?.nudge,
+      autoRot: !obj && !prev,
+    };
   }
 
   rotatePlacing(): void {
-    if (this.placing) this.placing.rot = ((this.placing.rot + 1) % 4) as Rotation;
-    else if (this.mode === 'build' && this.buildTool === 'stairs') this.rotateStairs();
+    const p = this.placing;
+    if (p) {
+      p.autoRot = false;
+      // plano 2, bloco 8: enfeite gira em oitavos
+      if (this.sim.catalog.objects[p.defId]?.turns8) {
+        p.turn8 = ((p.turn8 ?? 0) + 1) % 8;
+        p.rot = (p.turn8 >> 1) as Rotation;
+      } else p.rot = ((p.rot + 1) % 4) as Rotation;
+    } else if (this.mode === 'build' && this.buildTool === 'stairs') this.rotateStairs();
+  }
+
+  /** Plano 2, bloco 8: sobe ou desce o objeto de parede (degraus de 25 cm). */
+  liftPlacing(dir: number): void {
+    const p = this.placing;
+    const def = p && this.sim.catalog.objects[p.defId];
+    if (!p || def?.layer !== 'wall') return;
+    p.lift = Math.max(LIFT_MIN, Math.min(LIFT_MAX, (p.lift ?? 0) + dir));
+  }
+
+  /** Plano 2, bloco 8: peças e estilo do que vai ser comprado (o editor chama). */
+  setPlacingLook(parts: KitParts | undefined, style: ObjStyle | undefined): void {
+    if (!this.placing || this.placing.moveId !== undefined) return;
+    this.placing.parts = parts;
+    this.placing.style = style;
+  }
+
+  /** Plano 2, bloco 8: preço do que vai ser comprado, com peças e estilo. */
+  placingPrice(): number {
+    const p = this.placing;
+    const def = p && this.sim.catalog.objects[p.defId];
+    if (!p || !def) return 0;
+    const look = cleanLook(def, p.parts, p.style ?? styleFromColor(zonesOf(def), p.color));
+    return priceWith(def, look.parts, look.style);
   }
 
   /** Tenta pôr o objeto em (x, y). Devolve true se deu certo. */
@@ -383,12 +439,12 @@ export class GameController {
     const def = this.sim.catalog.objects[p.defId];
     const ok =
       p.moveId !== undefined
-        ? this.commandOrExplain({ type: 'move', objectId: p.moveId, x, y, rot: p.rot })
-        : this.commandOrExplain({ type: 'buy', defId: p.defId, x, y, rot: p.rot, color: p.color });
+        ? this.commandOrExplain({ type: 'move', objectId: p.moveId, x, y, rot: p.rot, nudge: p.nudge, turn8: p.turn8, lift: p.lift })
+        : this.commandOrExplain({ type: 'buy', defId: p.defId, x, y, rot: p.rot, color: p.color, parts: p.parts, style: p.style, nudge: p.nudge, turn8: p.turn8, lift: p.lift });
     if (ok) {
       if (p.moveId === undefined && def) this.toast(t('buy.bought', { name: t(def.name) }));
       // depois de mover, larga; depois de comprar, segue com outro igual se der
-      if (p.moveId !== undefined || !def || this.world.household.funds < def.price) this.placing = null;
+      if (p.moveId !== undefined || !def || this.world.household.funds < this.placingPrice()) this.placing = null;
     }
     return ok;
   }

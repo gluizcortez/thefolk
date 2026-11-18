@@ -1,6 +1,15 @@
+import type { ObjectDef } from '../../sim/types';
+import type { KitParts } from '../../sim/parts';
+import type { ObjStyle } from '../../sim/style';
+import { SWATCHES, mainColor } from '../../sim/style';
+import { zonesOf } from '../../sim/modular';
+import { OBJECTS } from '../../data/objects';
+import { buildKit } from './parts';
+import { MODULAR_ART } from './modular';
+import { restyle, rolesIn } from './finish';
 import * as THREE from 'three';
 import { ball, box, colorMat, cyl, fronted, lathe, rbox, rod, setShadows, texMat, tileUV } from './build';
-import { PAL, mix, seeded, shade } from './palette';
+import { PAINT, PAL, mix, seeded, shade } from './palette';
 import { FURNITURE4 } from './furniture4';
 import { REWARD_ART } from './rewards';
 import { DOWNTOWN_ART } from './downtown';
@@ -46,6 +55,10 @@ export interface TickInfo {
   screen?: string;
   /** plano 2, bloco 7: quadro no cavalete (semente e 0..100 pintado) */
   canvas?: { seed: number; progress: number };
+  /** plano 2, bloco 8: máquina ligada */
+  running?: boolean;
+  /** plano 2, bloco 8: quanto tem dentro (roupa no cesto, louça) */
+  load?: number;
 }
 
 export interface FurnitureModel {
@@ -63,6 +76,8 @@ export interface FurnitureSpec {
   /** bloco 4: cama de dois lugares (um lugar por vaga) */
   lies?: Anchor[];
   stand?: Anchor;
+  /** plano 2, bloco 8: altura do tampo ou do assento (onde vão prato e enfeite) */
+  top?: number;
 }
 
 export const chrome = () => texMat('chrome', { gloss: 1 });
@@ -1369,10 +1384,68 @@ const SPECS: Record<string, FurnitureSpec> = {
 };
 
 export function furnitureSpec(art: string): FurnitureSpec {
-  return SPECS[art] ?? HOBBY_ART[art] ?? FURNITURE4[art] ?? REWARD_ART[art] ?? KID_ART[art] ?? YARD_ART[art] ?? PERIL_ART[art] ?? DOWNTOWN_ART[art] ?? fallback;
+  const kitDef = KIT_ART.get(art);
+  if (kitDef) {
+    let spec = KIT_SPECS.get(art);
+    if (!spec) KIT_SPECS.set(art, (spec = buildKit(kitDef.kit!, kitDef.size).spec));
+    return spec;
+  }
+  return SPECS[art] ?? MODULAR_ART[art] ?? HOBBY_ART[art] ?? FURNITURE4[art] ?? REWARD_ART[art] ?? KID_ART[art] ?? YARD_ART[art] ?? PERIL_ART[art] ?? DOWNTOWN_ART[art] ?? fallback;
+}
+
+/** Plano 2, bloco 8: o que muda a cara de um objeto (peças, estilo). */
+export interface ObjectLook {
+  parts?: KitParts;
+  style?: ObjStyle;
+}
+
+/** Kit de fábrica de cada desenho (os móveis montados por peças). */
+const KIT_ART = new Map<string, ObjectDef>(Object.values(OBJECTS).filter((d) => d.kit).map((d) => [d.art, d]));
+
+/** Enfeites fixos que ainda servem por cima das peças (os da cama e do sofá eram do desenho antigo). */
+const KIT_DETAILS = new Set(['counter']);
+
+function finish(art: string, model: FurnitureModel, seed: number): FurnitureModel {
+  if (KIT_DETAILS.has(art)) DETAILS[art]?.(model.group, seed);
+  setShadows(model.group);
+  model.group.traverse((o) => {
+    if (o.userData.flat) o.castShadow = false;
+  });
+  return model;
+}
+
+/**
+ * Plano 2, bloco 8: o desenho de um objeto com as peças e o estilo dele.
+ * Móvel de kit sai das peças; os antigos trocam os materiais papel por papel.
+ */
+export function objectArt(def: ObjectDef, seed: number, look: ObjectLook = {}): { model: FurnitureModel; spec: FurnitureSpec } {
+  if (def.kit) {
+    const r = buildKit(def.kit, def.size, look);
+    finish(def.art, r.model, seed);
+    return r;
+  }
+  const color = mainColor(zonesOf(def), look.style);
+  const paint = color ? SWATCHES[color] : def.colors?.[0] ? PAINT[def.colors[0]] : undefined;
+  const model = buildFurniture(def.art, seed, paint);
+  restyle(model.group, look.style);
+  return { model, spec: furnitureSpec(def.art) };
+}
+
+/** Zonas que um desenho antigo tem (em cache), para o editor de estilo. */
+const ROLE_CACHE = new Map<string, string[]>();
+const KIT_SPECS = new Map<string, FurnitureSpec>();
+export function artRoles(def: ObjectDef): string[] {
+  if (def.kit) return [];
+  const hit = ROLE_CACHE.get(def.art);
+  if (hit) return hit;
+  const roles = rolesIn(furnitureSpec(def.art).build(1).group);
+  ROLE_CACHE.set(def.art, roles);
+  return roles;
 }
 
 export function buildFurniture(art: string, seed: number, paint?: number): FurnitureModel {
+  const kitDef = KIT_ART.get(art);
+  if (kitDef) return objectArt(kitDef, seed).model;
   let model = furnitureSpec(art).build(seed, paint);
   // bloco 13: o vaso da casa também vive (murcha sem água)
   if (art === 'plant') model = livingPot(model);

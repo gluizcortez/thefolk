@@ -139,6 +139,24 @@ export const HOBBIES = {
       headY: { a: 0.15, f: 1.2 },
     },
   },
+  /** plano 2, bloco 8: de molho na banheira, recostado, braços na borda */
+  soak: {
+    still: true,
+    ownLegs: true,
+    tracks: {
+      lie: 1,
+      headX: 0.5,
+      headZ: { a: 0.08, f: 0.18 },
+      armsOut: 0.32,
+      armsX: 0.15,
+      elbows: -0.25,
+      grips: 0.1,
+      legOut: 0.06,
+      kneeR: { b: 0.25, a: 0.06, f: 0.15 },
+      legRX: -0.15,
+      chestX: { a: 0.025, f: 0.9 },
+    },
+  },
   /** lendo deitado de barriga para cima, o livro em cima do peito */
   read_lie: {
     still: true,

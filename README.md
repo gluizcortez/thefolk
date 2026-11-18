@@ -524,6 +524,15 @@ npm run preview  # serve o dist/ localmente
   dança lenta), "Sentar e conversar" no menu de outra pessoa, acompanhar a
   visita até a porta. Fala com sílabas que mexem a boca, olhar puxado pela TV
   e por quem passa, e "Olhar pela janela" no menu do próprio folk.
+- **Objetos modulares (plano 2, bloco 8)**: sofás, poltronas, cadeiras,
+  camas, mesas, estantes e armários são montados por peças (estrutura,
+  assento, encosto, braços, pés, tampo, portas) e cada parte tem material,
+  cor e padrão; o botão "✎ Personalizar" do modo comprar abre o editor de
+  estilo, que também salva estilos para usar de novo. Enfeites (abajur,
+  vaso, livros, fruteira, porta-retrato, castiçal, estatueta) vão em cima de
+  mesas e bancadas, girados em 8 direções; objetos de parede sobem e descem
+  com PageUp/PageDown. Banheira com banho de espuma, lava-louças e máquina
+  de lavar.
 - **Peças novas (bloco 12)**: meia parede (fecha o passo sem dividir o
   cômodo), coluna nos cantos, porta de vidro, porta dupla, arco (passagem sem
   folha), janela alta (+6 de ambiente) e basculante (+2).
@@ -708,6 +717,14 @@ Decisões principais do núcleo:
   `Folk.projects` (prontos contam em `Folk.works`) e o quadro em
   `WorldObject.canvas`. Livro largado é uma `Mess` do tipo `book`, que a
   arrumação devolve à estante (`returnBook`). Regras puras em `sim/hobbies.ts`.
+- **Peças e estilo** (plano 2, bloco 8): `sim/parts.ts` tem os tipos de kit e
+  as peças (`assemble` valida encaixe, tamanho e preço), `sim/style.ts` os
+  materiais, cores e padrões, e `sim/modular.ts` superfícies, empurrão,
+  giro em 8 e altura na parede. `data/modular.ts` liga os kits aos móveis e
+  traz os objetos novos; o desenho dos kits está em `game/art/parts.ts`, as
+  texturas de acabamento em `game/art/finish.ts` e o editor em
+  `ui/styleEditor.ts`. `WorldObject` guarda `parts`, `style`, `nudge`,
+  `turn8` e `lift`.
 - **Jogador de teste** (`tests/helpers/player.ts`): as semanas inteiras dos
   testes rodam com um roteiro que manda como um jogador atento (atende porta
   e telefone, apaga fogo, cuida do bebê, manda dormir às 23h e comer com fome

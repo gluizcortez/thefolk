@@ -432,6 +432,25 @@ corrida pela cidade e quadros que viram enfeite de parede (bloco 8).
 Pronto: teste de montagem (peças compatíveis, tamanho final), de lugares de
 superfície e de migração; capturas do editor de estilo.
 
+**Feito em 18/11/2026** (save v28, uma casa a menos que o plano). 27 móveis
+viram kits montados por peças (estrutura, assento, encosto, braços, pés,
+tampo, portas, puxadores), com 16 tipos de kit que validam o encaixe, o
+tamanho final e o preço; peças trocam o desenho mas não a altura do assento
+nem do tampo. Estilo por parte com 20 materiais em 5 famílias, 16 cores e 6
+padrões, e até 12 estilos salvos por família; os demais objetos ganham
+zonas pelo papel do material (tecido, madeira, metal, esmalte, pedra) e as
+cores do bloco 4 migram. Editor de estilo no modo comprar (antes de pôr e
+depois, pagando só a diferença). Superfícies em mesas, bancadas, criados e
+cômodas, com 7 enfeites novos (abajur que acende, vaso, pilha de livros,
+fruteira, porta-retrato, castiçal, estatueta) postos livremente, girados em
+8 direções e que andam junto quando a mesa muda de lugar. Objetos de parede
+sobem e descem com PageUp/PageDown, e colocação encosta na parede sozinha.
+Portas e gavetas abrem durante o uso. Do bloco 6: banheira (banho e banho
+de espuma deitado), lava-louças (guardar louça e ligar) e máquina de lavar
+(o cesto enche depois dos banhos). Ficou para depois: prateleira de parede
+como superfície, peças com efeito na jogabilidade (conforto do estofado),
+roupa guardada no guarda-roupa e quadro pintado pendurado na parede.
+
 ## Bloco 9 — Roupas modulares (save v30)
 
 - **Roupa como camadas e peças**: parte de cima, parte de baixo (ou peça

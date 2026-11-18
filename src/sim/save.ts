@@ -1,4 +1,6 @@
 import { relKey } from './relations';
+import { zonesOf } from './modular';
+import { ROLE_ZONES, styleFromColor } from './style';
 import type { Catalog, Folk, Grid, Look, Neighbor, Vec, World, WorldObject } from './types';
 import { favoriteChannel } from './activity';
 import { checkPlacement } from './economy';
@@ -16,7 +18,7 @@ import type { TownPlan } from './town';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 27;
+export const SAVE_VERSION = 28;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -421,6 +423,28 @@ const migrations: Record<number, Migration> = {
       queue: (f.queue ?? []).map((a) => (a.kind === 'use' && a.phase === 'using' && SHELF.has(a.interactionId ?? '') ? { ...a, picked: true } : a)),
     }));
     return { ...save, world: world as unknown as Obj };
+  },
+  /**
+   * Plano 2, bloco 8: a cor do bloco 4 vira estilo (a cor das zonas de
+   * tecido). Sem catálogo, a cor vira o tecido genérico. Vale para todo
+   * objeto do save (a casa e os lotes do bairro).
+   */
+  27: (save, ctx) => {
+    const fix = (v: unknown): unknown => {
+      if (Array.isArray(v)) return v.map(fix);
+      if (!v || typeof v !== 'object') return v;
+      const out: Obj = {};
+      for (const [k, x] of Object.entries(v as Obj)) out[k] = fix(x);
+      if (typeof out.defId === 'string' && typeof out.color === 'string' && 'rot' in out) {
+        const def = ctx.catalog?.objects[out.defId];
+        const zones = def ? zonesOf(def) : Object.values(ROLE_ZONES);
+        const style = styleFromColor(zones, out.color);
+        delete out.color;
+        if (style) out.style = style;
+      }
+      return out;
+    };
+    return { ...save, world: fix(save.world) as Obj };
   },
 };
 

@@ -2,11 +2,10 @@ import * as THREE from 'three';
 import { activeLot, homeOf, objectSize } from '../sim';
 import type { Lot, LotHome } from '../sim';
 import { box, colorMat, setShadows, texMat, tileUV } from './art/build';
-import { buildFurniture, furnitureSpec } from './art/furniture';
+import { objectArt } from './art/furniture';
 import { House, sceneZ } from './art/house';
-import { PAINT, PAL, seeded } from './art/palette';
+import { PAL, seeded } from './art/palette';
 import { bush, car, hydrant, streetLamp, tree } from './art/scenery';
-import { colorOf } from '../sim/furnish';
 import type { GameController } from './controller';
 
 // Bloco 15: a vista do bairro. As casas de verdade de cada lote (as mesmas
@@ -188,9 +187,7 @@ export class TownView {
       if (at.level !== 0) continue;
       const floor = catalog.floors[home.grid.floor[obj.y * home.grid.w + obj.x]];
       if (!floor?.outdoor) continue;
-      const spec = furnitureSpec(def.art);
-      const paint = colorOf(obj, def);
-      const model = buildFurniture(def.art, obj.id, paint ? PAINT[paint] : undefined);
+      const { model, spec } = objectArt(def, obj.id, { parts: obj.parts, style: obj.style });
       const size = objectSize(def, obj.rot);
       model.group.position.set(obj.x + size.w / 2, at.base, at.z + size.h / 2);
       model.group.rotation.y = (spec.facing === 'E' ? Math.PI / 2 : 0) + obj.rot * (Math.PI / 2);

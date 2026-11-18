@@ -45,6 +45,8 @@ function make(map: string | null, o: MatOpts): THREE.MeshPhongMaterial {
     shininess: 8 + gloss * 70,
   });
   if (mat.transparent) mat.depthWrite = false;
+  // plano 2, bloco 8: o nome da textura diz o papel do material (madeira, tecido...)
+  if (map) mat.userData.tex = map;
   if (!o.unique) cache.set(key, mat);
   return mat;
 }

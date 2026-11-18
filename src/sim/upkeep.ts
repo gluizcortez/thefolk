@@ -93,6 +93,9 @@ export function careAvailable(obj: WorldObject, it: InteractionDef): boolean {
       return (obj.dishes ?? 0) > 0.01;
     case 'makeBed':
       return !!obj.unmade;
+    // plano 2, bloco 8: lava-louças e máquina de lavar com algo dentro
+    case 'runMachine':
+      return (obj.dishes ?? 0) >= 1 || (obj.laundry ?? 0) >= 1;
     // bloco 13: plantas (veja sim/garden.ts)
     case 'water':
       return !!obj.plant && obj.plant.health > 0 && obj.plant.water < 90;
@@ -178,6 +181,8 @@ export function afterUse(
   }
   let chain: Chain = null;
   if (it.trash) addTrash(world, catalog, log, folk, it.trash);
+  // plano 2, bloco 8: a toalha e a roupa do dia vão para o cesto da máquina
+  if ((it.wear === 'bath' || def.line === 'bathtub') && !folk.visit) addLaundry(world, catalog, folk);
   if (it.leaves && !folk.visit) {
     const chance = it.served ? 1 : it.leaves.chance * (1 - 0.06 * skillLevel(folk, TIDINESS));
     if (nextFloat(world) < chance) {
@@ -196,6 +201,21 @@ export function afterUse(
     }
   }
   return chain;
+}
+
+/** plano 2, bloco 8: roupa suja que o banho deixa no cesto da máquina mais perto. */
+export function addLaundry(world: World, catalog: Catalog, at: Vec): void {
+  let best: WorldObject | null = null;
+  let bestD = Infinity;
+  for (const obj of world.objects) {
+    if (catalog.objects[obj.defId]?.machine !== 'laundry') continue;
+    const d = Math.abs(obj.x - at.x) + Math.abs(obj.y - at.y);
+    if (d < bestD) {
+      bestD = d;
+      best = obj;
+    }
+  }
+  if (best) best.laundry = Math.min(LAUNDRY_FULL, (best.laundry ?? 0) + 1);
 }
 
 /** Onde o prato fica: na mesa ou bancada mais perto (até 2 passos), senão no chão. */
@@ -309,6 +329,12 @@ export function careTick(
     case 'makeBed':
       delete obj.unmade;
       return true;
+    case 'runMachine':
+      // plano 2, bloco 8: liga a máquina e ela faz o resto sozinha
+      delete obj.dishes;
+      delete obj.laundry;
+      obj.running = world.tick + (def.machine === 'laundry' ? LAUNDRY_RUN : DISHWASHER_RUN);
+      return true;
     case 'water':
       // bloco 13: regar enche a planta de água (veja sim/garden.ts)
       if (!obj.plant) return true;
@@ -318,6 +344,16 @@ export function careTick(
       return false;
   }
 }
+
+/** plano 2, bloco 8: minutos que cada máquina fica ligada */
+export const DISHWASHER_RUN = 60;
+/** pratos que cabem na lava-louças */
+export const DISHWASHER_LOAD = 12;
+export const LAUNDRY_RUN = 90;
+/** roupa suja no cesto: até quanto não incomoda, o máximo e quanto pesa no ambiente por banho a mais */
+export const LAUNDRY_OK = 4;
+export const LAUNDRY_FULL = 12;
+export const LAUNDRY_AMBIENCE = -1;
 
 /** bloco 13: água que cada minuto de rega dá */
 export const WATER_PER_MINUTE = 7;
@@ -348,7 +384,7 @@ export function shock(folk: Folk, log: Logger, tick?: number): void {
 /** Fim de um cuidado que dura um tempo fixo (esvaziar, lavar, jogar fora). */
 export function afterCare(obj: WorldObject, it: InteractionDef): Chain {
   // plano 2, bloco 6: o prato sujo fica na pia (pilha cheia: lava na hora)
-  if (it.care === 'dishes') obj.dishes = Math.min(SINK_STACK, (obj.dishes ?? 0) + 1);
+  if (it.care === 'dishes') obj.dishes = Math.min(it.id === 'stowDish' ? DISHWASHER_LOAD : SINK_STACK, (obj.dishes ?? 0) + 1);
   if (it.care === 'empty') {
     stateOf(obj).fill = 0;
     return 'dump';
@@ -446,8 +482,10 @@ export function stateAmbience(obj: WorldObject, def: ObjectDef): number {
   if (s.dirt > AUTO_CLEAN_AT) v -= (s.dirt - AUTO_CLEAN_AT) * 0.2;
   if (s.broken) v -= 10;
   // plano 2, bloco 6: louça esperando na pia e cama desfeita
-  if (obj.dishes) v += Math.ceil(obj.dishes) * SINK_DISH_AMBIENCE;
+  // a lava-louças fechada não mostra a louça
+  if (obj.dishes && !def.machine) v += Math.ceil(obj.dishes) * SINK_DISH_AMBIENCE;
   if (obj.unmade) v += UNMADE_AMBIENCE;
+  if ((obj.laundry ?? 0) > LAUNDRY_OK) v += Math.ceil((obj.laundry ?? 0) - LAUNDRY_OK) * LAUNDRY_AMBIENCE;
   if (def.upkeep?.bin) {
     if (s.fill >= BIN_FULL) v -= 30;
     else if (s.fill >= 75) v -= 8;
