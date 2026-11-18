@@ -512,6 +512,21 @@ npm run preview  # serve o dist/ localmente
   salário nos dias de turno, pagam as contas e se visitam; o mural "Pelo
   bairro" conta o que aconteceu. Visitas do bairro chegam a pé pela calçada,
   do lado da casa delas, e voltam para lá.
+- **Centro e encontros (bloco 16)**: o botão "Centro" chama um táxi (⟡ 25 a
+  ida, ⟡ 25 a volta) para o Centro de Taramela: o Largo do Coreto (chafariz
+  dos desejos, bancos, ipês e lampiões), a Cantina Forno Velho (mesas de
+  toalha xadrez, cardápio com quatro pratos e o garçom Tadeu Travessa, que
+  anota a mesa inteira, espera a cozinha e traz os pratos), o Café Xícara
+  Torta (cafezinho e bolo) e o Bazar Fita Métrica (roupa nova e de gala,
+  presentes e encomendas que chegam em casa na volta: aquário, globo, vaso
+  de flores). Escolhe-se quem vai e, se quiser, com quem sair: alguém da
+  casa ou um conhecido (que pode recusar). O encontro ganha nota de 1 a 5
+  estrelas pelo humor dos dois, as conversas, o jantar a dois, presentes
+  ("Dar presente") e moedas no chafariz, e a nota muda romance e amizade.
+  O tempo corre lá também; quem fica em casa segue trabalhando e estudando.
+  O centro fecha às 2h (todo mundo volta de táxi) e quem cai de sono volta
+  antes. Figurantes do centro passeiam pelo largo e, depois de conhecidos,
+  viram vizinhos como os outros.
 
 ## Deploy na Vercel
 
@@ -770,6 +785,17 @@ Decisões principais do núcleo:
   calçada das visitas. Planta do bairro e das casas em `data/town.ts`; a vista
   em `game/town.ts` (`TownView`, desenhada na mesma imagem interna) e o painel
   em `ui/town.ts`.
+- **Centro (bloco 16)** mora em `sim/downtown.ts` (regras puras: horário,
+  quem pode ir, chance de topar sair, nota e efeito do encontro) e nos
+  métodos `goDowntown`, `goHome`, `stepOuting`, `stepWaiter`, `dineWait`,
+  `endDate` e `stepHomeFolks` do `Sim`. `World.outing` guarda a casa
+  (`OutingHome`, com quem ficou), o encontro (`DateState`), os pedidos do
+  restaurante e as encomendas; `World.lastDate` a última nota. A planta do
+  centro, o cardápio, os presentes, os objetos e a gente do centro estão em
+  `data/downtown.ts` (`Catalog.venues`, `dishes`, `gifts`); a arte em
+  `game/art/downtown.ts` e os sobrados em volta em `buildScenery(..., downtown)`.
+  `Sim.lotStamp` avisa a tela quando a própria simulação traz todo mundo de
+  volta.
 - **Bebês e crianças (bloco 11)** moram em `sim/kids.ts` (regras puras:
   necessidades do bebê, herança, horário da escola, nota). `Folk` ganhou
   `age` ('baby' | 'child'; adulto não tem) e `kid` (nascimento, quando cresce,
@@ -981,7 +1007,22 @@ que aproximam o jogo das mecânicas clássicas do gênero e vão além delas.
   de vizinhos em casas de verdade, trocar de família e voltar, mudança com
   venda da casa, família nova em lote vago ou casa à venda, vida resumida das
   outras casas e visitas que vêm da casa delas (save v19).
-- Próximo: bloco 16, centro da cidade: passeios e encontros.
+- **Bloco 16 (feito)**: centro da cidade de táxi com praça, cantina (garçom
+  e cardápio), café e bazar; encontros com nota de 1 a 5 que muda a relação;
+  presentes, roupas e encomendas que chegam em casa; figurantes para
+  conhecer; quem fica em casa segue a vida (save v20).
+- Próximo: bloco 17, gerações: envelhecer e herdar.
+
+## Limitações conhecidas do bloco 16
+
+- O centro é um lote só, montado de novo a cada passeio (o que se larga lá
+  não fica); não dá para construir nem comprar móveis nele.
+- Quem fica em casa durante o passeio não anda pela casa: só trabalho e
+  escola seguem; na volta as necessidades ficam "nem bem nem mal".
+- O garçom não aparece segurando a bandeja; quem vai trabalhar saindo do
+  centro volta do turno para o centro.
+- Festa, telefone, entregas e gatuno ficam parados enquanto a família está
+  fora.
 
 ## Limitações conhecidas do bloco 15
 

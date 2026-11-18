@@ -287,6 +287,52 @@ function neighbor(x: number, z: number, w: number, d: number, variant: number, t
   return g;
 }
 
+/** Bloco 16: sobrado de comércio do centro (dois andares, platibanda, janelas de sacada e toldo listrado). */
+function sobrado(x: number, z: number, w: number, variant: number, turn: number): THREE.Group {
+  const g = new THREE.Group();
+  const tones = [0xe0b85a, 0x8fb7a8, 0xd98c6a, 0xb7a3c9, 0xe8dcc0, 0x9ab6d4];
+  const wall = colorMat(tones[variant % tones.length]);
+  const trim = colorMat(0xf2ece0);
+  const d = 4;
+  g.add(box(w, 5.4, d, wall, 0, 0, 0), box(w + 0.2, 0.35, d + 0.2, trim, 0, 5.4, 0), box(w + 0.1, 0.12, d + 0.1, trim, 0, 2.7, 0));
+  const glass = colorMat(0x2c3b4a, { gloss: 0.8 });
+  const n = Math.max(2, Math.round(w / 1.8));
+  for (let i = 0; i < n; i++) {
+    const wx = -w / 2 + (w / n) * (i + 0.5);
+    // janela de sacada em cima, vitrine embaixo
+    g.add(box(0.8, 1.3, 0.06, trim, wx, 3.3, d / 2), box(0.62, 1.12, 0.07, glass, wx, 3.39, d / 2));
+    g.add(box(1.0, 0.08, 0.4, trim, wx, 3.2, d / 2 + 0.2));
+    g.add(box(1.1, 1.5, 0.06, trim, wx, 0.5, d / 2), box(0.94, 1.36, 0.07, glass, wx, 0.57, d / 2));
+  }
+  const stripe = [colorMat([0xc9382f, 0x2f8a86, 0x2f4f86, 0xe8b830][variant % 4]), trim];
+  const awning = new THREE.Group();
+  const k = Math.round(w / 0.5);
+  for (let i = 0; i < k; i++) awning.add(box(w / k, 0.05, 1.1, stripe[i % 2], -w / 2 + (w / k) * (i + 0.5), 0, 0));
+  awning.position.set(0, 2.35, d / 2 + 0.5);
+  awning.rotation.x = 0.28;
+  g.add(awning);
+  g.position.set(x, 0, z);
+  g.rotation.y = turn;
+  return g;
+}
+
+/** Bloco 16: torre da igreja matriz, ao fundo do largo. */
+function belltower(x: number, z: number): THREE.Group {
+  const g = new THREE.Group();
+  const wall = colorMat(0xf0e8d6);
+  const trim = colorMat(0xc9a25a);
+  g.add(box(5, 6, 6, wall, 0, 0, 0), box(5.2, 0.3, 6.2, trim, 0, 6, 0));
+  g.add(box(2.4, 5, 2.4, wall, 0, 6.3, 0), box(2.6, 0.25, 2.6, trim, 0, 11.3, 0));
+  g.add(box(1, 1.4, 0.1, colorMat(0x2a2522), 0, 9, 1.21));
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(1.4, 3, 4), texMat('roof'));
+  spire.rotation.y = Math.PI / 4;
+  spire.position.y = 11.55 + 1.5;
+  g.add(spire, box(0.08, 0.8, 0.08, trim, 0, 14.4, 0), box(0.5, 0.08, 0.08, trim, 0, 14.9, 0));
+  g.add(box(1.6, 2.6, 0.1, colorMat(0x6b3a22), 0, 0, 3.01));
+  g.position.set(x, 0, z);
+  return g;
+}
+
 /**
  * `free(x, y)`: o tile do terreno está livre (grama e sem móvel)?
  * Enfeites do quintal só aparecem onde o jogador não construiu nada.
@@ -295,6 +341,7 @@ export function buildScenery(
   grid: Grid,
   free: (x: number, y: number) => boolean = () => true,
   hole: (x: number, y: number) => boolean = () => false,
+  downtown = false,
 ): THREE.Group {
   const g = new THREE.Group();
   const rnd = seeded(77);
@@ -321,6 +368,38 @@ export function buildScenery(
   g.add(box(160, 0.1, 0.12, colorMat(0x9a9588), w / 2, 0, front + 1.4));
   g.add(box(160, 0.1, 0.12, colorMat(0x9a9588), w / 2, 0, front + 6.4));
   for (let x = -70; x < 90; x += 3) g.add(box(1.4, 0.005, 0.14, colorMat(0xd9cf8a), x, 0.02, front + 3.9));
+
+  // bloco 16: no centro, sobrados de comércio em volta do largo e a torre da matriz
+  if (downtown) {
+    g.add(
+      belltower(w / 2, -6),
+      sobrado(-4.5, 3, 7, 0, Math.PI / 2),
+      sobrado(-4.5, 11, 7, 1, Math.PI / 2),
+      sobrado(w + 4.5, 3, 7, 2, -Math.PI / 2),
+      sobrado(w + 4.5, 11, 7, 3, -Math.PI / 2),
+      sobrado(4, -4, 8, 4, 0),
+      sobrado(w - 4, -4, 8, 5, 0),
+      sobrado(2, front + 12, 9, 2, Math.PI),
+      sobrado(w / 2 + 2, front + 12, 7, 4, Math.PI),
+      sobrado(w - 1, front + 12, 8, 1, Math.PI),
+    );
+    g.add(
+      car(w / 2 + 9, front + 5.2, 0xe8b830),
+      car(w / 2 - 12, front + 5.2, 0x2f4f86),
+      streetLamp(w / 2 - 6, front + 0.9),
+      streetLamp(w / 2 + 11, front + 0.9),
+      hydrant(w / 2 - 3.5, front + 0.7),
+    );
+    for (const [x, z, sc] of [
+      [-9, front + 9.5, 1.2],
+      [w + 8, front + 9.8, 1.1],
+    ] as [number, number, number][]) {
+      g.add(tree(x, z, sc, rnd));
+    }
+    setShadows(g, true, true);
+    ground.castShadow = false;
+    return g;
+  }
 
   // cerca de ripas nos fundos e nas laterais
   g.add(fence(-0.6, -0.6, w + 0.6, -0.6), fence(-0.6, -0.6, -0.6, h + 0.6), fence(w + 0.6, -0.6, w + 0.6, h + 0.6));

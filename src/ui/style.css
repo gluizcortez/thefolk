@@ -166,6 +166,11 @@ button {
   background: var(--paper);
 }
 
+.btn.btn-hot {
+  background: var(--terracotta);
+  color: var(--cream);
+}
+
 .btn.armed {
   background: var(--terracotta);
   color: var(--cream);

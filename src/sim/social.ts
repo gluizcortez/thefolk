@@ -39,6 +39,8 @@ export function socialAllowed(world: World, catalog: Catalog, def: SocialDef, a:
   if (a.age === 'baby' || b.age === 'baby') return false;
   if (def.category === 'romantic' && (a.age !== undefined || b.age !== undefined)) return false;
   const req = def.requires;
+  // bloco 16: presente só com presente na mão
+  if (req?.gift && !(a.gifts?.length ?? 0)) return false;
   if (req?.adult && a.age !== undefined) return false;
   if (req?.child && b.age !== 'child') return false;
   if (req?.kid && a.age !== 'child' && b.age !== 'child') return false;

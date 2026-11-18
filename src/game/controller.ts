@@ -175,6 +175,8 @@ export class GameController {
   /** bloco 14: último morador visto (a tela segue de pé quando a casa fica vazia) */
   private lastFolk: Folk;
   private seenStamp = 0;
+  /** bloco 16: última troca de lote feita pela própria simulação (o centro fechou) */
+  private seenLot = 0;
   private toastListeners: ((text: string) => void)[] = [];
   private noticeListeners: ((text: string, icon: string) => void)[] = [];
   private seenLog = 0;
@@ -377,6 +379,11 @@ export class GameController {
   /** Avança um tick e transforma eventos novos do log em avisos. */
   step(): void {
     this.sim.step();
+    // bloco 16: o centro fechou (ou todo mundo cansou): o táxi trouxe a turma de volta
+    if (this.sim.lotStamp !== this.seenLot) {
+      this.lotChanged();
+      return;
+    }
     // bloco 14: a simulação tirou ou pôs objetos (fogo, gatuno, lápide): a tela redesenha
     if (this.sim.objectStamp !== this.seenStamp) {
       this.seenStamp = this.sim.objectStamp;
@@ -478,6 +485,22 @@ export class GameController {
   /** Joga com outra família, muda de casa ou traz família nova: o lote em jogo é outro. */
   townCommand(cmd: Extract<Command, { type: 'playFamily' | 'moveHouse' | 'foundFamily' }>): boolean {
     if (!this.commandOrExplain(cmd)) return false;
+    this.lotChanged();
+    this.speedBeforeTown = 1;
+    this.closeTown();
+    return true;
+  }
+
+  /** Bloco 16: táxi para o centro (ou de volta): o lote em jogo é outro. */
+  outingCommand(cmd: Extract<Command, { type: 'goDowntown' | 'goHome' }>): boolean {
+    if (!this.commandOrExplain(cmd)) return false;
+    this.lotChanged();
+    return true;
+  }
+
+  /** O lote em jogo trocou (bairro, centro): seleção, avisos e a tela inteira de novo. */
+  private lotChanged(): void {
+    this.seenLot = this.sim.lotStamp;
     const world = this.world;
     const first = world.folks.find((f) => !f.visit) ?? world.folks[0];
     if (first) {
@@ -496,9 +519,6 @@ export class GameController {
     this.objectsVersion++;
     this.gridVersion++;
     this.townVersion++;
-    this.speedBeforeTown = 1;
-    this.closeTown();
-    return true;
   }
 
   // ---------- bloco 7: jogos salvos ----------

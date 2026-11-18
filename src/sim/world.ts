@@ -288,6 +288,8 @@ export function createWorld(seed: WorldSeed): World {
     rules: { death: seed.death ?? true },
     lastBurglary: seed.startTick,
     town: null,
+    outing: null,
+    lastDate: null,
   };
   seedRelations(world, seed.relations ?? []);
   seedWorkplaceTies(world);

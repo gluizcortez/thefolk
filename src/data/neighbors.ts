@@ -2,6 +2,7 @@ import { monthFor, temperFromTraits } from '../sim/temper';
 import type { NeighborSeed, RelationSeed } from '../sim/world';
 import { MONTHS } from './months';
 import { TRAITS } from './traits';
+import { DOWNTOWN_FOLKS } from './downtown';
 
 // Quem mora na vizinhança. Aparecem sem avisar de vez em quando ou quando
 // alguém da casa liga convidando. Para criar um vizinho, adicione aqui.
@@ -281,7 +282,7 @@ export const NEIGHBOR_TIES: RelationSeed[] = [
 ];
 
 /** Bloco 5: o temperamento dos vizinhos sai dos traços e o mês, do temperamento. */
-export const NEIGHBORS: NeighborSeed[] = RAW.map((n) => {
+export const NEIGHBORS: NeighborSeed[] = [...RAW, ...DOWNTOWN_FOLKS].map((n) => {
   const temper = n.temper ?? temperFromTraits({ traits: TRAITS }, n.traits);
   return { ...n, temper, month: n.month ?? monthFor({ months: MONTHS }, temper) };
 });

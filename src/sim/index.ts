@@ -37,3 +37,4 @@ export * from './garden';
 export * from './yard';
 export * from './peril';
 export * from './town';
+export * from './downtown';

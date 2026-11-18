@@ -431,7 +431,7 @@ export class GameView {
     const free = (x: number, y: number) =>
       x >= 0 && y >= 0 && x < grid.w && y < grid.h && floors[grid.floor[y * grid.w + x]]?.outdoor === true && !floors[grid.floor[y * grid.w + x]]?.yard && !occupied.has(`${x},${y}`);
     const hole = (x: number, y: number) => !!floors[grid.floor[y * grid.w + x]]?.water;
-    this.scenery = buildScenery(grid, free, hole);
+    this.scenery = buildScenery(grid, free, hole, !!world.outing);
     this.worldRoot.add(this.scenery, this.house.group);
     this.builtGrid = this.ctrl.gridVersion;
     this.wallState = '';

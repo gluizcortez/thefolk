@@ -13,6 +13,7 @@ import { SOCIALS } from './socials';
 import { TRAITS } from './traits';
 import { WISHES } from './wishes';
 import { TOPICS } from './topics';
+import { DISHES, GIFTS, VENUES } from './downtown';
 
 export const CATALOG: Catalog = {
   needs: NEEDS,
@@ -32,4 +33,7 @@ export const CATALOG: Catalog = {
   months: MONTHS,
   wishes: WISHES,
   topics: TOPICS,
+  dishes: DISHES,
+  gifts: GIFTS,
+  venues: VENUES,
 };

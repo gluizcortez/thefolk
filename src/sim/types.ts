@@ -1,3 +1,4 @@
+import type { VenuePlan } from './downtown';
 // Tipos do núcleo de simulação. Nada aqui (nem em sim/) pode importar Three.js ou DOM.
 // Todo o estado (`World`) é um objeto puro e serializável em JSON.
 import type { FamilyDraft } from './family';
@@ -71,7 +72,19 @@ export interface InteractionDef {
     | 'callPolice'
     | 'honor'
     | 'kindle'
-    | 'smother';
+    | 'smother'
+    // bloco 16: restaurante (garçom), loja (presente, roupa, encomenda) e chafariz
+    | 'dine'
+    | 'buyGift'
+    | 'buyClothes'
+    | 'buyParcel'
+    | 'wishCoin';
+  /** bloco 16: prato do cardápio (id em DISHES) */
+  dish?: string;
+  /** bloco 16: presente que a loja vende (id em GIFTS) */
+  gift?: string;
+  /** bloco 16: objeto que a loja manda entregar em casa (id do catálogo) */
+  parcel?: string;
   /** bloco 14: só com a lareira acesa */
   blaze?: boolean;
   /**
@@ -703,6 +716,8 @@ export interface SocialRequires {
   kid?: boolean;
   /** bloco 11: o outro tem lição de casa pendente */
   homework?: boolean;
+  /** bloco 16: quem puxa leva um presente comprado na loja */
+  gift?: boolean;
 }
 
 /** Bloco 10: estágio de um casal (namoro, noivado, casamento). */
@@ -733,7 +748,7 @@ export interface SocialDef {
   rejectMemory?: { self?: string; target?: string };
   /** a IA pode escolher sozinha (padrão: true) */
   autonomous?: boolean;
-  special?: 'date' | 'moveIn' | 'sendHome' | 'breakUp' | 'gossip' | 'engage' | 'wed' | 'divorce' | 'moveOut' | 'tryBaby' | 'helpHomework';
+  special?: 'date' | 'moveIn' | 'sendHome' | 'breakUp' | 'gossip' | 'engage' | 'wed' | 'divorce' | 'moveOut' | 'tryBaby' | 'helpHomework' | 'gift';
   /** bloco 10: não aparece no menu nem para a IA (votos, só na cerimônia) */
   hidden?: boolean;
   /** bloco 9: a conversa tem assunto (quem ouve reage ao gosto dele) */
@@ -798,6 +813,8 @@ export interface Neighbor {
   age?: Age;
   /** bloco 15: família (Family.id) com quem mora num lote do bairro; sem campo = mora fora do bairro */
   home?: number;
+  /** bloco 16: gente do centro (anda pela praça; só aparece em casa depois de conhecida) */
+  downtown?: boolean;
 }
 
 export interface Visit {
@@ -817,12 +834,14 @@ export interface Visit {
   party?: boolean;
   /** bloco 10: está se mudando da casa (sai com a mala) */
   moving?: boolean;
+  /** bloco 16: saiu com alguém da casa (o encontro): pode pedir no restaurante, quem paga é a casa */
+  date?: boolean;
 }
 
 // ---------- Bloco 2: despensa, correio e serviços ----------
 
 /** Quem trabalha para a casa: entregador, faxineira, técnico, oficial de penhora. */
-export type ServiceKind = 'courier' | 'maid' | 'repair' | 'bailiff' | 'social' | 'gardener' | 'firefighter' | 'police' | 'burglar' | 'reaper';
+export type ServiceKind = 'courier' | 'maid' | 'repair' | 'bailiff' | 'social' | 'gardener' | 'firefighter' | 'police' | 'burglar' | 'reaper' | 'waiter';
 
 /** O que dá para pedir pelo telefone. */
 export type ServiceOrder = 'groceries' | 'takeout' | 'maid' | 'repair' | 'gardener';
@@ -847,6 +866,8 @@ export interface ServiceVisit {
   fleeing?: boolean;
   /** bloco 14: gatuno pego pela polícia */
   caught?: boolean;
+  /** bloco 16: garçom com um pedido nas mãos (anotar, buscar na cozinha, levar à mesa) */
+  tray?: { folkId: number; step: 'take' | 'fetch' | 'carry'; tries: number };
 }
 
 /** Pedido feito por telefone, a caminho. */
@@ -963,6 +984,32 @@ export interface Catalog {
   wishes: Record<string, WishDef>;
   /** bloco 9 */
   topics: Record<string, TopicDef>;
+  /** bloco 16: cardápio do restaurante e presentes da loja */
+  dishes?: Record<string, DishDef>;
+  gifts?: Record<string, GiftDef>;
+  venues?: Record<string, VenuePlan>;
+}
+
+/** Bloco 16: um prato do cardápio. */
+export interface DishDef {
+  id: string;
+  name: string;
+  price: number;
+  /** quanto enche a fome, no total */
+  hunger: number;
+  /** quanto diverte, no total */
+  fun: number;
+  /** quanto soma à nota do encontro quando o casal come junto */
+  romance: number;
+}
+
+/** Bloco 16: um presente que a loja vende (dado com a conversa "Dar presente"). */
+export interface GiftDef {
+  id: string;
+  name: string;
+  price: number;
+  friendship: number;
+  romance: number;
 }
 
 // ---------- Estado ----------
@@ -1304,6 +1351,8 @@ export interface Folk {
   frightened?: number;
   /** bloco 14: chamuscado do choque até tal tick (cabelo em pé) */
   sooty?: number;
+  /** bloco 16: presentes comprados na loja do centro, ainda não dados (ids em GIFTS) */
+  gifts?: string[];
 }
 
 /** Aparência: índices nas paletas da arte. */
@@ -1507,6 +1556,84 @@ export interface World {
   lastBurglary: number;
   /** bloco 15: o bairro com os lotes e as famílias (null = só a casa, como nos testes antigos) */
   town: Town | null;
+  /** bloco 16: passeio no centro (null = todo mundo no lote de casa) */
+  outing: Outing | null;
+  /** bloco 16: como foi o último encontro */
+  lastDate: DateResult | null;
+}
+
+// ---------- Bloco 16: centro da cidade e encontros ----------
+
+/** A casa guardada enquanto parte da família passeia no centro. */
+export interface OutingHome {
+  grid: Grid;
+  objects: WorldObject[];
+  exit: Vec;
+  mess: Mess[];
+  /** quem ficou em casa (vida resumida; quem está no trabalho volta para cá) */
+  folks: Folk[];
+}
+
+/** Pedido no restaurante: o garçom anota, a cozinha faz, o garçom traz. */
+export interface DinerOrder {
+  folkId: number;
+  /** mesa (objeto) */
+  tableId: number;
+  dish: string;
+  /** 'wait' = esperando o garçom; 'cooking' = na cozinha; 'ready' = pronto no passa-pratos; 'served' = na mesa */
+  stage: 'wait' | 'cooking' | 'ready' | 'served';
+  /** tick em que fica pronto na cozinha */
+  readyAt: number;
+  /** tick em que o pedido foi feito */
+  at: number;
+}
+
+/** O encontro: dois que saíram juntos e o quanto a noite está rendendo. */
+export interface DateState {
+  /** quem convidou (morador) */
+  host: number;
+  /** quem foi convidado (morador ou vizinho que veio como visita) */
+  guest: number;
+  since: number;
+  /** soma das medidas de humor dos dois (de meia em meia hora) */
+  mood: number;
+  samples: number;
+  /** conversas entre os dois: aceitas e recusadas */
+  good: number;
+  bad: number;
+  /** jantaram juntos, presentes dados, desejos no chafariz */
+  dined: number;
+  gifts: number;
+  wishes: number;
+}
+
+export interface DateResult {
+  tick: number;
+  host: number;
+  guest: number;
+  /** de 0 a 100 */
+  score: number;
+  /** estrelas, de 1 a 5 */
+  grade: number;
+  /** o que mudou no romance de quem foi convidado por quem convidou */
+  romance: number;
+  friendship: number;
+}
+
+/** O passeio: quem foi, a casa guardada, o encontro e o que foi comprado para casa. */
+export interface Outing {
+  /** id do lugar (data/downtown.ts) */
+  venue: string;
+  since: number;
+  /** moradores que foram (a visita do encontro não conta) */
+  goers: number[];
+  home: OutingHome;
+  date: DateState | null;
+  orders: DinerOrder[];
+  /** objetos comprados para chegar em casa (ids do catálogo, já pagos) */
+  parcels: string[];
+  /** tick do próximo figurante */
+  nextExtra: number;
 }
 
 // ---------- Bloco 15: bairro com vários lotes e famílias ----------
@@ -1716,6 +1843,9 @@ export type Command =
   | { type: 'playFamily'; familyId: number }
   | { type: 'moveHouse'; lotId: number }
   | { type: 'foundFamily'; lotId: number; draft: FamilyDraft }
+  // bloco 16: centro da cidade (de táxi) e encontros
+  | { type: 'goDowntown'; folkIds: number[]; dateId?: number }
+  | { type: 'goHome' }
   // modo construção: linhas de paredes vão de vértice a vértice do grid
   | { type: 'buildWalls'; x0: number; y0: number; x1: number; y1: number }
   | { type: 'eraseWalls'; x0: number; y0: number; x1: number; y1: number }

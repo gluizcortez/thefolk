@@ -203,14 +203,14 @@ export function scoreOptions(world: World, catalog: Catalog, folk: Folk, nav: Na
       (it) =>
         it.autonomous !== false &&
         // bloco 9: ligar para um amigo é especial, mas qualquer um faz sozinho
-        (!it.special || it.special === 'call') &&
+        (!it.special || it.special === 'call' || it.special === 'dine') &&
         !it.care &&
         !it.hidden &&
         // bloco 11: criança não cozinha no fogão; brinquedo de criança é só dela
         kidAllows(folk, it) &&
         canUse(world, obj, it) &&
         (it.cost ?? 0) <= world.household.funds &&
-        !(visitor && (it.residentOnly || (it.cost ?? 0) > 0)) &&
+        !(visitor && (it.residentOnly || ((it.cost ?? 0) > 0 && !folk.visit?.date))) &&
         (it.autoBelow === undefined || !it.until || folk.needs[it.until] < it.autoBelow || (bedtime > 0 && isSleep(it))) &&
         // bloco 6: de mau humor, nem por conta própria o folk pega no pesado
         refusal(catalog, folk, it, world.tick) === null,

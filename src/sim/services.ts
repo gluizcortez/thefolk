@@ -58,6 +58,7 @@ export const RING_WAIT: Record<ServiceKind | 'guest', number> = {
   maid: 15,
   repair: 15,
   bailiff: 0,
+  waiter: 0,
   social: 0,
   gardener: 15,
   // bloco 14: bombeiros, polícia, gatuno e o Seu Sereno não tocam a campainha

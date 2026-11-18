@@ -159,7 +159,7 @@ export function salePrice(world: World, catalog: Catalog): number {
 /** Dá para sair do lote agora? (fogo, festa ou alguém caído seguram a família). */
 export function leaveProblem(world: World): TownProblem | null {
   if (!world.town) return 'noTown';
-  if (world.fires.length > 0 || world.party || world.passings.length > 0 || world.folks.some((f) => f.down)) return 'busyLot';
+  if (world.outing || world.fires.length > 0 || world.party || world.passings.length > 0 || world.folks.some((f) => f.down)) return 'busyLot';
   return null;
 }
 
@@ -304,7 +304,7 @@ function neighborFrom(folk: Folk, home: number): Neighbor {
 }
 
 /** Visitas vão embora na hora (levando o que aprenderam) e o lote fica quieto. */
-function emptyVisitors(world: World): void {
+export function emptyVisitors(world: World): void {
   for (const f of world.folks) {
     if (!f.visit) continue;
     const n = world.neighbors.find((x) => x.id === f.id);
@@ -322,7 +322,7 @@ function emptyVisitors(world: World): void {
 }
 
 /** Morador parado, sem fila nem caminho (depois de uma mudança ou de voltar a jogo). */
-function settle(folk: Folk, keepAway: boolean): void {
+export function settle(folk: Folk, keepAway: boolean): void {
   folk.queue = [];
   folk.path = [];
   folk.thought = null;
@@ -333,7 +333,7 @@ function settle(folk: Folk, keepAway: boolean): void {
 }
 
 /** Põe os moradores em tiles livres de dentro de casa, do mais perto da porta da rua. */
-function placeAtHome(world: World, catalog: Catalog, folks: Folk[]): void {
+export function placeAtHome(world: World, catalog: Catalog, folks: Folk[]): void {
   const nav = buildNav(world, catalog);
   const { grid } = world;
   const spots: (Vec & { d: number })[] = [];

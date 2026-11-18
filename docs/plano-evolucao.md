@@ -553,7 +553,7 @@ alarme; morte gera lápide e fantasma; opção "sem morte" no jogo novo; testes.
 família nova em lote vazio; o save antigo vira um bairro com a casa atual;
 testes de troca de família, mudança e simulação resumida.
 
-## Bloco 16 — Centro da cidade: passeios e encontros (save v20)
+## Bloco 16 — Centro da cidade: passeios e encontros (save v20) — feito em 18/11/2026
 
 **Escopo**
 - **Lotes comunitários** no bairro: praça, restaurante, loja, café.

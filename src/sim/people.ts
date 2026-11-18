@@ -17,6 +17,9 @@ export interface Person {
 export function personOf(world: World, id: number): Person | undefined {
   const folk = world.folks.find((f) => f.id === id);
   if (folk) return { id, name: folk.name, traits: folk.traits, folk, resident: !folk.visit };
+  // bloco 16: quem ficou em casa durante o passeio no centro continua morando lá
+  const home = world.outing?.home.folks.find((f) => f.id === id);
+  if (home) return { id, name: home.name, traits: home.traits, resident: true };
   const n = world.neighbors.find((x) => x.id === id);
   if (n) return { id, name: n.name, traits: n.traits, resident: false };
   return undefined;

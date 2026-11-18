@@ -15,6 +15,12 @@ import {
   availableSocials,
   friendshipLabel,
   relationOf,
+  DATE_MIN_MINUTES,
+  TAXI_FARE,
+  canGo,
+  dateAvailable,
+  dateGrade,
+  dateScore,
   respectLabel,
   romanceLabel,
   MAX_SKILL_LEVEL,
@@ -227,6 +233,17 @@ function faceSvg(look: Folk['look'], size: number, mood = 60): string {
 }
 
 /** Primeiro nome, para textos curtos. */
+/** Bloco 16: +3 / -5 */
+function signed(n: number): string {
+  return n > 0 ? `+${n}` : String(n);
+}
+
+/** Bloco 16: rótulo de romance (ou nada, se não há). */
+function romanceText(rel: Parameters<typeof romanceLabel>[0]): string {
+  const k = romanceLabel(rel);
+  return k ? t(k) : '';
+}
+
 function first(name: string): string {
   return name.split(' ')[0];
 }
@@ -332,6 +349,8 @@ export class Hud {
   /** bloco 5: abre a tela de criar família */
   openCreator: (() => void) | null = null;
   private townButton: HTMLButtonElement | null = null;
+  /** bloco 16: táxi para o centro (vira "Voltar para casa" no passeio) */
+  private outingButton: HTMLButtonElement | null = null;
   private buildButton = el('button', 'btn btn-buy');
   private buildEl = el('div', 'card catalog build');
   private buildTabs = el('div', 'catalog-tabs');
@@ -407,7 +426,19 @@ export class Hud {
     const last = world.lastParty;
     let text = '';
     let title = '';
-    if (party) {
+    const out = world.outing;
+    const lastDate = world.lastDate;
+    if (out) {
+      // bloco 16: no centro, a plaquinha mostra o encontro (e a nota até agora)
+      const d = out.date;
+      text = d
+        ? t('outing.dating', { name: first(this.nameOf(d.host)), other: first(this.nameOf(d.guest)), score: world.tick - d.since < DATE_MIN_MINUTES ? '…' : '★'.repeat(dateGrade(dateScore(d))) })
+        : t('outing.here', { time: formatClock(out.since) });
+      title = t('outing.dateHint');
+    } else if (lastDate && world.tick - lastDate.tick < 6 * 60 && !party) {
+      text = `${t('outing.lastDate')} ${'★'.repeat(lastDate.grade)}${'☆'.repeat(5 - lastDate.grade)}`;
+      title = t('outing.lastDateTip', { score: lastDate.score, romance: signed(lastDate.romance), friendship: signed(lastDate.friendship) });
+    } else if (party) {
       const here = world.folks.filter((f) => f.visit?.party && f.visit.admitted).length;
       const vibe = party.samples ? Math.round(party.score / party.samples) : null;
       const kind = party.wedding ? 'wedding' : 'party';
@@ -473,7 +504,21 @@ export class Hud {
     });
     town.hidden = !this.ctrl.world.town;
     this.townButton = town;
-    bar.append(town, save, games, this.soundButton, fresh);
+    // bloco 16: centro da cidade (de táxi) e encontros
+    const outing = el('button', 'btn', t('hud.downtown'));
+    outing.title = t('hud.downtownTip');
+    outing.addEventListener('click', (e) => {
+      this.system.close();
+      if (this.ctrl.world.outing) {
+        this.closeMenu();
+        this.ctrl.outingCommand({ type: 'goHome' });
+        return;
+      }
+      const r = outing.getBoundingClientRect();
+      this.openOutingMenu(Math.max(8, r.left - 320), r.bottom + 30 || e.clientY);
+    });
+    this.outingButton = outing;
+    bar.append(outing, town, save, games, this.soundButton, fresh);
     this.root.append(bar, this.system.el);
   }
 
@@ -723,7 +768,15 @@ export class Hud {
 
   update(): void {
     const world = this.ctrl.world;
-    if (this.townButton) this.townButton.hidden = !world.town;
+    if (this.townButton) this.townButton.hidden = !world.town || !!world.outing;
+    if (this.outingButton) {
+      const label = t(world.outing ? 'hud.goHome' : 'hud.downtown');
+      if (this.outingButton.textContent !== label) {
+        this.outingButton.textContent = label;
+        this.outingButton.title = t(world.outing ? 'hud.goHomeTip' : 'hud.downtownTip');
+        this.outingButton.classList.toggle('btn-hot', !!world.outing);
+      }
+    }
     // bloco 14: casa vazia: só o aviso (não há a quem mostrar)
     if (this.renderOver()) return;
     const folk = this.ctrl.folk;
@@ -1268,6 +1321,81 @@ export class Hud {
   }
 
   /** Bloco 9: quem chamar para a festa (com aviso de rivais na mesma lista). */
+  /** Bloco 16: quem vai ao centro e com quem sair (encontro). */
+  openOutingMenu(x: number, y: number, picked?: Set<number>, dateId?: number): void {
+    const world = this.ctrl.world;
+    const folk = this.ctrl.folk;
+    const household = this.ctrl.sim.household().filter((f) => f.age !== 'baby');
+    const chosen = picked ?? new Set(household.filter((f) => canGo(f)).map((f) => f.id));
+    this.menuEl.replaceChildren(el('div', 'menu-title', t('outing.title')));
+    this.menuEl.append(el('div', 'menu-note party-hint', t('outing.hint', { fare: formatMoney(TAXI_FARE) })));
+    this.menuEl.append(el('div', 'menu-group', t('outing.who')));
+    const box = el('div', 'party-list');
+    for (const f of household) {
+      const row = el('label', 'menu-item party-row');
+      const check = el('input');
+      check.type = 'checkbox';
+      check.checked = chosen.has(f.id);
+      check.disabled = !canGo(f);
+      check.addEventListener('change', () => {
+        if (check.checked) chosen.add(f.id);
+        else chosen.delete(f.id);
+        this.openOutingMenu(x, y, chosen, dateId);
+      });
+      const face = el('span', 'menu-face');
+      face.innerHTML = faceSvg(f.look, 18);
+      row.append(check, face, el('span', '', f.name), el('span', 'menu-extra', f.away ? t('outing.away') : ''));
+      box.append(row);
+    }
+    this.menuEl.append(box);
+    // encontro: alguém da casa que vai junto, ou um conhecido que vem encontrar
+    const host = chosen.has(folk.id) ? folk : household.find((f) => chosen.has(f.id));
+    if (host && host.age === undefined) {
+      this.menuEl.append(el('div', 'menu-group', t('outing.date')));
+      const mates = household.filter((f) => f.id !== host.id && chosen.has(f.id) && f.age === undefined);
+      const known = world.neighbors
+        .filter((n) => dateAvailable(n) && relationOf(world, host.id, n.id))
+        .sort((a, b) => {
+          const ra = relationOf(world, host.id, a.id)!;
+          const rb = relationOf(world, host.id, b.id)!;
+          return rb.romance + rb.friendship - (ra.romance + ra.friendship) || a.id - b.id;
+        })
+        .slice(0, 8);
+      const list = el('div', 'party-list');
+      const option = (id: number | undefined, label: string, extra: string, look?: Folk['look']) => {
+        const b = el('button', `menu-item surname${dateId === id ? ' picked' : ''}`);
+        b.append(el('span', 'menu-dot'));
+        if (look) {
+          const face = el('span', 'menu-face');
+          face.innerHTML = faceSvg(look, 18);
+          b.append(face);
+        }
+        b.append(el('span', '', label), el('span', 'menu-extra', extra));
+        b.addEventListener('click', () => this.openOutingMenu(x, y, chosen, id));
+        list.append(b);
+      };
+      option(undefined, t('outing.noDate'), '');
+      for (const m of mates) option(m.id, m.name, romanceText(relationOf(world, host.id, m.id)), m.look);
+      for (const n of known) {
+        const rel = relationOf(world, host.id, n.id);
+        option(n.id, n.name, [t(friendshipLabel(rel)), romanceText(rel)].filter(Boolean).join(' · '), n.look);
+      }
+      this.menuEl.append(list);
+      this.menuEl.append(el('div', 'menu-note party-hint', t('outing.dateHint')));
+    }
+    const ids = [...chosen];
+    if (host) ids.sort((a, b) => (a === host.id ? -1 : b === host.id ? 1 : 0));
+    const go = el('button', 'btn party-go', t('outing.go'));
+    go.disabled = chosen.size === 0;
+    go.addEventListener('click', () => {
+      const date = dateId !== undefined && (household.some((f) => f.id === dateId) ? chosen.has(dateId) : true) ? dateId : undefined;
+      if (this.ctrl.outingCommand({ type: 'goDowntown', folkIds: ids, dateId: date })) this.closeMenu();
+      else this.openOutingMenu(x, y, chosen, dateId);
+    });
+    this.menuEl.append(go);
+    this.showMenuAt(x, y);
+  }
+
   openPartyMenu(x: number, y: number, picked?: Set<number>, wedding?: { partner: number; surname: SurnameChoice }): void {
     const folk = this.ctrl.folk;
     const world = this.ctrl.world;
