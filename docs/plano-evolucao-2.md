@@ -614,6 +614,17 @@ Pronto: testes de caminho na cidade (casa até centro, por rua), de troca de
 nível de simulação e de migração; captura da vista de casa, da vista
 intermediária e do mapa; medida de quadros por segundo registrada no README.
 
+**Feito em 19/11/2026** (save v32, uma casa a menos que o plano). A cidade
+de Arribada tem três bairros (30 lotes), avenidas, rio com ponte, centro,
+praça e a área dos lugares públicos. Zoom contínuo da casa ao mapa (sem tela
+de bairro); casas detalhadas só perto da câmera; etiquetas e ícones da
+família no mapa; trocar de família e visitar vizinhos pelo cartão do lote;
+ir ao centro e voltar a pé, de bicicleta, de carro ou de táxi, andando pela
+rua com a câmera junto. Simplificações: a visita a um vizinho é resumida
+(a turma fica fora do lote, não há o lote do vizinho aberto em detalhe) e a
+gente da rua é bonequinho simples; os vizinhos dos outros lotes não aparecem
+andando. Ficou para o bloco 13: abrir lotes de outros lugares em detalhe.
+
 ## Bloco 13 — Lugares da cidade: aonde ir e o que fazer (save v34)
 
 - **Lugares públicos visitáveis**, cada um um lote com prédio, móveis e

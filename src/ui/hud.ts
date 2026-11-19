@@ -26,6 +26,11 @@ import {
   relationOf,
   DATE_MIN_MINUTES,
   TAXI_FARE,
+  activeLot,
+  centroDoor,
+  cityOn,
+  lotDoor,
+  streetRoute,
   canGo,
   dateAvailable,
   dateGrade,
@@ -132,6 +137,7 @@ import {
   socialAllowed,
 } from '../sim';
 import type {
+  TravelMode,
   OpeningKind,
   Catalog,
   Command,
@@ -159,6 +165,7 @@ import { interactionState, objectGroup, ringCenter, ringPoints, ringRadius, ring
 import { GIFTS } from '../data/downtown';
 import { channelDef, favoriteChannel, viewOf } from '../sim/activity';
 import { SystemCards } from './system';
+import { travelPicker, usableMode } from './travel';
 import { cue } from '../audio/cues';
 import type { AudioEngine } from '../audio/engine';
 import type { IconId } from './icons';
@@ -611,7 +618,7 @@ export class Hud {
   /** Atalhos que são da HUD (o resto fica na cena). */
   private onKey(e: KeyboardEvent): void {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-    if (document.querySelector('.creator:not([hidden])') || this.ctrl.screen === 'town') return;
+    if (document.querySelector('.creator:not([hidden])')) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.code === 'KeyH' || e.key === '?') this.toggleHelp();
     else if (e.code === 'KeyF') this.togglePop('family');
@@ -972,7 +979,7 @@ export class Hud {
       const band = t(`grade.band.${gradeBand(kid.grade)}`);
       const low = kid.lowDays > 0 ? ` · ${t('kid.low', { n: kid.lowDays })}` : '';
       lines.push({ text: `${t('kid.grade', { grade: gradeText(kid.grade), band })} · ${t(`kid.homework.${kid.homework}`)}${low}`, tip: t('kid.gradeTip'), warn: kid.lowDays > 0 });
-      if (folk.away) lines.push({ text: t('kid.atSchool') });
+      if (folk.away) lines.push({ text: t(folk.away.trip ? 'hud.onStreet' : 'kid.atSchool') });
     }
     // bloco 17: relógio da vida e aposentadoria
     const left = daysToNextStage(world, folk);
@@ -1246,7 +1253,7 @@ export class Hud {
     this.queueSig = sig;
     this.queueEl.replaceChildren();
     const doing = folk.away
-      ? t(folk.away.school ? 'queue.school' : 'queue.away', { time: formatClock(folk.away.until) })
+      ? t(folk.away.trip ? 'queue.trip' : folk.away.school ? 'queue.school' : 'queue.away', { time: formatClock(folk.away.until) })
       : folk.collapsed > 0
         ? t('queue.collapsed')
         : cur
@@ -1926,13 +1933,20 @@ export class Hud {
 
   /** Bloco 9: quem chamar para a festa (com aviso de rivais na mesma lista). */
   /** Bloco 16: quem vai ao centro e com quem sair (encontro). */
+  /** Plano 2, bloco 12: último jeito de ir escolhido no menu do passeio. */
+  private outingMode: TravelMode = 'walk';
+
   openOutingMenu(x: number, y: number, picked?: Set<number>, dateId?: number): void {
     const world = this.ctrl.world;
     const folk = this.ctrl.folk;
     const household = this.ctrl.sim.household().filter((f) => f.age !== 'baby');
     const chosen = picked ?? new Set(household.filter((f) => canGo(f)).map((f) => f.id));
     this.menuEl.replaceChildren(el('div', 'menu-title', t('outing.title')));
-    this.menuEl.append(el('div', 'menu-note party-hint', t('outing.hint', { fare: formatMoney(TAXI_FARE) })));
+    // plano 2, bloco 12: na cidade aberta, escolher como ir (o caminho é pela rua)
+    const lot = activeLot(world);
+    const venue = this.ctrl.sim.catalog.venues?.centro;
+    const length = cityOn(world) && lot && venue ? streetRoute(world.town!, lotDoor(lot, world.exit), centroDoor(venue.exit)).length : 0;
+    if (!length) this.menuEl.append(el('div', 'menu-note party-hint', t('outing.hint', { fare: formatMoney(TAXI_FARE) })));
     this.menuEl.append(el('div', 'menu-group', t('outing.who')));
     const box = el('div', 'party-list');
     for (const f of household) {
@@ -1948,7 +1962,7 @@ export class Hud {
       });
       const face = el('span', 'menu-face');
       face.innerHTML = faceSvg(f.look, 18);
-      row.append(check, face, el('span', '', f.name), el('span', 'menu-extra', f.away ? t('outing.away') : ''));
+      row.append(check, face, el('span', '', f.name), el('span', 'menu-extra', f.away ? t(f.away.trip ? 'hud.onStreet' : 'outing.away') : ''));
       box.append(row);
     }
     this.menuEl.append(box);
@@ -1989,11 +2003,24 @@ export class Hud {
     }
     const ids = [...chosen];
     if (host) ids.sort((a, b) => (a === host.id ? -1 : b === host.id ? 1 : 0));
-    const go = el('button', 'btn party-go', t('outing.go'));
+    let mode: TravelMode | undefined;
+    if (length) {
+      const goers = household.filter((f) => chosen.has(f.id));
+      mode = this.outingMode = usableMode(world, goers, length, this.outingMode);
+      this.menuEl.append(el('div', 'menu-group', t('travel.how')));
+      this.menuEl.append(
+        travelPicker(world, goers, length, mode, (m) => {
+          this.outingMode = m;
+          this.openOutingMenu(x, y, chosen, dateId);
+        }),
+      );
+      this.menuEl.append(el('div', 'menu-note party-hint', t('travel.downtownHint')));
+    }
+    const go = el('button', 'btn party-go', t(length ? `travel.go.${mode}` : 'outing.go'));
     go.disabled = chosen.size === 0;
     go.addEventListener('click', () => {
       const date = dateId !== undefined && (household.some((f) => f.id === dateId) ? chosen.has(dateId) : true) ? dateId : undefined;
-      if (this.ctrl.outingCommand({ type: 'goDowntown', folkIds: ids, dateId: date })) this.closeMenu();
+      if (this.ctrl.outingCommand({ type: 'goDowntown', folkIds: ids, dateId: date, mode })) this.closeMenu();
       else this.openOutingMenu(x, y, chosen, dateId);
     });
     this.menuEl.append(go);
@@ -2265,6 +2292,7 @@ export class Hud {
     const residents = sim.household();
     const sel = this.ctrl.folk.id;
     const placeOf = (f: Folk): string => {
+      if (f.away?.trip) return t('hud.onStreet');
       if (f.away) return f.away.school ? t('place.school') : f.job ? t(careerOf(sim.catalog, f.job)?.name ?? 'place.work') : t('place.work');
       if (world.outing) return t('place.downtown');
       if (f.collapsed > 0 || f.queue[0]?.interactionId === 'sleep') return t('place.asleep');
@@ -3326,7 +3354,9 @@ export class Hud {
       perf.append(el('span', 'perf-label', t('job.performance')), track);
       box.append(perf);
 
-      const status = folk.away
+      const status = folk.away?.trip
+        ? t('hud.onStreet')
+        : folk.away
         ? t('job.atWork', { time: formatClock(folk.away.until) })
         : (() => {
             const shift = nextShift(catalog, folk, world.tick);

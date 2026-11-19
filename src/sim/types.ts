@@ -2028,6 +2028,8 @@ export interface Away {
   nextEvent: number;
   /** bloco 17: na escola (sem isso, no trabalho; o jovem pode ter os dois) */
   school?: boolean;
+  /** plano 2, bloco 12: andando pela cidade (World.trip diz para onde) */
+  trip?: boolean;
 }
 
 export interface Household {
@@ -2067,6 +2069,8 @@ export interface Household {
   garments?: string[];
   /** plano 2, bloco 11: inventário da família (objetos guardados fora da casa, vão junto na mudança) */
   stored?: WorldObject[];
+  /** plano 2, bloco 12: bicicletas e carro da família */
+  vehicles?: OwnVehicle[];
 }
 
 export interface LogEntry {
@@ -2135,6 +2139,8 @@ export interface World {
   lastBurglary: number;
   /** bloco 15: o bairro com os lotes e as famílias (null = só a casa, como nos testes antigos) */
   town: Town | null;
+  /** plano 2, bloco 12: gente da família indo ou voltando pela cidade */
+  trip?: Trip | null;
   /** bloco 16: passeio no centro (null = todo mundo no lote de casa) */
   outing: Outing | null;
   /** bloco 16: como foi o último encontro */
@@ -2213,6 +2219,8 @@ export interface Outing {
   parcels: string[];
   /** tick do próximo figurante */
   nextExtra: number;
+  /** plano 2, bloco 12: como foram (a volta usa o mesmo, se der) */
+  mode?: TravelMode;
 }
 
 // ---------- Bloco 15: bairro com vários lotes e famílias ----------
@@ -2235,6 +2243,8 @@ export interface Lot {
   col: number;
   /** preço do terreno sem nada em cima */
   land: number;
+  /** plano 2, bloco 12: bairro da cidade (sem campo = 0, a Vila Taramela) */
+  district?: number;
   /** família que mora (0 = ninguém: à venda ou vago) */
   familyId: number;
   /**
@@ -2286,6 +2296,40 @@ export interface Town {
   nextFamily: number;
   /** o que andou acontecendo nas outras casas (mais recente no fim) */
   feed: LogEntry[];
+  /** plano 2, bloco 12: a cidade em volta (sem campo = só o bairro, como nos testes antigos) */
+  city?: CityInfo;
+}
+
+// ---------- Plano 2, bloco 12: cidade aberta ----------
+
+export interface CityInfo {
+  name: string;
+  /** bairros por índice (Lot.district); o 0 é o do Town.name/Town.street */
+  districts: { name: string; street: string }[];
+}
+
+export type TravelMode = 'walk' | 'bike' | 'car' | 'taxi';
+export type OwnVehicle = 'bike' | 'car';
+
+/** Gente da família andando pela cidade: ida ao centro, volta para casa ou visita a um vizinho. */
+export interface Trip {
+  kind: 'downtown' | 'home' | 'visit';
+  goers: number[];
+  mode: TravelMode;
+  /** caminho pela rua, em pontos da cidade (x, z, x, z, ...) */
+  points: number[];
+  length: number;
+  from: number;
+  /** tick em que chega lá */
+  arrive: number;
+  /** quem foi chamado para o encontro (ida ao centro) */
+  dateId?: number;
+  /** visita: lote visitado, quando sai de lá e quando chega de volta */
+  lotId?: number;
+  leave?: number;
+  back?: number;
+  /** visita: já cumprimentou quem mora lá */
+  greeted?: boolean;
 }
 
 // ---------- Bloco 9: assuntos, rodas, telefone e festas ----------
@@ -2472,8 +2516,11 @@ export type Command =
   | { type: 'sellStored'; objectId: number }
   | { type: 'editFolk'; folkId: number; look?: Look; closet?: Closet; traits?: string[] }
   // bloco 16: centro da cidade (de táxi) e encontros
-  | { type: 'goDowntown'; folkIds: number[]; dateId?: number }
-  | { type: 'goHome' }
+  | { type: 'goDowntown'; folkIds: number[]; dateId?: number; mode?: TravelMode }
+  | { type: 'goHome'; mode?: TravelMode }
+  | { type: 'visitLot'; folkIds: number[]; lotId: number; mode: TravelMode }
+  | { type: 'buyVehicle'; kind: OwnVehicle }
+  | { type: 'sellVehicle'; kind: OwnVehicle }
   // bloco 17: foto para o álbum (a tela manda a imagem pronta)
   | { type: 'takePhoto'; photo: string; caption?: string; who?: number[] }
   | { type: 'dropPhoto'; entryId: number }

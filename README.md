@@ -574,6 +574,24 @@ npm run preview  # serve o dist/ localmente
   num terreno vago ou casa à venda aparece "Da gaveta: Mudar para cá". Casa à
   venda pode ser comprada com os móveis ou só a casa (terreno e construção), e
   a mudança pode levar os móveis para o inventário em vez de vendê-los.
+- **Cidade aberta (plano 2, bloco 12)**: a Vila Taramela agora é um dos três
+  bairros da cidade de Arribada (com o Jardim Cambará e o Alto do Moinho, 30
+  lotes ao todo), ligados por avenidas; o centro fica do outro lado do Rio
+  Manso, pela ponte, e há a Praça do Coreto e a área cercada dos lugares
+  públicos (bloco 13). Não há mais tela de bairro: role o mouse para trás e a
+  câmera sai da casa, passa pela rua e chega na cidade inteira; o botão
+  Cidade faz o mesmo. Afastado, aparecem os nomes dos bairros e lugares e o
+  ícone de cada um da família (clique para ir até ele). No mapa, clique num
+  lote para o cartão: jogar com aquela família, mudar, comprar, gaveta, e
+  agora **visitar** (quem vai e como: a pé, de bicicleta, de carro ou de
+  táxi, com tempo e preço de cada jeito; uma hora e meia de café e conversa,
+  a amizade sobe; visitas das 8h às 21h). O passeio ao centro também deixa
+  escolher o jeito, e quem sai anda pela rua até lá, com a câmera junto; a
+  volta é igual (sem dinheiro, a pé). Bicicletas (⟡ 160, uma por pessoa,
+  criança na garupa) e carro (⟡ 3.400, cinco lugares, um adulto dirige) se
+  compram no cartão do lote da família, em "Na garagem". As casas dos outros
+  lotes são montadas de verdade quando a câmera chega perto e viram caixas
+  simples de longe; o relógio segue no mapa.
 - **Peças novas (bloco 12)**: meia parede (fecha o passo sem dividir o
   cômodo), coluna nos cantos, porta de vidro, porta dupla, arco (passagem sem
   folha), janela alta (+6 de ambiente) e basculante (+2).
@@ -967,9 +985,26 @@ Decisões principais do núcleo:
   guardada) e o mural. Quem é de uma família fora de jogo é vizinho com
   `Neighbor.home`. Comandos `playFamily`, `moveHouse` e `foundFamily`;
   `townDay` faz a vida resumida às 3h; `streetDoor` escolhe a ponta da
-  calçada das visitas. Planta do bairro e das casas em `data/town.ts`; a vista
-  em `game/town.ts` (`TownView`, desenhada na mesma imagem interna) e o painel
-  em `ui/town.ts`.
+  calçada das visitas. Planta do bairro e das casas em `data/town.ts`; o
+  painel em `ui/town.ts`.
+- **Cidade aberta (plano 2, bloco 12)** mora em `sim/city.ts` (regras puras:
+  onde cai cada lote, `lotPlace`/`toCity`/`toLocal`, as ruas, `streetRoute`
+  pela rua, tempo e preço de cada jeito de ir, `travelProblem`, `tripState`
+  e os níveis de simulação `lotLevel`/`personLevel`/`centroLevel`). A planta
+  da cidade (bairros novos, famílias e casas) em `data/city.ts` (`CITY`);
+  `growCity` em `sim/town.ts` põe os bairros que faltam. Quem anda pela
+  cidade fica com `Folk.away.trip` e `World.trip` (comandos `goDowntown` e
+  `goHome` com `mode`, `visitLot`, `buyVehicle`, `sellVehicle`; `Sim.stepTrip`).
+  Sem `Town.city` (o bairro sozinho dos testes antigos) o táxi leva na hora,
+  como no bloco 16. A arte em `game/city.ts` (`CityLayer`: a cidade posta em
+  volta do lote mostrado, malhas juntadas por material e em pedaços de 64
+  tiles, casa detalhada só perto da câmera, etiquetas e ícones) e a escolha
+  do jeito de ir em `ui/travel.ts`.
+- **Quadros por segundo (plano 2, bloco 12)**: medidos no Chromium sem placa
+  de vídeo (SwiftShader, desenho todo no processador, 1280x800), que só serve
+  para comparar: antes da cidade, 3,3 quadros por segundo na vista da casa;
+  com a cidade, 2,8 na vista da casa, 2,4 na vista intermediária e 4,1 no
+  mapa inteiro. Numa placa de vídeo comum o jogo fica no teto da tela.
 - **Centro (bloco 16)** mora em `sim/downtown.ts` (regras puras: horário,
   quem pode ir, chance de topar sair, nota e efeito do encontro) e nos
   métodos `goDowntown`, `goHome`, `stepOuting`, `stepWaiter`, `dineWait`,

@@ -1,5 +1,5 @@
 import type { GameController } from '../game/controller';
-import type { TownView } from '../game/town';
+import type { CityLayer, MapMark } from '../game/city';
 import { t } from '../i18n';
 import {
   NEW_FAMILY_FUNDS,
@@ -17,12 +17,23 @@ import {
   lotStatus,
   membersOf,
   salePrice,
+  VEHICLE_PRICE,
+  addressOf,
+  canGo,
+  districtOf,
+  lotDoor,
+  streetRoute,
+  vehiclesOf,
 } from '../sim';
-import type { Lot } from '../sim';
+import type { Lot, TravelMode } from '../sim';
+import { travelPicker, usableMode } from './travel';
 
 // Bloco 15: o painel da tela do bairro. Plaquinha em cima de cada lote, um
 // cartão com o lote escolhido (quem mora, quanto vale, o que dá para fazer)
-// e o mural do que andou acontecendo nas outras casas.
+// e o mural do que andou acontecendo nas outras casas. Plano 2, bloco 12: o
+// bairro virou o mapa da cidade (a câmera afastada); as plaquinhas, as
+// etiquetas de bairros e lugares e os ícones da família vêm da camada da
+// cidade, e o cartão do lote ganhou a visita (a pé, de bicicleta...).
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -37,7 +48,10 @@ export class TownPanel {
   private detail = el('div', 'card town-detail');
   private feed = el('div', 'card town-feed');
   private tagsEl = el('div', 'town-tags');
-  private tags = new Map<number, HTMLButtonElement>();
+  private tags = new Map<string, HTMLButtonElement>();
+  /** plano 2, bloco 12: quem vai na visita e como */
+  private visitors: Set<number> | null = null;
+  private visitMode: TravelMode = 'walk';
   private shownKey = '';
   /** abre a tela de criar família para um lote (main liga ao criador) */
   newFamilyAt: ((lotId: number) => void) | null = null;
@@ -53,11 +67,13 @@ export class TownPanel {
   constructor(
     host: HTMLElement,
     private readonly ctrl: GameController,
-    private readonly view: TownView,
+    private readonly city: CityLayer,
+    private readonly game: { mapMarks(): MapMark[] },
   ) {
     this.root.hidden = true;
     this.root.append(this.tagsEl, this.head, this.detail, this.feed);
-    host.append(this.root);
+    // plano 2, bloco 12: por baixo da HUD (as etiquetas do mapa não cobrem os botões)
+    host.prepend(this.root);
     const loop = () => {
       this.update();
       requestAnimationFrame(loop);
@@ -68,24 +84,61 @@ export class TownPanel {
   private update(): void {
     const open = this.ctrl.screen === 'town';
     document.body.classList.toggle('town-open', open);
-    if (this.root.hidden === open) this.root.hidden = !open;
+    this.root.hidden = false;
+    for (const card of [this.head, this.detail, this.feed]) card.hidden = !open;
+    this.updateMarks();
     if (!open) {
       this.shownKey = '';
       return;
     }
-    const key = `${this.ctrl.townVersion}|${this.ctrl.townLot}|${this.ctrl.world.household.funds}|${this.tab}|${this.bare}|${this.pack}`;
+    const trip = this.ctrl.world.trip;
+    const key = `${this.ctrl.townVersion}|${this.ctrl.townLot}|${this.ctrl.world.household.funds}|${this.tab}|${this.bare}|${this.pack}|${trip?.from ?? 0}|${(this.ctrl.world.household.vehicles ?? []).join()}|${[...(this.visitors ?? [])].join()}|${this.visitMode}|${Math.floor(this.ctrl.world.tick / 30)}`;
     if (key !== this.shownKey) {
       this.shownKey = key;
       this.render();
     }
-    // plaquinhas seguem os lotes na tela
-    for (const tag of this.view.tags()) {
-      const b = this.tags.get(tag.lotId);
-      if (!b) continue;
-      b.style.left = `${(tag.x * 100).toFixed(2)}%`;
-      b.style.top = `${(tag.y * 100).toFixed(2)}%`;
-      b.classList.toggle('on', tag.lotId === this.ctrl.townLot);
-      b.classList.toggle('hover', tag.lotId === this.view.hover);
+  }
+
+  /** Plano 2, bloco 12: plaquinhas dos lotes, etiquetas do mapa e ícones da família seguem a câmera. */
+  private updateMarks(): void {
+    const marks = this.game.mapMarks();
+    const seen = new Set<string>();
+    for (const m of marks) {
+      seen.add(m.key);
+      let b = this.tags.get(m.key);
+      if (!b) {
+        b = el('button', `town-tag map-${m.kind}`);
+        const id = m.id;
+        if (m.kind === 'lot' && id) {
+          b.addEventListener('click', () => {
+            this.ctrl.townLot = id;
+            this.tab = 'lot';
+          });
+        } else if (m.kind === 'folk' && id) {
+          b.addEventListener('click', () => this.goToFolk(id));
+        } else b.tabIndex = -1;
+        this.tagsEl.append(b);
+        this.tags.set(m.key, b);
+      }
+      const text = m.how ? `${m.text} · ${m.how}` : m.text;
+      if (b.dataset.text !== text) {
+        b.dataset.text = text;
+        if (m.kind === 'lot') {
+          const [num, ...rest] = text.split(' · ');
+          b.replaceChildren(el('b', '', num), el('span', '', rest.join(' · ')));
+        } else if (m.kind === 'folk') {
+          b.replaceChildren(el('span', 'map-pin'), el('span', '', text));
+        } else b.textContent = text;
+      }
+      b.style.left = `${(m.x * 100).toFixed(2)}%`;
+      b.style.top = `${(m.y * 100).toFixed(2)}%`;
+      b.classList.toggle('on', !!m.on);
+      b.classList.toggle('hover', m.kind === 'lot' && m.id === this.city.hover);
+    }
+    for (const [key, b] of this.tags) {
+      if (seen.has(key)) continue;
+      b.remove();
+      this.tags.delete(key);
     }
   }
 
@@ -93,8 +146,13 @@ export class TownPanel {
     const world = this.ctrl.world;
     const town = world.town;
     if (!town) return;
-    // cabeçalho
-    this.head.replaceChildren(el('div', 'town-title', t('town.title', { name: town.name })), el('div', 'panel-note', t('town.street', { street: town.street })));
+    // cabeçalho: a cidade e o bairro do lote escolhido
+    const picked = town.lots.find((l) => l.id === this.ctrl.townLot);
+    const district = picked ? districtOf(town, picked) : { name: town.name, street: town.street };
+    this.head.replaceChildren(
+      el('div', 'town-title', town.city ? t('city.title', { name: town.city.name }) : t('town.title', { name: town.name })),
+      el('div', 'panel-note', town.city ? t('city.district', { name: district.name, street: district.street }) : t('town.street', { street: town.street })),
+    );
     const back = el('button', 'btn btn-go', t('town.back'));
     back.addEventListener('click', () => this.ctrl.closeTown());
     back.hidden = this.ctrl.houseEmpty;
@@ -110,21 +168,6 @@ export class TownPanel {
       tabs.append(b);
     }
     this.head.append(tabs, back);
-    // plaquinhas
-    this.tagsEl.replaceChildren();
-    this.tags.clear();
-    for (const lot of town.lots) {
-      const status = lotStatus(world, lot);
-      const fam = familyById(world, lot.familyId);
-      const b = el('button', `town-tag ${status}`);
-      b.append(el('b', '', t('town.lot', { number: lot.number })), el('span', '', status === 'forSale' ? t('town.forSale') : status === 'vacant' ? t('town.vacant') : (fam?.name ?? '')));
-      b.addEventListener('click', () => {
-        this.ctrl.townLot = lot.id;
-        this.tab = 'lot';
-      });
-      this.tagsEl.append(b);
-      this.tags.set(lot.id, b);
-    }
     if (this.tab === 'families') this.renderFamilies();
     else this.renderDetail(town.lots.find((l) => l.id === this.ctrl.townLot));
     // mural
@@ -148,7 +191,7 @@ export class TownPanel {
     const catalog = this.ctrl.sim.catalog;
     const status = lotStatus(world, lot);
     const fam = familyById(world, lot.familyId);
-    d.append(el('div', 'town-sub', t('town.address', { street: town.street, number: lot.number })));
+    d.append(el('div', 'town-sub', addressOf(world, lot)));
     const title =
       status === 'active' ? `${t('town.family', { name: fam?.name ?? '' })} · ${t('town.active')}` : status === 'family' ? t('town.family', { name: fam?.name ?? '' }) : status === 'forSale' ? t('town.forSale') : t('town.vacant');
     d.append(el('div', 'town-title', title));
@@ -173,8 +216,10 @@ export class TownPanel {
           const home = el('button', 'btn btn-go', t('town.goHome'));
           home.addEventListener('click', () => this.ctrl.closeTown());
           actions.append(home);
+          if (town.city) this.renderGarage(d);
         }
       } else {
+        if (town.city && !this.ctrl.houseEmpty) this.renderVisit(d, lot, fam.name);
         const play = el('button', 'btn btn-go', t('town.play'));
         play.addEventListener('click', () => {
           if (this.ctrl.townCommand({ type: 'playFamily', familyId: fam.id })) this.ctrl.toast(t('town.played', { name: fam.name }));
@@ -265,6 +310,106 @@ export class TownPanel {
     d.append(actions);
   }
 
+  /** Plano 2, bloco 12: clicar no ícone de alguém da família leva a câmera até ele (ou segue a viagem). */
+  private goToFolk(id: number): void {
+    const f = this.ctrl.sim.findFolk(id);
+    if (!f || f.visit) return;
+    this.ctrl.selectedFolkId = id;
+    if (f.away?.trip && this.ctrl.world.trip) {
+      this.ctrl.followTrip = true;
+      this.ctrl.viewRequest = { zoom: 34, where: 'here' };
+      return;
+    }
+    if (!this.ctrl.world.folks.includes(f)) {
+      this.ctrl.viewRequest = { zoom: 20, where: 'home' };
+      return;
+    }
+    this.ctrl.closeTown();
+  }
+
+  /** Plano 2, bloco 12: quem vai visitar a família deste lote, e como. */
+  private renderVisit(d: HTMLElement, lot: Lot, family: string): void {
+    const world = this.ctrl.world;
+    const home = activeLot(world);
+    if (!home || world.outing) return;
+    d.append(el('div', 'town-sub', t('visit.title', { family })));
+    if (world.trip) {
+      d.append(el('div', 'panel-note', t('visit.busy')));
+      return;
+    }
+    const people = this.ctrl.sim.household().filter((f) => f.age !== 'baby');
+    const free = people.filter((f) => canGo(f));
+    const chosen = (this.visitors ??= new Set(free.filter((f) => f.id === this.ctrl.selectedFolkId).map((f) => f.id)));
+    for (const id of [...chosen]) if (!free.some((f) => f.id === id)) chosen.delete(id);
+    const list = el('ul', 'town-people');
+    for (const f of people) {
+      const li = el('li');
+      const label = el('label', 'town-check');
+      const box = el('input');
+      box.type = 'checkbox';
+      box.checked = chosen.has(f.id);
+      box.disabled = !canGo(f);
+      box.addEventListener('change', () => {
+        if (box.checked) chosen.add(f.id);
+        else chosen.delete(f.id);
+        this.shownKey = '';
+      });
+      label.append(box, el('span', '', f.name + (f.away ? ` · ${t(f.away.trip ? 'visit.onStreet' : 'outing.away')}` : '')));
+      li.append(label);
+      list.append(li);
+    }
+    d.append(list);
+    const goers = people.filter((f) => chosen.has(f.id));
+    const length = streetRoute(world.town!, lotDoor(home, world.exit), lotDoor(lot, lot.home?.exit ?? world.exit)).length;
+    this.visitMode = usableMode(world, goers, length, this.visitMode, true);
+    d.append(
+      travelPicker(
+        world,
+        goers,
+        length,
+        this.visitMode,
+        (m) => {
+          this.visitMode = m;
+          this.shownKey = '';
+        },
+        true,
+      ),
+    );
+    const go = el('button', 'btn btn-go', t('visit.go'));
+    go.disabled = goers.length === 0;
+    go.addEventListener('click', () => {
+      if (this.ctrl.cityCommand({ type: 'visitLot', folkIds: [...chosen], lotId: lot.id, mode: this.visitMode })) {
+        this.ctrl.toast(t('visit.left', { family }));
+        this.visitors = null;
+      }
+    });
+    d.append(go, el('div', 'panel-note', t('visit.hint')));
+  }
+
+  /** Plano 2, bloco 12: bicicletas e carro da família (comprar e vender). */
+  private renderGarage(d: HTMLElement): void {
+    const world = this.ctrl.world;
+    const owned = vehiclesOf(world);
+    const bikes = owned.filter((v) => v === 'bike').length;
+    const hasCar = owned.includes('car');
+    d.append(el('div', 'town-sub', t('garage.title')));
+    d.append(el('div', 'panel-note', t('garage.has', { bikes, car: t(hasCar ? 'garage.car' : 'garage.noCar') })));
+    const row = el('div', 'town-actions');
+    const add = (label: string, enabled: boolean, cmd: Parameters<GameController['cityCommand']>[0], toast: string) => {
+      const b = el('button', 'btn btn-small', label);
+      b.disabled = !enabled;
+      b.addEventListener('click', () => {
+        if (this.ctrl.cityCommand(cmd)) this.ctrl.toast(toast);
+      });
+      row.append(b);
+    };
+    add(t('garage.buyBike', { price: formatMoney(VEHICLE_PRICE.bike) }), world.household.funds >= VEHICLE_PRICE.bike, { type: 'buyVehicle', kind: 'bike' }, t('garage.boughtBike'));
+    if (hasCar) add(t('garage.sellCar', { price: formatMoney(VEHICLE_PRICE.car / 2) }), true, { type: 'sellVehicle', kind: 'car' }, t('garage.soldCar'));
+    else add(t('garage.buyCar', { price: formatMoney(VEHICLE_PRICE.car) }), world.household.funds >= VEHICLE_PRICE.car, { type: 'buyVehicle', kind: 'car' }, t('garage.boughtCar'));
+    if (bikes) add(t('garage.sellBike', { price: formatMoney(VEHICLE_PRICE.bike / 2) }), true, { type: 'sellVehicle', kind: 'bike' }, t('garage.soldBike'));
+    d.append(row, el('div', 'panel-note', t('garage.hint')));
+  }
+
   /** Plano 2, bloco 11: todas as famílias da cidade, as do bairro e as da gaveta. */
   private renderFamilies(): void {
     const d = this.detail;
@@ -277,7 +422,7 @@ export class TownPanel {
     for (const fam of ordered) {
       const li = el('li', inBin(fam) ? 'binned' : '');
       const lot = inBin(fam) ? undefined : town.lots.find((l) => l.id === fam.lotId);
-      const where = lot ? t('town.lot', { number: lot.number }) : t('bin.inBin');
+      const where = lot ? addressOf(world, lot) : t('bin.inBin');
       const people = peopleOf(world, fam).length;
       li.append(el('b', '', fam.name), el('span', '', ` · ${where} · ${t('bin.people', { n: people })} · ${formatMoney(fundsOf(world, fam))}`));
       const row = el('span', 'town-row-actions');

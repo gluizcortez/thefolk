@@ -5,6 +5,7 @@ import { NEIGHBORS, NEIGHBOR_TIES } from '../src/data/neighbors';
 import { TOWN } from '../src/data/town';
 import {
   NEW_FAMILY_FUNDS,
+  SAVE_VERSION,
   NEW_LEAF,
   Sim,
   TOWN_HOUR,
@@ -137,7 +138,7 @@ describe('plano 2, bloco 11: gaveta de famílias', () => {
     expect(binFamilies(back)[0].bin).toHaveLength(2);
     const v30 = JSON.parse(JSON.stringify({ version: 30, savedAt: 1, world: townSim().world }));
     const loaded = deserialize(v30, CTX);
-    expect(loaded.version).toBe(31);
+    expect(loaded.version).toBe(SAVE_VERSION);
     expect(binFamilies(loaded.world)).toHaveLength(0);
   });
 });

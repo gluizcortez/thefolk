@@ -27,6 +27,7 @@ import {
   stairPlan,
   stairStepAt,
   strideOf,
+  cityOn,
 } from '../sim';
 import type {
   Action,
@@ -85,12 +86,13 @@ import { WearFx, buildMess } from './art/upkeep';
 import { buildBoard, buildCover, buildDishStack, buildMeal, buildPot, buildRumple } from './art/chores';
 import type { Animated } from './art/chores';
 import type { GameController } from './controller';
-import { TownView } from './town';
+import { CITY_ZOOM, CityLayer, MAP_ZOOM } from './city';
+import type { MapMark } from './city';
 import { shownWallMode } from './viewMode';
 
 /** 30° dá a projeção 2:1 das vistas isométricas clássicas */
 const ELEVATION = THREE.MathUtils.degToRad(30);
-const CAMERA_DISTANCE = 60;
+const CAMERA_DISTANCE = 400;
 /**
  * Altura-alvo da imagem interna, em linhas. A cena é renderizada perto disso e
  * ampliada por um fator inteiro, com pixels nítidos, como num monitor da época.
@@ -339,7 +341,7 @@ interface Ping {
 export class GameView {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
-  private camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
+  private camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1400);
   private sun = new THREE.DirectionalLight(PAL.sun, 2.0);
   private hemi = new THREE.HemisphereLight(0xffffff, 0xc4b295, 1.5);
   private frameBuffer: THREE.WebGLRenderTarget;
@@ -414,8 +416,10 @@ export class GameView {
   private fireViews = new Map<number, { group: THREE.Group; tick(time: number, heat: number): void; smoke: THREE.Sprite[]; light: THREE.PointLight | null }>();
   private spiritViews = new Map<string, { model: FolkModel; mats: THREE.MeshPhongMaterial[] }>();
   private sprays = new Map<number, THREE.Mesh>();
-  /** bloco 15: a vista do bairro (desenhada na mesma imagem interna) */
-  readonly town: TownView;
+  /** plano 2, bloco 12: a cidade em volta do lote (substitui a tela do bairro) */
+  readonly city: CityLayer;
+  /** plano 2, bloco 12: altura de vista pedida (o zoom anda até ela) */
+  private zoomGoal: number | null = null;
 
   constructor(
     private readonly container: HTMLElement,
@@ -470,7 +474,8 @@ export class GameView {
 
     this.post.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), retroPass(this.frameBuffer.texture)));
 
-    this.town = new TownView(ctrl);
+    this.city = new CityLayer(ctrl);
+    this.scene.add(this.city.root);
     this.bindInput();
     window.addEventListener('resize', () => this.resize());
     this.resize();
@@ -567,7 +572,7 @@ export class GameView {
     const free = (x: number, y: number) =>
       x >= 0 && y >= 0 && x < grid.w && y < grid.h && floors[grid.floor[y * grid.w + x]]?.outdoor === true && !floors[grid.floor[y * grid.w + x]]?.yard && !occupied.has(`${x},${y}`);
     const hole = (x: number, y: number) => !!floors[grid.floor[y * grid.w + x]]?.water;
-    this.scenery = buildScenery(grid, free, hole, !!world.outing);
+    this.scenery = buildScenery(grid, free, hole, !!world.outing, cityOn(world));
     this.worldRoot.add(this.scenery, this.house.group);
     this.builtGrid = this.ctrl.gridVersion;
     this.wallState = '';
@@ -678,6 +683,7 @@ export class GameView {
 
   private updateCamera(dt: number): void {
     this.consumeFocus(dt);
+    this.followCity(dt);
     const goal = Math.PI / 4 + this.ctrl.camQuarter * (Math.PI / 2);
     this.azimuth += (goal - this.azimuth) * (1 - Math.exp(-dt * 9));
     if (Math.abs(goal - this.azimuth) < 0.0005) this.azimuth = goal;
@@ -740,31 +746,26 @@ export class GameView {
 
   private bindInput(): void {
     const el = this.renderer.domElement;
-    const ndc = (e: PointerEvent): [number, number] => {
-      const rect = el.getBoundingClientRect();
-      return [((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1];
-    };
     el.addEventListener('pointerdown', (e) => {
       el.setPointerCapture(e.pointerId);
-      // bloco 15: no bairro o clique escolhe um lote e o arrasto anda pela rua
-      if (this.ctrl.screen === 'town') {
-        this.town.pointerDown(e.clientX, e.clientY);
-        return;
-      }
       // no modo construção o botão esquerdo traça; o direito arrasta a câmera
       const building = this.ctrl.mode === 'build' && e.button === 0 && !this.hud.isMenuOpen();
       Object.assign(this.pointer, { down: true, x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, dragged: false, building });
       if (building) this.beginBuildDrag(e.clientX, e.clientY);
     });
     el.addEventListener('pointermove', (e) => {
+      const p = this.pointer;
+      // plano 2, bloco 12: no mapa da cidade o mouse aponta lotes e o arrasto anda pelo mapa
       if (this.ctrl.screen === 'town') {
-        const [nx, ny] = ndc(e);
-        this.town.pointerMove(e.clientX, e.clientY, nx, ny, el.clientHeight);
-        el.style.cursor = this.town.hover ? 'pointer' : 'default';
+        if (p.down && Math.hypot(e.clientX - p.startX, e.clientY - p.startY) > CLICK_SLOP) p.dragged = true;
+        if (p.down && p.dragged) this.pan(e.clientX - p.x, e.clientY - p.y);
+        else this.city.hover = this.mapLotAt(e.clientX, e.clientY);
+        el.style.cursor = this.city.hover ? 'pointer' : 'default';
         this.hud.setTooltip(0, 0, null);
+        p.x = e.clientX;
+        p.y = e.clientY;
         return;
       }
-      const p = this.pointer;
       this.shiftDown = e.shiftKey;
       if (this.ctrl.mode === 'build' && (!p.down || p.building)) {
         if (p.down && Math.hypot(e.clientX - p.startX, e.clientY - p.startY) > CLICK_SLOP) p.dragged = true;
@@ -807,9 +808,13 @@ export class GameView {
     });
     el.addEventListener('pointerup', (e) => {
       if (this.ctrl.screen === 'town') {
-        const [nx, ny] = ndc(e);
-        const lot = this.town.pointerUp(nx, ny);
-        if (lot) this.ctrl.townLot = lot;
+        const dragged = this.pointer.dragged;
+        this.pointer.down = false;
+        this.pointer.building = false;
+        if (!dragged) {
+          const lot = this.mapLotAt(e.clientX, e.clientY);
+          if (lot) this.ctrl.townLot = lot;
+        }
         return;
       }
       const wasDrag = this.pointer.dragged;
@@ -838,11 +843,10 @@ export class GameView {
       'wheel',
       (e) => {
         e.preventDefault();
-        if (this.ctrl.screen === 'town') {
-          this.town.zoom(e.deltaY);
-          return;
-        }
-        this.viewHeight = THREE.MathUtils.clamp(this.viewHeight * (e.deltaY > 0 ? 1.1 : 0.9), 4, 24);
+        // plano 2, bloco 12: afastar passa da casa para a cidade inteira sem trocar de tela
+        this.zoomGoal = null;
+        const max = this.city.on ? CITY_ZOOM : 24;
+        this.viewHeight = THREE.MathUtils.clamp(this.viewHeight * (e.deltaY > 0 ? 1.12 : 0.89), 4, max);
       },
       { passive: false },
     );
@@ -859,9 +863,9 @@ export class GameView {
       if (e.target instanceof HTMLInputElement) return;
       // bloco 5: com a tela de criar família aberta, o jogo não ouve o teclado
       if (document.querySelector('.creator:not([hidden])')) return;
-      // bloco 15: no bairro só o Esc (volta para o lote) vale
-      if (this.ctrl.screen === 'town') {
-        if (e.code === 'Escape') this.ctrl.closeTown();
+      // plano 2, bloco 12: no mapa, o Esc volta para a casa
+      if (this.ctrl.screen === 'town' && e.code === 'Escape') {
+        this.ctrl.closeTown();
         return;
       }
       if (e.key === 'Shift') this.shiftDown = true;
@@ -992,9 +996,72 @@ export class GameView {
     const along = (dyPx * unit) / Math.sin(ELEVATION);
     this.target.x += -rightX * dxPx * unit + fwdX * along;
     this.target.z += -rightZ * dxPx * unit + fwdZ * along;
+    this.ctrl.followTrip = false;
+    this.clampTarget();
+  }
+
+  /** Plano 2, bloco 12: a câmera não sai do lote (sem cidade) nem da cidade. */
+  private clampTarget(): void {
+    if (this.city.on) {
+      const p = this.city.clampLocal(this.target.x, this.target.z);
+      this.target.x = p.x;
+      this.target.z = p.z;
+      return;
+    }
     const { w, h } = this.ctrl.world.grid;
     this.target.x = THREE.MathUtils.clamp(this.target.x, -6, w + 6);
     this.target.z = THREE.MathUtils.clamp(this.target.z, -6, h + 8);
+  }
+
+  /** Plano 2, bloco 12: lote da cidade debaixo do mouse (no mapa). */
+  private mapLotAt(clientX: number, clientY: number): number {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const p = new THREE.Vector3();
+    if (!this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p)) return 0;
+    return this.city.lotAt(p);
+  }
+
+  /** Plano 2, bloco 12: etiquetas do mapa e ícones da família, já na tela. */
+  mapMarks(): MapMark[] {
+    return this.city.marks(this.camera);
+  }
+
+  /** Plano 2, bloco 12: zoom pedido de fora (abrir o mapa, voltar para casa, seguir a viagem). */
+  private followCity(dt: number): void {
+    const req = this.ctrl.viewRequest;
+    if (req) {
+      this.ctrl.viewRequest = null;
+      this.zoomGoal = req.zoom;
+      const p = req.where === 'city' ? this.city.cityCenterLocal() : req.where === 'home' ? this.city.homeLocal() : null;
+      if (p) this.focusGoal = { x: p.x, z: p.z };
+    }
+    if (this.zoomGoal !== null) {
+      const k = 1 - Math.exp(-dt * 4);
+      this.viewHeight += (this.zoomGoal - this.viewHeight) * k;
+      if (Math.abs(this.zoomGoal - this.viewHeight) < 0.05) {
+        this.viewHeight = this.zoomGoal;
+        this.zoomGoal = null;
+      }
+    }
+    // a câmera acompanha quem anda pela rua
+    if (this.ctrl.followTrip) {
+      const p = this.city.tripLocal(this.ctrl.world.tick + Math.min(1, this.acc));
+      if (!p) {
+        // chegou: volta para perto de quem chegou
+        this.ctrl.followTrip = false;
+        if (!this.ctrl.world.trip) this.ctrl.closeTown();
+      } else {
+        this.focusGoal = null;
+        const k = 1 - Math.exp(-dt * 6);
+        this.target.x += (p.x - this.target.x) * k;
+        this.target.z += (p.z - this.target.z) * k;
+      }
+    }
+    // longe o bastante, a tela vira o mapa (cartão do lote, etiquetas)
+    const map = this.city.on && this.viewHeight >= MAP_ZOOM;
+    if (map !== (this.ctrl.screen === 'town')) this.ctrl.setMapScreen(map);
   }
 
   private pick(clientX: number, clientY: number): Hover {
@@ -1259,20 +1326,6 @@ export class GameView {
     if (this.builtGrid !== this.ctrl.gridVersion) this.buildHouse();
     const world = this.ctrl.world;
 
-    // bloco 15: com o bairro aberto, a tela mostra a rua inteira (o tempo está parado)
-    if (this.ctrl.screen === 'town') {
-      const el = this.renderer.domElement;
-      this.town.render(this.renderer, this.frameBuffer, el.clientWidth / Math.max(1, el.clientHeight));
-      this.renderer.setRenderTarget(null);
-      this.renderer.render(this.post, this.postCamera);
-      this.hudClock += dt;
-      if (this.hudClock > 0.09) {
-        this.hudClock = 0;
-        this.hud.update();
-      }
-      return;
-    }
-
     const rate = TICKS_PER_SECOND[world.speed];
     if (rate > 0) {
       this.acc += dt * rate;
@@ -1288,6 +1341,8 @@ export class GameView {
     const alpha = Math.min(1, this.acc);
 
     this.updateCamera(dt);
+    // plano 2, bloco 12: a cidade em volta (lotes detalhados por perto, quem anda na rua)
+    this.city.sync(this.target, this.viewHeight, world.tick + alpha);
     const night = nightAmount(clockOf(world.tick).dayFraction + alpha / 1440);
     // bloco 13: chuva escurece o dia e cai em riscos; a água da piscina ondula
     const wet = raining(world);

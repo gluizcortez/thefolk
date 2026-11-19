@@ -94,7 +94,7 @@ export function canGo(folk: Folk): boolean {
  * adulto em casa (no trabalho também conta: volta para casa no fim do turno).
  */
 export function outingProblem(world: World, folkIds: number[]): OutingProblem | null {
-  if (world.outing) return 'onOuting';
+  if (world.outing || world.trip) return 'onOuting';
   if (folkIds.length === 0) return 'noGoers';
   if (!venueOpen(world.tick)) return 'venueClosed';
   if (world.fires.length > 0 || world.party || world.passings.length > 0) return 'busyLot';
@@ -106,7 +106,8 @@ export function outingProblem(world: World, folkIds: number[]): OutingProblem | 
   // bloco 17: jovem já fica em casa sozinho e olha os pequenos
   const keeper = stay.some((f) => isAdult(f) || f.age === 'teen');
   if (stay.some((f) => f.age === 'baby' || f.age === 'child') && !keeper) return 'babyAlone';
-  if (world.household.funds < TAXI_FARE) return 'funds';
+  // plano 2, bloco 12: na cidade aberta o preço depende do jeito de ir (sim/city.ts)
+  if (!world.town?.city && world.household.funds < TAXI_FARE) return 'funds';
   return null;
 }
 

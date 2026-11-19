@@ -218,7 +218,7 @@ export function hydrant(x: number, z: number): THREE.Group {
   return g;
 }
 
-function fence(x0: number, z0: number, x1: number, z1: number): THREE.Group {
+export function fence(x0: number, z0: number, x1: number, z1: number): THREE.Group {
   const g = new THREE.Group();
   const len = Math.hypot(x1 - x0, z1 - z0);
   const panel = new THREE.Mesh(
@@ -239,7 +239,7 @@ function fence(x0: number, z0: number, x1: number, z1: number): THREE.Group {
  * Bloco 13: o gramado em volta (160 x 160, centrado no lote) com o lote feito
  * tile a tile, para a piscina poder furar o chão.
  */
-function groundMesh(w: number, h: number, hole: (x: number, y: number) => boolean): THREE.Mesh {
+function groundMesh(w: number, h: number, hole: (x: number, y: number) => boolean, margin = 80): THREE.Mesh {
   const pos: number[] = [];
   const uv: number[] = [];
   const quad = (x0: number, z0: number, x1: number, z1: number) => {
@@ -254,14 +254,16 @@ function groundMesh(w: number, h: number, hole: (x: number, y: number) => boolea
       uv.push(p[i][0] / 2, -p[i][1] / 2);
     }
   };
-  const X0 = w / 2 - 80;
-  const X1 = w / 2 + 80;
-  const Z0 = h / 2 - 80;
-  const Z1 = h / 2 + 80;
-  quad(X0, Z0, X1, 0);
-  quad(X0, h, X1, Z1);
-  quad(X0, 0, 0, h);
-  quad(w, 0, X1, h);
+  if (margin > 0) {
+    const X0 = w / 2 - margin;
+    const X1 = w / 2 + margin;
+    const Z0 = h / 2 - margin;
+    const Z1 = h / 2 + margin;
+    quad(X0, Z0, X1, 0);
+    quad(X0, h, X1, Z1);
+    quad(X0, 0, 0, h);
+    quad(w, 0, X1, h);
+  }
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (!hole(x, y)) quad(x, y, x + 1, y + 1);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -272,7 +274,7 @@ function groundMesh(w: number, h: number, hole: (x: number, y: number) => boolea
   return mesh;
 }
 
-function neighbor(x: number, z: number, w: number, d: number, variant: number, turn: number): THREE.Group {
+export function neighbor(x: number, z: number, w: number, d: number, variant: number, turn: number): THREE.Group {
   const g = new THREE.Group();
   const wallMat = texMat(`houseWall:${variant}`);
   const plain = colorMat([0xcf9f8f, 0xa9c29a, 0xd9c486][variant]);
@@ -288,7 +290,7 @@ function neighbor(x: number, z: number, w: number, d: number, variant: number, t
 }
 
 /** Bloco 16: sobrado de comércio do centro (dois andares, platibanda, janelas de sacada e toldo listrado). */
-function sobrado(x: number, z: number, w: number, variant: number, turn: number): THREE.Group {
+export function sobrado(x: number, z: number, w: number, variant: number, turn: number): THREE.Group {
   const g = new THREE.Group();
   const tones = [0xe0b85a, 0x8fb7a8, 0xd98c6a, 0xb7a3c9, 0xe8dcc0, 0x9ab6d4];
   const wall = colorMat(tones[variant % tones.length]);
@@ -317,7 +319,7 @@ function sobrado(x: number, z: number, w: number, variant: number, turn: number)
 }
 
 /** Bloco 16: torre da igreja matriz, ao fundo do largo. */
-function belltower(x: number, z: number): THREE.Group {
+export function belltower(x: number, z: number): THREE.Group {
   const g = new THREE.Group();
   const wall = colorMat(0xf0e8d6);
   const trim = colorMat(0xc9a25a);
@@ -342,14 +344,16 @@ export function buildScenery(
   free: (x: number, y: number) => boolean = () => true,
   hole: (x: number, y: number) => boolean = () => false,
   downtown = false,
+  /** plano 2, bloco 12: a cidade desenha o entorno (rua, calçada, vizinhos e árvores de fora) */
+  city = false,
 ): THREE.Group {
   const g = new THREE.Group();
   const rnd = seeded(77);
   const { w, h } = grid;
 
   // gramado enorme: o mesmo padrão cobre o terreno e o entorno (bloco 13:
-  // com um buraco em cada tile de piscina cavada)
-  const ground = groundMesh(w, h, hole);
+  // com um buraco em cada tile de piscina cavada); na cidade, só o terreno
+  const ground = groundMesh(w, h, hole, city ? 0 : 80);
   g.add(ground);
 
   // calçada e rua na frente (sul) do terreno
@@ -362,12 +366,14 @@ export function buildScenery(
     g.add(m);
   };
   const front = h + 1;
-  strip(front, front + 1.4, 'sidewalk', 0.02, 1);
-  strip(front + 1.4, front + 6.4, 'road', 0.015, 0.5);
-  strip(front + 6.4, front + 7.8, 'sidewalk', 0.02, 1);
-  g.add(box(160, 0.1, 0.12, colorMat(0x9a9588), w / 2, 0, front + 1.4));
-  g.add(box(160, 0.1, 0.12, colorMat(0x9a9588), w / 2, 0, front + 6.4));
-  for (let x = -70; x < 90; x += 3) g.add(box(1.4, 0.005, 0.14, colorMat(0xd9cf8a), x, 0.02, front + 3.9));
+  if (!city) {
+    strip(front, front + 1.4, 'sidewalk', 0.02, 1);
+    strip(front + 1.4, front + 6.4, 'road', 0.015, 0.5);
+    strip(front + 6.4, front + 7.8, 'sidewalk', 0.02, 1);
+    g.add(box(160, 0.1, 0.12, colorMat(0x9a9588), w / 2, 0, front + 1.4));
+    g.add(box(160, 0.1, 0.12, colorMat(0x9a9588), w / 2, 0, front + 6.4));
+    for (let x = -70; x < 90; x += 3) g.add(box(1.4, 0.005, 0.14, colorMat(0xd9cf8a), x, 0.02, front + 3.9));
+  }
 
   // bloco 16: no centro, sobrados de comércio em volta do largo e a torre da matriz
   if (downtown) {
@@ -418,11 +424,11 @@ export function buildScenery(
     [9, front + 9.8, 1.3],
     [24, front + 9.4, 1.1],
   ];
-  for (const [x, z, s] of trees) g.add(tree(x, z, s, rnd));
+  for (const [x, z, s] of trees) if (!city || (z < front && x > -5 && x < w + 5)) g.add(tree(x, z, s, rnd));
   for (let i = 0; i < 9; i++) g.add(bush(1 + i * 1.7 + rnd() * 0.5, -1.1 - rnd() * 0.3, 0.8 + rnd() * 0.5));
   for (let i = 0; i < 6; i++) g.add(bush(-1.2 - rnd() * 0.3, 1 + i * 2.2 + rnd() * 0.5, 0.8 + rnd() * 0.5));
 
-  g.add(
+  if (!city) g.add(
     neighbor(2, -14, 7, 5, 0, 0),
     neighbor(15, -15, 6.5, 5.5, 1, 0),
     neighbor(-16, 5, 5.5, 7, 2, Math.PI / 2),
@@ -442,16 +448,17 @@ export function buildScenery(
     g.add(flowerBed(x + 0.5, y + 0.45, 0.96, true));
   }
 
-  // rua e calçada: carros, postes, lixeira e hidrante
-  g.add(
-    // bloco 8: a faixa da frente fica livre para as caronas
-    car(w / 2 + 9, front + 5.2, 0x2f8a86),
-    car(w / 2 - 12, front + 5.2, 0xc9382f),
-    streetLamp(w / 2 - 6, front + 0.9),
-    streetLamp(w / 2 + 11, front + 0.9),
-    trashCan(w / 2 + 3.2, front - 0.35),
-    hydrant(w / 2 - 3.5, front + 0.7),
-  );
+  // rua e calçada: carros, postes, lixeira e hidrante (na cidade, os postes e carros são da rua)
+  g.add(trashCan(w / 2 + 3.2, front - 0.35), hydrant(w / 2 - 3.5, front + 0.7));
+  if (!city) {
+    g.add(
+      // bloco 8: a faixa da frente fica livre para as caronas
+      car(w / 2 + 9, front + 5.2, 0x2f8a86),
+      car(w / 2 - 12, front + 5.2, 0xc9382f),
+      streetLamp(w / 2 - 6, front + 0.9),
+      streetLamp(w / 2 + 11, front + 0.9),
+    );
+  }
   // quintal: banco e bebedouro de passarinho na frente, varal na lateral
   const yard = (x0: number, y0: number, x1: number, y1: number) => {
     for (let y = y0; y <= y1; y++) {

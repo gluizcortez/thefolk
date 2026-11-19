@@ -6,7 +6,7 @@ import { CATALOG } from '../data/catalog';
 import { starterHouse } from '../data/house';
 import { familyWorld } from '../data/family';
 import { NEIGHBORS, NEIGHBOR_TIES } from '../data/neighbors';
-import { TOWN } from '../data/town';
+import { CITY } from '../data/city';
 import { hasText, t } from '../i18n';
 import { idbBackend } from '../platform/saveStore';
 import type { SaveBackend, SlotId, SlotMeta } from '../platform/slots';
@@ -100,7 +100,7 @@ import type { WallMode } from './viewMode';
 import { stepWallMode } from './viewMode';
 
 /** Dados de fora do núcleo que as migrações de save usam. */
-const MIGRATION = { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES, catalog: CATALOG, town: TOWN };
+const MIGRATION = { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES, catalog: CATALOG, town: CITY };
 
 /** Bloco 7: o que aconteceu com um comando (a camada de som escuta). */
 export type CommandListener = (cmd: Command, ok: boolean) => void;
@@ -272,7 +272,10 @@ export class GameController {
   townLot = 0;
   /** bloco 15: muda quando lotes ou famílias mudam (a tela do bairro refaz as casas) */
   townVersion = 0;
-  private speedBeforeTown: Speed = 1;
+  /** plano 2, bloco 12: a câmera acompanha quem anda pela rua */
+  followTrip = false;
+  /** plano 2, bloco 12: zoom pedido para a tela (mapa da cidade, de volta para casa) */
+  viewRequest: { zoom: number; where: 'city' | 'home' | 'here' } | null = null;
 
   constructor() {
     this.sim = new Sim(CATALOG, townWorld(createWorld(starterHouse(freshSeed()))));
@@ -531,6 +534,10 @@ export class GameController {
     // bloco 16: o centro fechou (ou todo mundo cansou): o táxi trouxe a turma de volta
     if (this.sim.lotStamp !== this.seenLot) {
       this.lotChanged();
+      // plano 2, bloco 12: chegou ao centro (a câmera desce para o largo) ou voltou andando para casa
+      this.followTrip = false;
+      this.viewRequest = { zoom: 11, where: 'here' };
+      this.startFollow();
       return;
     }
     // bloco 14: a simulação tirou ou pôs objetos (fogo, gatuno, lápide): a tela redesenha
@@ -624,30 +631,46 @@ export class GameController {
 
   // ---------- bloco 15: bairro ----------
 
-  /** Abre a vista do bairro (o tempo para enquanto está aberta). */
+  /**
+   * Plano 2, bloco 12: abre o mapa da cidade. Não é outra tela: a câmera se
+   * afasta da casa até a cidade inteira caber (o tempo continua andando).
+   */
   openTown(): void {
-    if (!this.world.town || this.screen === 'town') return;
+    if (!this.world.town) return;
     if (this.mode !== 'live') this.setMode('live');
-    this.speedBeforeTown = this.world.speed === 0 ? 1 : this.world.speed;
-    this.command({ type: 'setSpeed', speed: 0 });
-    this.screen = 'town';
+    this.followTrip = false;
+    this.viewRequest = { zoom: 170, where: 'city' };
     this.townLot = this.sim.world.town?.lots.find((l) => l.familyId === this.world.town?.active)?.id ?? 0;
-    this.townVersion++;
   }
 
-  /** Volta para o lote em jogo, na velocidade de antes. */
+  /** Volta a câmera para perto de quem está selecionado. */
   closeTown(): void {
-    if (this.screen !== 'town') return;
-    this.screen = 'lot';
-    if (!this.houseEmpty) this.resumeSpeed(this.speedBeforeTown);
+    const f = this.sim.findFolk(this.selectedFolkId);
+    if (f?.away?.trip && this.world.trip) {
+      this.followTrip = true;
+      this.viewRequest = { zoom: 34, where: 'here' };
+      return;
+    }
+    this.viewRequest = { zoom: 11, where: 'here' };
+    if (f && !f.away) this.focus({ folkId: f.id });
+    else this.viewRequest = { zoom: 11, where: 'home' };
+  }
+
+  /** A tela passou do limite do mapa (de um lado ou do outro). */
+  setMapScreen(on: boolean): void {
+    this.screen = on ? 'town' : 'lot';
+    if (on) {
+      if (this.mode !== 'live') this.setMode('live');
+      if (!this.townLot) this.townLot = this.sim.world.town?.lots.find((l) => l.familyId === this.world.town?.active)?.id ?? 0;
+      this.townVersion++;
+    }
   }
 
   /** Joga com outra família, muda de casa ou traz família nova: o lote em jogo é outro. */
   townCommand(cmd: Extract<Command, { type: 'playFamily' | 'moveHouse' | 'foundFamily' }>): boolean {
     if (!this.commandOrExplain(cmd)) return false;
     this.lotChanged();
-    this.speedBeforeTown = 1;
-    this.closeTown();
+    this.viewRequest = { zoom: 11, where: 'here' };
     return true;
   }
 
@@ -670,7 +693,24 @@ export class GameController {
   outingCommand(cmd: Extract<Command, { type: 'goDowntown' | 'goHome' }>): boolean {
     if (!this.commandOrExplain(cmd)) return false;
     this.lotChanged();
+    this.startFollow();
     return true;
+  }
+
+  /** Plano 2, bloco 12: visita a um vizinho, bicicleta e carro. */
+  cityCommand(cmd: Extract<Command, { type: 'visitLot' | 'buyVehicle' | 'sellVehicle' }>): boolean {
+    if (!this.commandOrExplain(cmd)) return false;
+    if (cmd.type === 'visitLot') this.startFollow();
+    return true;
+  }
+
+  /** Quem saiu à rua: a câmera se afasta um pouco e vai junto. */
+  private startFollow(): void {
+    if (!this.world.trip) return;
+    this.followTrip = true;
+    this.viewRequest = { zoom: 34, where: 'here' };
+    const goer = this.world.trip.goers[0];
+    if (goer && this.sim.findFolk(goer)) this.selectedFolkId = goer;
   }
 
   /** O lote em jogo trocou (bairro, centro): seleção, avisos e a tela inteira de novo. */
@@ -850,7 +890,7 @@ function translateParams(params?: Record<string, string | number>): Record<strin
 
 /** Bloco 15: o jogo novo já nasce num bairro (a casa pronta é o lote 5). */
 function townWorld(world: World): World {
-  foundTown(world, CATALOG, TOWN);
+  foundTown(world, CATALOG, CITY);
   return world;
 }
 

@@ -38,6 +38,7 @@ export * from './yard';
 export * from './peril';
 export * from './town';
 export * from './downtown';
+export * from './city';
 export * from './life';
 export * from './pace';
 export * from './feelings';

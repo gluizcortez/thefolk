@@ -305,6 +305,7 @@ export function createWorld(seed: WorldSeed): World {
     rules: { death: seed.death ?? true, life: seed.life ?? 'off' },
     lastBurglary: seed.startTick,
     town: null,
+    trip: null,
     outing: null,
     lastDate: null,
   };

@@ -15,12 +15,12 @@ import { freshPlant } from './garden';
 import { NEUTRAL_TEMPER, fullLook, monthFor, temperFromTraits } from './temper';
 import { completeTraits, defaultTastes, suggestDream } from './persona';
 import { seedInterests } from './topics';
-import { foundTown } from './town';
+import { foundTown, growCity } from './town';
 import type { TownPlan } from './town';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 31;
+export const SAVE_VERSION = 32;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -499,6 +499,20 @@ const migrations: Record<number, Migration> = {
    * opcional: o save v30 carrega como está, sem família na gaveta.
    */
   30: (save) => save,
+  // plano 2, bloco 12: cidade aberta. O bairro vira a Vila Taramela dentro da
+  // cidade (mesmos lotes, mesmas casas, a família na casa que tinha), chegam
+  // os outros dois bairros com as casas e as famílias da planta, ninguém está
+  // na rua e a família não tem bicicleta nem carro. Quem estava no centro
+  // continua lá (o passeio antigo foi de táxi).
+  31: (save, ctx) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    world.trip = null;
+    const h = world.household as World['household'];
+    h.vehicles ??= [];
+    if (world.outing) world.outing.mode ??= 'taxi';
+    if (ctx.town?.city && ctx.catalog) growCity(world, ctx.catalog, ctx.town);
+    return { ...save, world: world as unknown as Obj };
+  },
 };
 
 /** Cargos por carreira a partir do save v12. */

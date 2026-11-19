@@ -16,6 +16,7 @@ import { ensureInterests } from './topics';
 import { freshState } from './upkeep';
 import { newJob } from './career';
 import { surnameOf } from './kids';
+import { lotDoor, streetRoute } from './city';
 import { firstBillAfter, freshHousehold, gridFromMap, makeFolk } from './world';
 import type { ObjectSeed, RoomStyle } from './world';
 import type { Catalog, Family, Folk, Grid, Lot, LotHome, LogEntry, Neighbor, Town, Vec, World, WorldObject } from './types';
@@ -70,6 +71,17 @@ export interface TownPlan {
   street: string;
   houses: Record<string, HousePlan>;
   lots: LotPlan[];
+  /** plano 2, bloco 12: nome da cidade (sem ele, o bairro fica sozinho, como nos testes antigos) */
+  city?: string;
+  /** plano 2, bloco 12: os outros bairros da cidade (o primeiro é o deste plano) */
+  districts?: DistrictPlan[];
+}
+
+/** Plano 2, bloco 12: um bairro a mais na cidade. */
+export interface DistrictPlan {
+  name: string;
+  street: string;
+  lots: LotPlan[];
 }
 
 // ---------- consultas ----------
@@ -117,7 +129,8 @@ export function fundsOf(world: World, fam: Family): number {
 
 /** Endereço por extenso ("Rua das Taramelas, 5"). */
 export function addressOf(world: World, lot: Lot): string {
-  return `${world.town?.street ?? ''}, ${lot.number}`;
+  const street = world.town?.city?.districts[lot.district ?? 0]?.street ?? world.town?.street ?? '';
+  return `${street}, ${lot.number}`;
 }
 
 /** Quanto valem as paredes, os pisos, as escadas e o telhado de uma casa. */
@@ -186,7 +199,7 @@ export function salePrice(world: World, catalog: Catalog): number {
 /** Dá para sair do lote agora? (fogo, festa ou alguém caído seguram a família). */
 export function leaveProblem(world: World): TownProblem | null {
   if (!world.town) return 'noTown';
-  if (world.outing || world.fires.length > 0 || world.party || world.passings.length > 0 || world.folks.some((f) => f.down)) return 'busyLot';
+  if (world.outing || world.trip || world.fires.length > 0 || world.party || world.passings.length > 0 || world.folks.some((f) => f.down)) return 'busyLot';
   return null;
 }
 
@@ -201,6 +214,15 @@ export function streetSide(world: World, personId: number): -1 | 0 | 1 {
   const there = fam ? lotById(world, fam.lotId) : undefined;
   const here = activeLot(world);
   if (!there || !here) return 0;
+  // plano 2, bloco 12: de outro bairro, vem pela ponta da rua por onde o caminho entra
+  if (world.town?.city && (there.district ?? 0) !== (here.district ?? 0)) {
+    const a = lotDoor(here, world.exit);
+    const route = streetRoute(world.town, lotDoor(there, there.home?.exit ?? world.exit), a);
+    const before = route.points[route.points.length - 3] ?? route.points[0];
+    const d = Math.sign(before.x - a.x);
+    if (d === 0) return 0;
+    return ((here.side === 0 ? d : -d) as -1 | 1);
+  }
   // do lado de baixo da rua o lote está girado: oeste fica à direita
   const flip = here.side === 0 ? 1 : -1;
   const d = there.col - here.col || (there.side === here.side ? 0 : there.number % 2 ? -1 : 1);
@@ -278,34 +300,66 @@ function housemates(world: World, ids: number[]): void {
  */
 export function foundTown(world: World, catalog: Catalog, plan: TownPlan): Town {
   const town: Town = { name: plan.name, street: plan.street, lots: [], families: [], active: 1, nextFamily: 2, feed: [] };
+  if (plan.city) town.city = { name: plan.city, districts: [{ name: plan.name, street: plan.street }] };
   const residents = world.folks.filter((f) => !f.visit);
   const homeIdx = Math.max(0, plan.lots.findIndex((l) => l.home));
   town.families.push({ id: 1, name: surnameOf(residents[0]?.name ?? '') || residents[0]?.name || plan.name, lotId: homeIdx + 1, funds: 0, stash: null, since: world.tick });
   world.town = town;
   plan.lots.forEach((lp, i) => {
     const lot: Lot = { id: i + 1, number: lp.number, side: lp.side, col: lp.col, land: lp.land, familyId: 0, home: null };
+    if (plan.city) lot.district = 0;
     town.lots.push(lot);
     if (i === homeIdx) {
       lot.familyId = 1;
       return;
     }
-    const housePlan = lp.house ? plan.houses[lp.house] : undefined;
-    if (housePlan) lot.home = buildHome(world, catalog, housePlan).home;
-    if (!lp.family || !lot.home) return;
-    const members = lp.family.members
-      .map((name) => world.neighbors.find((n) => n.name === name && !n.service && !n.away && n.home === undefined))
-      .filter((n): n is Neighbor => !!n && !world.folks.some((f) => f.id === n.id));
-    if (members.length === 0) return;
-    const fam: Family = { id: town.nextFamily++, name: lp.family.name, lotId: lot.id, funds: lp.family.funds, stash: null, since: world.tick };
-    town.families.push(fam);
-    lot.familyId = fam.id;
-    for (const n of members) n.home = fam.id;
-    housemates(
-      world,
-      members.map((n) => n.id),
-    );
+    settleLot(world, catalog, plan, lot, lp);
   });
+  growCity(world, catalog, plan);
   return town;
+}
+
+/** Casa pronta e família (se a planta disser) num lote recém-criado. */
+function settleLot(world: World, catalog: Catalog, plan: TownPlan, lot: Lot, lp: LotPlan): void {
+  const town = world.town!;
+  const housePlan = lp.house ? plan.houses[lp.house] : undefined;
+  if (housePlan) lot.home = buildHome(world, catalog, housePlan).home;
+  if (!lp.family || !lot.home) return;
+  const members = lp.family.members
+    .map((name) => world.neighbors.find((n) => n.name === name && !n.service && !n.away && n.home === undefined))
+    .filter((n): n is Neighbor => !!n && !world.folks.some((f) => f.id === n.id) && !(world.outing?.home.folks ?? []).some((f) => f.id === n.id));
+  if (members.length === 0) return;
+  const fam: Family = { id: town.nextFamily++, name: lp.family.name, lotId: lot.id, funds: lp.family.funds, stash: null, since: world.tick };
+  town.families.push(fam);
+  lot.familyId = fam.id;
+  for (const n of members) n.home = fam.id;
+  housemates(
+    world,
+    members.map((n) => n.id),
+  );
+}
+
+/**
+ * Plano 2, bloco 12: o bairro vira um pedaço da cidade. Os lotes que já
+ * existem ficam no bairro 0 (com o mesmo número e a mesma casa) e os bairros
+ * que faltam chegam com as casas e as famílias da planta. Serve para o jogo
+ * novo e para a migração (não refaz o que já existe).
+ */
+export function growCity(world: World, catalog: Catalog, plan: TownPlan): void {
+  const town = world.town;
+  if (!town || !plan.city) return;
+  town.city ??= { name: plan.city, districts: [{ name: town.name, street: town.street }] };
+  for (const lot of town.lots) lot.district ??= 0;
+  (plan.districts ?? []).forEach((dp, i) => {
+    const d = i + 1;
+    if (town.city!.districts[d]) return;
+    town.city!.districts[d] = { name: dp.name, street: dp.street };
+    for (const lp of dp.lots) {
+      const lot: Lot = { id: Math.max(0, ...town.lots.map((l) => l.id)) + 1, number: lp.number, side: lp.side, col: lp.col, land: lp.land, familyId: 0, home: null, district: d };
+      town.lots.push(lot);
+      settleLot(world, catalog, plan, lot, lp);
+    }
+  });
 }
 
 // ---------- trocar de família ----------

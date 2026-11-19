@@ -2392,7 +2392,9 @@ button {
 
 /* ---------- bloco 15: bairro ---------- */
 
-body.town-open #ui > *:not(.town):not(.creator):not(.toasts):not(.notices-col) {
+/* plano 2, bloco 12: no mapa o tempo anda: o relógio fica */
+body.town-open #ui > *:not(.town):not(.creator):not(.toasts):not(.notices-col):not(.dock),
+body.town-open .dock > *:not(.timewrap) {
   display: none !important;
 }
 
@@ -2527,6 +2529,101 @@ body.town-open #ui > *:not(.town):not(.creator):not(.toasts):not(.notices-col) {
 
 .town-tag.hover {
   transform: translate(-50%, -100%) translateY(-2px);
+}
+
+/* ---------- plano 2, bloco 12: mapa da cidade ---------- */
+
+.town-tag.map-lot {
+  padding: 2px 7px;
+  font-size: 11px;
+}
+
+.town-tag.map-district,
+.town-tag.map-place,
+.town-tag.map-street {
+  pointer-events: none;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  color: #fffbe9;
+  font-weight: 800;
+  text-shadow:
+    1px 1px 0 #1f1b19,
+    -1px 1px 0 #1f1b19,
+    1px -1px 0 #1f1b19,
+    -1px -1px 0 #1f1b19;
+}
+
+.town-tag.map-district {
+  font-size: 16px;
+  letter-spacing: 0.03em;
+}
+
+.town-tag.map-place {
+  font-size: 12px;
+  font-style: italic;
+}
+
+.town-tag.map-street {
+  font-size: 10px;
+  transform: translate(-100%, -50%);
+  opacity: 0.85;
+}
+
+.town-tag.map-folk {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 4px;
+  background: var(--mustard);
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.town-tag.map-folk.on {
+  background: #fffbe9;
+}
+
+.map-pin {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--terracotta);
+  border: 2px solid var(--ink);
+}
+
+.travel-modes {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin: 4px 0;
+  pointer-events: auto;
+}
+
+.travel-mode {
+  display: grid;
+  justify-items: center;
+  padding: 4px 2px;
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  background: var(--cream);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.travel-mode b {
+  font-size: 12px;
+}
+
+.travel-mode.on {
+  background: var(--mustard);
+}
+
+.travel-mode:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* ---------- bloco 17: gerações ---------- */

@@ -132,6 +132,7 @@ import {
   partnersOf,
   romanticAct,
   spreadNews,
+  introduce,
 } from './gossip';
 import {
   CIRCLE_EFFECTS,
@@ -264,6 +265,8 @@ import type {
   DeathCause,
   Passing,
   Spirit,
+  TravelMode,
+  Trip,
 } from './types';
 import { NEED_IDS } from './types';
 import type { Chain } from './upkeep';
@@ -284,8 +287,25 @@ import {
 } from './upkeep';
 import { BILL_INTERVAL, isServiceNeighbor } from './world';
 import type { TownProblem } from './town';
-import { TOWN_HOUR, emptyVisitors, familyById, foundFamily, packed, leaveFamily, moveHouse, placeAtHome, playFamily, pushFeed, settle, streetSide, townDay } from './town';
+import { TOWN_HOUR, activeLot, emptyVisitors, familyById, foundFamily, packed, leaveFamily, moveHouse, placeAtHome, playFamily, pushFeed, settle, streetSide, townDay } from './town';
 import type { OutingProblem } from './downtown';
+import type { TravelProblem } from './city';
+import { personOf } from './people';
+import {
+  VEHICLE_PRICE,
+  VISIT_FROM,
+  VISIT_STAY,
+  VISIT_UNTIL,
+  centroDoor,
+  cityOn,
+  flatten,
+  lotDoor,
+  streetRoute,
+  travelCost,
+  travelMinutes,
+  travelProblem,
+} from './city';
+import type { Pt } from './city';
 import {
   CLOSE_HOUR,
   COOK_MINUTES,
@@ -303,6 +323,7 @@ import {
   dateResult,
   lightVenue,
   outingProblem,
+  venueOpen,
 } from './downtown';
 import { spotNear } from './marriage';
 import {
@@ -505,7 +526,13 @@ export type CommandProblem =
   | TownProblem
   | ClanProblem
   // bloco 16
-  | OutingProblem;
+  | OutingProblem
+  // plano 2, bloco 12
+  | TravelProblem
+  | 'visitHours'
+  | 'nobodyThere'
+  | 'noVehicle'
+  | 'hasVehicle';
 
 /** Resultado de uma conversa, para a tela mostrar o que mudou (não vai no save). */
 export interface SocialOutcome {
@@ -1045,9 +1072,36 @@ export class Sim {
         return this.editFolk(cmd.folkId, cmd.look, cmd.closet, cmd.traits);
       // bloco 16: centro e encontros
       case 'goDowntown':
-        return this.goDowntown(cmd.folkIds, cmd.dateId);
+        return this.goDowntown(cmd.folkIds, cmd.dateId, cmd.mode);
       case 'goHome':
-        return this.goHome();
+        return this.goHome(cmd.mode);
+      // plano 2, bloco 12: cidade aberta
+      case 'visitLot':
+        return this.visitLot(cmd.folkIds, cmd.lotId, cmd.mode);
+      case 'buyVehicle': {
+        const h = this.world.household;
+        const owned = (h.vehicles ??= []);
+        if (cmd.kind === 'car' && owned.includes('car')) return this.fail('hasVehicle');
+        if (cmd.kind === 'bike' && owned.filter((v) => v === 'bike').length >= 8) return this.fail('hasVehicle');
+        const price = VEHICLE_PRICE[cmd.kind];
+        if (h.funds < price) return this.fail('funds');
+        h.funds -= price;
+        owned.push(cmd.kind);
+        this.log('log.vehicleBought', { vehicle: `vehicle.${cmd.kind}`, price: formatMoney(price) });
+        return true;
+      }
+      case 'sellVehicle': {
+        const h = this.world.household;
+        const owned = h.vehicles ?? [];
+        const i = owned.indexOf(cmd.kind);
+        if (i < 0) return this.fail('noVehicle');
+        if (this.world.trip && this.world.trip.mode === cmd.kind) return this.fail('onOuting');
+        owned.splice(i, 1);
+        const back = Math.round(VEHICLE_PRICE[cmd.kind] / 2);
+        h.funds += back;
+        this.log('log.vehicleSold', { vehicle: `vehicle.${cmd.kind}`, price: formatMoney(back) });
+        return true;
+      }
       // bloco 17: álbum
       case 'takePhoto': {
         const who = (cmd.who ?? []).filter((id) => this.findFolk(id));
@@ -1690,6 +1744,8 @@ export class Sim {
     if (lifeOn(world) && !world.outing) this.stepLife();
     if (minute === 0 && Math.floor(world.tick / MINUTES_PER_DAY) % HABIT_PERIOD_DAYS === 0) this.settleTempers();
     this.stepVisits();
+    // plano 2, bloco 12: quem anda pela cidade
+    if (world.trip) this.stepTrip();
     for (const folk of [...world.folks]) {
       // bloco 14: quem caiu espera o Seu Sereno sem fazer nada
       if (folk.down) {
@@ -1972,7 +2028,7 @@ export class Sim {
   private stepAway(folk: Folk): void {
     const away = folk.away!;
     const job = folk.job;
-    const career = !away.school && job ? careerOf(this.catalog, job) : undefined;
+    const career = !away.school && !away.trip && job ? careerOf(this.catalog, job) : undefined;
     for (const id of NEED_IDS) {
       if (id === 'ambience') continue;
       const rate = this.catalog.needs[id].decayPerMinute * (AWAY_DECAY[id] ?? 1);
@@ -1981,6 +2037,11 @@ export class Sim {
     }
     // ninguém desmaia no serviço: chega em casa no bagaço, mas chega
     folk.needs.energy = Math.max(3, folk.needs.energy);
+    // plano 2, bloco 12: andando pela cidade (a chegada e a volta ficam com stepTrip)
+    if (away.trip) {
+      if (!this.world.trip?.goers.includes(folk.id)) folk.away = null;
+      return;
+    }
     // bloco 11: na escola tem merenda
     if (inSchool(folk) && away.school) folk.needs.hunger = Math.max(folk.needs.hunger, SCHOOL_LUNCH);
     else this.stepWorkEvent(folk);
@@ -3496,8 +3557,13 @@ export class Sim {
   /** Bloco 16: sobe quando o lote em jogo troca sozinho (o centro fechou, todo mundo cansou). */
   lotStamp = 0;
 
-  /** Chama o táxi: quem vai sai do lote de casa e o lote do centro abre. */
-  private goDowntown(folkIds: number[], dateId?: number): boolean {
+  /**
+   * Ida ao centro. Sem a cidade (bairro sozinho dos testes antigos), o táxi
+   * leva na hora. Na cidade aberta (plano 2, bloco 12), quem vai sai pela
+   * calçada e anda pela rua (a pé, de bicicleta, de carro ou de táxi); o
+   * lote do centro só abre quando a turma chega lá.
+   */
+  private goDowntown(folkIds: number[], dateId?: number, mode: TravelMode = 'taxi'): boolean {
     const world = this.world;
     const ids = [...new Set(folkIds)];
     const problem = outingProblem(world, ids);
@@ -3505,7 +3571,17 @@ export class Sim {
     const plan = this.catalog.venues?.centro;
     if (!plan) return this.fail('noVenue');
     const host = this.findFolk(ids[0])!;
-    let guest: Neighbor | undefined;
+    const goers = world.folks.filter((f) => ids.includes(f.id));
+    // plano 2, bloco 12: o caminho e o jeito de ir valem antes do convite
+    let route: { points: Pt[]; length: number } | null = null;
+    if (cityOn(world)) {
+      const home = activeLot(world);
+      if (!home) return this.fail('noLot');
+      route = streetRoute(world.town!, lotDoor(home, world.exit), centroDoor(plan.exit));
+      const why = travelProblem(world, goers, mode, route.length);
+      if (why) return this.fail(why);
+      if (!venueOpen(world.tick + travelMinutes(route.length, mode))) return this.fail('venueClosed');
+    }
     let guestId = 0;
     if (dateId !== undefined) {
       if (!isAdult(host) || dateId === host.id) return this.fail('dateBusy');
@@ -3522,25 +3598,60 @@ export class Sim {
           rel.romance = Math.max(-100, rel.romance - 2);
           return this.fail('dateRefused');
         }
-        guest = n;
         guestId = n.id;
       }
     }
+    if (!route) {
+      world.household.funds -= TAXI_FARE;
+      this.openVenue(ids, guestId, 'taxi');
+      this.log('log.taxiDowntown', { names: goers.map((f) => f.name.split(' ')[0]).join(', '), fare: formatMoney(TAXI_FARE) });
+      return true;
+    }
+    const cost = travelCost(route.length, mode);
+    world.household.funds -= cost;
+    const minutes = travelMinutes(route.length, mode);
+    this.startTrip({ kind: 'downtown', goers: ids, mode, points: flatten(route.points), length: route.length, from: world.tick, arrive: world.tick + minutes, ...(guestId ? { dateId: guestId } : {}) });
+    this.log('log.tripDowntown', { names: goers.map((f) => f.name.split(' ')[0]).join(', '), how: `travel.${mode}`, minutes, cost: cost ? formatMoney(cost) : '' });
+    return true;
+  }
+
+  /** Plano 2, bloco 12: quem vai sai da calçada e passa a andar pela cidade (fica "fora", como no trabalho). */
+  private startTrip(trip: Trip): void {
+    const world = this.world;
+    world.trip = trip;
+    const until = trip.back ?? trip.arrive;
+    for (const id of trip.goers) {
+      const f = this.findFolk(id);
+      if (!f) continue;
+      settle(f, true);
+      this.putAt(f, world.exit);
+      f.queue = [];
+      f.path = [];
+      f.away = { until, late: 0, mood: moodOf(this.catalog, f.needs), event: null, nextEvent: -1, trip: true };
+    }
+  }
+
+  /** Abre o lote do centro com quem chegou (e a visita do encontro). */
+  private openVenue(ids: number[], guestId: number, mode: TravelMode): void {
+    const world = this.world;
+    const plan = this.catalog.venues!.centro!;
     const tick = world.tick;
-    world.household.funds -= TAXI_FARE;
+    const host = ids[0];
     emptyVisitors(world);
     for (const f of world.folks) settle(f, true);
     const goers = world.folks.filter((f) => ids.includes(f.id));
     const stay = world.folks.filter((f) => !ids.includes(f.id));
+    const guest = guestId ? world.neighbors.find((n) => n.id === guestId) : undefined;
     world.outing = {
       venue: plan.id,
       since: tick,
       goers: ids,
       home: { grid: world.grid, objects: world.objects, exit: world.exit, mess: world.mess, folks: stay },
-      date: guestId ? { host: host.id, guest: guestId, since: tick, mood: 0, samples: 0, good: 0, bad: 0, dined: 0, gifts: 0, wishes: 0 } : null,
+      date: guestId ? { host, guest: guestId, since: tick, mood: 0, samples: 0, good: 0, bad: 0, dined: 0, gifts: 0, wishes: 0 } : null,
       orders: [],
       parcels: [],
       nextExtra: tick + 10,
+      mode,
     };
     const venue = buildVenue(world, this.catalog, plan);
     world.grid = venue.grid;
@@ -3559,7 +3670,7 @@ export class Sim {
       if (w) this.putAt(w, plan.pass ?? world.exit);
     }
     if (guest) {
-      this.spawnVisitor(guest, tick + 24 * 60, host.id);
+      this.spawnVisitor(guest, tick + 24 * 60, host);
       const g = this.findFolk(guest.id);
       if (g?.visit) {
         g.visit.admitted = true;
@@ -3567,16 +3678,32 @@ export class Sim {
         this.putAt(g, spots[goers.length] ?? world.exit);
       }
     }
-    this.log('log.taxiDowntown', { names: goers.map((f) => f.name.split(' ')[0]).join(', '), fare: formatMoney(TAXI_FARE) });
-    if (world.outing.date) this.log('log.dateStarted', { name: host.name, other: this.nameOfPerson(guestId) });
-    return true;
+    if (world.outing.date) this.log('log.dateStarted', { name: this.nameOfPerson(host), other: this.nameOfPerson(guestId) });
+    this.lotStamp++;
   }
 
-  /** Volta de táxi: a casa abre de novo, quem ficou anda um pouco e as encomendas chegam. */
-  private goHome(): boolean {
+  /**
+   * Volta para casa. Sem a cidade, de táxi e na hora. Na cidade aberta a casa
+   * abre de novo logo (quem ficou segue a vida), e quem estava no centro vem
+   * andando pela rua até a calçada de casa.
+   */
+  private goHome(mode?: TravelMode): boolean {
     const world = this.world;
     const out = world.outing;
     if (!out) return this.fail('notOnOuting');
+    const plan = this.catalog.venues?.centro;
+    let route: { points: Pt[]; length: number } | null = null;
+    let how: TravelMode = mode ?? out.mode ?? 'taxi';
+    if (cityOn(world) && plan) {
+      const home = activeLot(world);
+      if (home) {
+        route = streetRoute(world.town!, centroDoor(plan.exit), lotDoor(home, out.home.exit));
+        const goers = world.folks.filter((f) => !f.visit);
+        if (mode && travelProblem(world, goers, mode, route.length)) return this.fail(travelProblem(world, goers, mode, route.length)!);
+        // sem dinheiro (ou sem o carro, que foi vendido) volta a pé
+        if (travelProblem(world, goers, how, route.length)) how = travelProblem(world, goers, 'taxi', route.length) ? 'walk' : 'taxi';
+      }
+    }
     this.endDate();
     emptyVisitors(world);
     const back = world.folks.filter((f) => !f.visit);
@@ -3596,8 +3723,17 @@ export class Sim {
     }
     world.folks = [...out.home.folks, ...back];
     world.outing = null;
-    world.household.funds -= TAXI_FARE;
-    placeAtHome(world, this.catalog, back.filter((f) => !f.away));
+    if (route) {
+      const cost = travelCost(route.length, how);
+      world.household.funds -= cost;
+      const minutes = travelMinutes(route.length, how);
+      this.startTrip({ kind: 'home', goers: back.map((f) => f.id), mode: how, points: flatten(route.points), length: route.length, from: world.tick, arrive: world.tick + minutes });
+      this.log('log.tripHome', { how: `travel.${how}`, minutes, cost: cost ? formatMoney(cost) : '' });
+    } else {
+      world.household.funds -= TAXI_FARE;
+      placeAtHome(world, this.catalog, back.filter((f) => !f.away));
+      this.log('log.taxiHome', { fare: formatMoney(TAXI_FARE) });
+    }
     // encomendas do bazar: entram pela porta e vão para o lugar livre mais perto
     for (const defId of out.parcels) {
       const def = this.catalog.objects[defId];
@@ -3611,10 +3747,108 @@ export class Sim {
       world.objects.push({ id: world.nextId++, defId, x: spot.x, y: spot.y, rot: spot.rot, paid: def.price, state: freshState() });
       this.log('log.parcelArrived', { object: def.name });
     }
-    this.log('log.taxiHome', { fare: formatMoney(TAXI_FARE) });
     this.town(null);
     this.lotStamp++;
     return true;
+  }
+
+  /**
+   * Plano 2, bloco 12: visita a um vizinho da cidade. A turma anda até a casa
+   * dele, passa um tempo lá (conversa, café, a amizade sobe) e volta.
+   */
+  private visitLot(folkIds: number[], lotId: number, mode: TravelMode): boolean {
+    const world = this.world;
+    if (!cityOn(world)) return this.fail('noTown');
+    const ids = [...new Set(folkIds)];
+    const problem = outingProblem(world, ids);
+    if (problem && problem !== 'venueClosed') return this.fail(problem);
+    const lot = world.town!.lots.find((l) => l.id === lotId);
+    const home = activeLot(world);
+    if (!lot || !home) return this.fail('noLot');
+    if (lot.id === home.id) return this.fail('sameLot');
+    if (lot.familyId === 0 || !world.neighbors.some((n) => n.home === lot.familyId)) return this.fail('nobodyThere');
+    const goers = world.folks.filter((f) => ids.includes(f.id));
+    const route = streetRoute(world.town!, lotDoor(home, world.exit), lotDoor(lot, lot.home?.exit ?? world.exit));
+    const why = travelProblem(world, goers, mode, route.length);
+    if (why) return this.fail(why);
+    const minutes = travelMinutes(route.length, mode);
+    const hour = clockOf(world.tick + minutes).hour;
+    if (hour < VISIT_FROM || hour >= VISIT_UNTIL) return this.fail('visitHours');
+    // táxi e gasolina valem para a ida e a volta
+    const cost = travelCost(route.length, mode) * 2;
+    if (cost > world.household.funds) return this.fail('funds');
+    world.household.funds -= cost;
+    const arrive = world.tick + minutes;
+    const leave = arrive + VISIT_STAY;
+    this.startTrip({ kind: 'visit', goers: ids, mode, points: flatten(route.points), length: route.length, from: world.tick, arrive, lotId, leave, back: leave + minutes });
+    const fam = familyById(world, lot.familyId);
+    this.log('log.tripVisit', { names: goers.map((f) => f.name.split(' ')[0]).join(', '), family: fam?.name ?? '', how: `travel.${mode}`, minutes });
+    return true;
+  }
+
+  /** Plano 2, bloco 12: um minuto da viagem pela cidade (chegar, visitar, voltar). */
+  private stepTrip(): void {
+    const world = this.world;
+    const trip = world.trip;
+    if (!trip) return;
+    const tick = world.tick;
+    const goers = trip.goers.map((id) => this.findFolk(id)).filter((f): f is Folk => !!f);
+    if (trip.kind === 'downtown') {
+      if (tick < trip.arrive) return;
+      world.trip = null;
+      for (const f of goers) f.away = null;
+      const plan = this.catalog.venues?.centro;
+      if (!plan || goers.length === 0) return;
+      // chegou: o centro abre (se fechou no caminho, dá meia-volta)
+      if (!venueOpen(tick)) {
+        this.log('log.venueClosed');
+        placeAtHome(world, this.catalog, goers);
+        return;
+      }
+      this.openVenue(goers.map((f) => f.id), trip.dateId ?? 0, trip.mode);
+      this.log('log.arrivedDowntown', { names: goers.map((f) => f.name.split(' ')[0]).join(', ') });
+      return;
+    }
+    if (trip.kind === 'visit' && trip.leave !== undefined && tick >= trip.arrive && tick < trip.leave) {
+      const fam = familyById(world, world.town?.lots.find((l) => l.id === trip.lotId)?.familyId ?? -1);
+      const hosts = fam ? world.neighbors.filter((n) => n.home === fam.id) : [];
+      if (!trip.greeted) {
+        trip.greeted = true;
+        for (const f of goers) {
+          for (const n of hosts) {
+            const pa = personOf(world, f.id);
+            const pb = personOf(world, n.id);
+            if (pa && pb) introduce(world, pa, pb, 10, 5);
+            for (const [a, b] of [
+              [f.id, n.id],
+              [n.id, f.id],
+            ]) {
+              const rel = ensureRelation(world, a, b);
+              rel.friendship = Math.min(100, rel.friendship + 6);
+              rel.last = tick;
+            }
+          }
+        }
+        this.log('log.visitArrived', { names: goers.map((f) => f.name.split(' ')[0]).join(', '), family: fam?.name ?? '' });
+      }
+      // conversa e café na casa do vizinho
+      for (const f of goers) {
+        f.needs.social = Math.min(NEED_MAX, f.needs.social + (hosts.length ? 0.45 : 0.1));
+        f.needs.fun = Math.min(NEED_MAX, f.needs.fun + 0.12);
+        if (tick % 45 === 0) f.needs.hunger = Math.min(NEED_MAX, f.needs.hunger + 4);
+      }
+      return;
+    }
+    const done = trip.kind === 'visit' ? (trip.back ?? trip.arrive) : trip.arrive;
+    if (tick < done) return;
+    world.trip = null;
+    const spots = this.curbSpots(goers.length);
+    goers.forEach((f, i) => {
+      f.away = null;
+      this.putAt(f, spots[i] ?? world.exit);
+      f.idleTicks = 0;
+    });
+    if (goers.length) this.log('log.tripBack', { names: goers.map((f) => f.name.split(' ')[0]).join(', ') });
   }
 
   /** Tiles livres na calçada de dentro do lote, do meio para as pontas. */

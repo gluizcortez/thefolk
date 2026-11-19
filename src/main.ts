@@ -48,7 +48,7 @@ async function boot(): Promise<void> {
   const creator = new FamilyCreator(document.getElementById('ui')!, ctrl, (look, wear, opts) => view.portrait(look, wear, 120, 200, opts));
   hud.openCreator = () => creator.show(true);
   // bloco 15: a tela do bairro (vista na tela do jogo, painel por cima)
-  const town = new TownPanel(document.getElementById('ui')!, ctrl, view.town);
+  const town = new TownPanel(document.getElementById('ui')!, ctrl, view.city, view);
   town.newFamilyAt = (lotId) => creator.showForLot(lotId);
   // plano 2, bloco 11: gaveta, tela da família e o criador aberto num morador
   town.newFamilyInBin = () => creator.showForBin();
