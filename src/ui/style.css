@@ -4272,3 +4272,104 @@ body.town-open #ui > *:not(.town):not(.creator):not(.toasts):not(.notices-col) {
 .perk-head .wish-label {
   width: auto;
 }
+
+/* ---------- plano 2, bloco 11: família na cidade ---------- */
+
+.town-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.town-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #5a4a3c;
+  cursor: pointer;
+}
+
+.town-families li,
+.town-bin li,
+.family-join li,
+.family-stored li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 0;
+  border-bottom: 1px dotted #d8c8b4;
+}
+
+.town-families li.binned b {
+  color: #7a5a8c;
+}
+
+.town-row-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+
+.family-panel {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: min(620px, calc(100vw - 28px));
+}
+
+.family-people {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 6px;
+}
+
+.family-person {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  padding: 6px 4px;
+  border: 1px solid #d8c8b4;
+  border-radius: 6px;
+  background: #fbf6ee;
+  text-align: center;
+}
+
+.family-person.leaving {
+  border-color: #b0603c;
+  background: #f7e6da;
+}
+
+.family-shot {
+  width: 64px;
+  height: 104px;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+
+.family-split {
+  display: grid;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.family-ledger {
+  display: grid;
+  gap: 2px;
+}
+
+.family-line {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 4px;
+}
+
+.family-line.total {
+  border-top: 2px solid #8a6a4c;
+  font-size: 13.5px;
+}
+
+.family-line.bad b {
+  color: #a0402c;
+}

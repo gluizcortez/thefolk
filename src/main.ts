@@ -5,6 +5,7 @@ import { GameController } from './game/controller';
 import { GameView } from './game/GameView';
 import { t } from './i18n';
 import { FamilyCreator } from './ui/creator';
+import { FamilyPanel } from './ui/family';
 import { Hud } from './ui/hud';
 import { TownPanel } from './ui/town';
 import './ui/style.css';
@@ -49,6 +50,14 @@ async function boot(): Promise<void> {
   // bloco 15: a tela do bairro (vista na tela do jogo, painel por cima)
   const town = new TownPanel(document.getElementById('ui')!, ctrl, view.town);
   town.newFamilyAt = (lotId) => creator.showForLot(lotId);
+  // plano 2, bloco 11: gaveta, tela da família e o criador aberto num morador
+  town.newFamilyInBin = () => creator.showForBin();
+  const family = new FamilyPanel(document.getElementById('ui')!, ctrl);
+  family.portraiter = (look, wear, opts) => view.portrait(look, wear, 130, 210, opts);
+  family.editFolk = (id) => creator.showForFolk(id);
+  hud.editFolk = (id) => creator.showForFolk(id);
+  hud.openFamily = () => family.show();
+  if (import.meta.env.DEV) (window as unknown as { thefolkFamily: FamilyPanel }).thefolkFamily = family;
   if (!hadSave) creator.show(false);
   if (import.meta.env.DEV) (window as unknown as { thefolkCreator: FamilyCreator }).thefolkCreator = creator;
   if (import.meta.env.DEV) (window as unknown as { thefolkView: GameView }).thefolkView = view;

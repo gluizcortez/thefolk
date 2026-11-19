@@ -20,7 +20,7 @@ import type { TownPlan } from './town';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 30;
+export const SAVE_VERSION = 31;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -493,6 +493,12 @@ const migrations: Record<number, Migration> = {
     };
     return { ...save, world: fix(save.world) as Obj };
   },
+  /**
+   * Plano 2, bloco 11: gaveta de famílias (Family.bin, lotId 0), inventário
+   * da família (Household.stored), herança somada (Family.inherited). Tudo
+   * opcional: o save v30 carrega como está, sem família na gaveta.
+   */
+  30: (save) => save,
 };
 
 /** Cargos por carreira a partir do save v12. */

@@ -11,6 +11,7 @@ import {
   LIFE_PACE_IDS,
   MAX_FAMILY,
   MAX_NAME,
+  NEW_LEAF,
   SLIDER_MAX,
   TONE_MAX,
   VOICE_MAX,
@@ -97,6 +98,10 @@ export class FamilyCreator {
   private life: LifePace = 'off';
   /** bloco 15: família nova para um lote do bairro (0 = jogo novo) */
   private lotId = 0;
+  /** plano 2, bloco 11: família nova direto para a gaveta */
+  private toBin = false;
+  /** plano 2, bloco 11: editando um morador em jogo (0 = criando família) */
+  private editId = 0;
   private pending = 0;
 
   constructor(
@@ -116,13 +121,62 @@ export class FamilyCreator {
   /** Abre a tela. `cancellable` = há um jogo para onde voltar. */
   show(cancellable: boolean): void {
     this.lotId = 0;
+    this.toBin = false;
+    this.editId = 0;
     this.openCard(cancellable);
   }
 
   /** Bloco 15: família nova que chega a um lote do bairro (o jogo continua o mesmo). */
   showForLot(lotId: number): void {
     this.lotId = lotId;
+    this.toBin = false;
+    this.editId = 0;
     this.openCard(true);
+  }
+
+  /** Plano 2, bloco 11: família nova que vai para a gaveta (sem casa ainda). */
+  showForBin(): void {
+    this.lotId = 0;
+    this.toBin = true;
+    this.editId = 0;
+    this.openCard(true);
+  }
+
+  /**
+   * Plano 2, bloco 11: o criador aberto num morador em jogo, para mudar a
+   * aparência e as roupas (os traços só com o benefício "Página virada").
+   */
+  showForFolk(folkId: number): void {
+    const folk = this.ctrl.world.folks.find((f) => f.id === folkId && !f.visit && f.age !== 'baby');
+    if (!folk) return;
+    this.lotId = 0;
+    this.toBin = false;
+    this.editId = folk.id;
+    this.cancellable = true;
+    this.speedBefore = this.ctrl.world.speed;
+    this.ctrl.command({ type: 'setSpeed', speed: 0 });
+    const age = folk.age === 'baby' ? undefined : folk.age;
+    const m: MemberDraft = {
+      name: folk.name,
+      look: { ...folk.look },
+      traits: [...folk.traits],
+      temper: { ...folk.temper },
+      month: folk.month,
+      closet: JSON.parse(JSON.stringify(this.ctrl.sim.closetFor(folk))),
+    };
+    if (age) m.age = age;
+    this.draft = { surname: '', members: [m], ties: [] };
+    this.current = 0;
+    this.step = 'looks';
+    this.root.hidden = false;
+    this.render();
+  }
+
+  /** Passos da tela: no modo de editar, só aparência e roupa (e traços com o benefício). */
+  get steps(): Step[] {
+    if (!this.editId) return STEPS;
+    const folk = this.ctrl.world.folks.find((f) => f.id === this.editId);
+    return folk?.perks?.includes(NEW_LEAF) ? ['looks', 'clothes', 'traits'] : ['looks', 'clothes'];
   }
 
   /** Vai direto a um passo (capturas e testes). */
@@ -253,7 +307,22 @@ export class FamilyCreator {
   private renderHead(): HTMLElement {
     const head = el('div', 'creator-head');
     const lot = this.lotId ? this.ctrl.world.town?.lots.find((l) => l.id === this.lotId) : undefined;
-    const title = el('div', 'creator-title', lot ? t('town.creating', { number: lot.number }) : t('create.title'));
+    const title = el('div', 'creator-title', lot ? t('town.creating', { number: lot.number }) : this.toBin ? t('bin.creating') : t('create.title'));
+    if (this.editId) {
+      head.append(el('div', 'creator-title', t('edit.title', { name: this.member.name })), el('div', 'creator-note', t('edit.hint')));
+      const steps = el('div', 'creator-steps');
+      this.steps.forEach((s, i) => {
+        const b = el('button', 'creator-step', `${i + 1}. ${t(`create.step.${s}`)}`);
+        b.classList.toggle('on', s === this.step);
+        b.addEventListener('click', () => {
+          this.step = s;
+          this.render();
+        });
+        steps.append(b);
+      });
+      head.append(steps);
+      return head;
+    }
     const surname = el('label', 'creator-surname');
     const input = el('input');
     input.value = this.draft.surname;
@@ -291,10 +360,10 @@ export class FamilyCreator {
     head.append(title, surname, tabs, el('div', 'creator-count', t('create.count', { n: this.draft.members.length, max: MAX_FAMILY })));
     // os passos
     const steps = el('div', 'creator-steps');
-    STEPS.forEach((s, i) => {
+    this.steps.forEach((s, i) => {
       const b = el('button', 'creator-step', `${i + 1}. ${t(`create.step.${s}`)}`);
       b.classList.toggle('on', s === this.step);
-      b.classList.toggle('done', STEPS.indexOf(this.step) > i);
+      b.classList.toggle('done', this.steps.indexOf(this.step) > i);
       b.addEventListener('click', () => {
         this.step = s;
         this.render();
@@ -344,6 +413,7 @@ export class FamilyCreator {
     name.value = m.name;
     name.maxLength = MAX_NAME;
     name.setAttribute('aria-label', t('create.name'));
+    name.disabled = this.editId !== 0;
     name.addEventListener('input', () => {
       m.name = name.value;
       const tab = this.root.querySelectorAll('.creator-member span')[this.current];
@@ -359,7 +429,7 @@ export class FamilyCreator {
       );
       this.render();
     });
-    row.append(random);
+    if (!this.editId) row.append(random);
     if (this.draft.members.length > 1) {
       const remove = el('button', 'btn btn-small btn-quiet', t('create.remove'));
       remove.addEventListener('click', () => {
@@ -590,7 +660,8 @@ export class FamilyCreator {
       closet.pick[this.occasion] = Math.min(i, list.length - 1);
       this.render();
     };
-    const owned = ownedGarments([]);
+    // plano 2, bloco 11: editando alguém em jogo, valem as peças compradas pela casa
+    const owned = ownedGarments(this.editId ? this.ctrl.world.household.garments : []);
     for (const slot of CLOTH_ROWS) {
       const choices = [...owned].map((id) => GARMENTS[id]).filter((g) => g.slot === slot && g.bands.includes(band));
       if (!choices.length) continue;
@@ -854,7 +925,8 @@ export class FamilyCreator {
     const foot = el('div', 'creator-foot');
     const note = el('div', 'creator-problem');
     const buttons = el('div', 'creator-buttons');
-    const at = STEPS.indexOf(this.step);
+    const steps = this.steps;
+    const at = steps.indexOf(this.step);
     if (this.cancellable) {
       const cancel = el('button', 'btn btn-quiet', t('create.cancel'));
       cancel.addEventListener('click', () => this.cancel());
@@ -863,22 +935,40 @@ export class FamilyCreator {
     if (at > 0) {
       const back = el('button', 'btn btn-quiet', t('create.back'));
       back.addEventListener('click', () => {
-        this.step = STEPS[at - 1];
+        this.step = steps[at - 1];
         this.render();
       });
       buttons.append(back);
     }
-    if (at < STEPS.length - 1) {
+    if (at < steps.length - 1) {
       const next = el('button', 'btn', t('create.next'));
       next.addEventListener('click', () => {
-        this.step = STEPS[at + 1];
+        this.step = steps[at + 1];
         this.render();
       });
       buttons.append(next);
     }
-    const start = el('button', 'btn btn-go creator-start', t(this.lotId ? 'town.startHere' : 'create.start'));
+    const start = el('button', 'btn btn-go creator-start', t(this.editId ? 'edit.save' : this.toBin ? 'bin.start' : this.lotId ? 'town.startHere' : 'create.start'));
     start.addEventListener('click', () => {
+      if (this.editId) {
+        // plano 2, bloco 11: grava a aparência, as roupas e (com o benefício) os traços
+        const m = this.member;
+        const ok = this.ctrl.commandOrExplain({ type: 'editFolk', folkId: this.editId, look: m.look, closet: m.closet, traits: m.traits });
+        if (ok) {
+          this.ctrl.toast(t('edit.saved', { name: m.name.split(' ')[0] }));
+          this.cancel();
+        }
+        return;
+      }
       if (familyProblem(this.catalog, this.draft)) return;
+      if (this.toBin) {
+        if (this.ctrl.commandOrExplain({ type: 'binDraft', draft: this.draft })) {
+          this.ctrl.townVersion++;
+          this.ctrl.toast(t('bin.added', { name: cleanName(this.draft.surname) }));
+          this.hide();
+        }
+        return;
+      }
       if (this.lotId) {
         // bloco 15: chega ao bairro no lote escolhido (o resto do jogo continua)
         if (this.ctrl.townCommand({ type: 'foundFamily', lotId: this.lotId, draft: this.draft })) {
@@ -891,7 +981,7 @@ export class FamilyCreator {
       this.hide();
     });
     buttons.append(start);
-    if (!this.lotId && this.step === 'review') {
+    if (!this.lotId && !this.toBin && !this.editId && this.step === 'review') {
       const ready = el('button', 'btn btn-quiet', t('create.ready'));
       ready.addEventListener('click', () => {
         this.ctrl.newGame(this.death, this.life);
@@ -926,7 +1016,8 @@ export class FamilyCreator {
 
   /** Atualiza o aviso e o botão de começar sem redesenhar a tela (digitação). */
   private refreshFoot(): void {
-    const problem = familyProblem(this.catalog, this.draft);
+    // plano 2, bloco 11: editando alguém em jogo não tem sobrenome da casa para conferir
+    const problem = familyProblem(this.catalog, this.editId ? { ...this.draft, surname: 'x' } : this.draft);
     const note = this.root.querySelector('.creator-problem:not(.creator-review .creator-problem)');
     const start = this.root.querySelector<HTMLButtonElement>('.creator-start');
     if (note) note.textContent = problem ? t(`create.problem.${problem}`) : '';

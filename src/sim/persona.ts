@@ -402,6 +402,9 @@ export const PERK_ACCEPT: Record<string, { category: 'friendly' | 'romantic'; bo
   charm: { category: 'friendly', bonus: 0.08 },
 };
 
+/** Plano 2, bloco 11: benefício que troca os traços uma vez (some quando é usado). */
+export const NEW_LEAF = 'newLeaf';
+
 export function hasPerk(folk: Pick<Folk, 'perks'>, id: string): boolean {
   return !!folk.perks?.includes(id);
 }

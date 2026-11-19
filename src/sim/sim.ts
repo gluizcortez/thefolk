@@ -205,8 +205,8 @@ import { findPath, findPathToAny } from './pathfinding';
 import { nextFloat, nextInt } from './rng';
 import { addMemory, affinity, applyDelta, coolRelations, ensureRelation, relationOf, setDating, touch } from './relations';
 import { skillLevel, trainSkill } from './skills';
-import { HABIT_PERIOD_DAYS, LOOK_LIMITS, countHabit, settleHabits } from './temper';
-import { MOOD_EVERY, FAV_FOOD_FUN, checkDream, cookBonus, growTraits, perkProblem, stepTraitMoods, traitProduct, traitTraining } from './persona';
+import { HABIT_PERIOD_DAYS, LOOK_LIMITS, countHabit, settleHabits, temperFromTraits } from './temper';
+import { MOOD_EVERY, FAV_FOOD_FUN, checkDream, cookBonus, growTraits, hasPerk, NEW_LEAF, perkProblem, traitsProblem, stepTraitMoods, traitProduct, traitTraining } from './persona';
 import {
   MAX_SPARK,
   THINK_EVERY,
@@ -284,7 +284,7 @@ import {
 } from './upkeep';
 import { BILL_INTERVAL, isServiceNeighbor } from './world';
 import type { TownProblem } from './town';
-import { TOWN_HOUR, emptyVisitors, foundFamily, leaveFamily, moveHouse, placeAtHome, playFamily, pushFeed, settle, streetSide, townDay } from './town';
+import { TOWN_HOUR, emptyVisitors, familyById, foundFamily, packed, leaveFamily, moveHouse, placeAtHome, playFamily, pushFeed, settle, streetSide, townDay } from './town';
 import type { OutingProblem } from './downtown';
 import {
   CLOSE_HOUR,
@@ -399,7 +399,10 @@ import type { BabyCare, Expecting } from './types';
 import type { KitParts } from './parts';
 import type { ObjStyle, ZoneDef } from './style';
 import type { Closet, Ensemble, Occasion } from './clothes';
-import { wearOf } from './family';
+import { familyProblem, wearOf } from './family';
+import { binDraft, binFamily, inviteHome, joinFamily, placeFamily, splitFamily } from './clan';
+import type { ClanProblem } from './clan';
+import type { Look } from './types';
 import { CLOTH_SLOTS, GARMENTS, MAX_SETS, OCCASIONS, bandOf, cleanPiece, ensembleProblems, legacyCloset, ownedGarments, pickNewGarment } from './clothes';
 import { MAX_SAVED_STYLES, ROLE_ZONES, cleanStyle, styleFromColor } from './style';
 import { DISHWASHER_LOAD } from './upkeep';
@@ -500,6 +503,7 @@ export type CommandProblem =
   | 'noBargainer'
   // bloco 15
   | TownProblem
+  | ClanProblem
   // bloco 16
   | OutingProblem;
 
@@ -994,9 +998,51 @@ export class Sim {
       case 'playFamily':
         return this.town(playFamily(this.world, this.catalog, cmd.familyId));
       case 'moveHouse':
-        return this.town(moveHouse(this.world, this.catalog, cmd.lotId));
+        return this.town(moveHouse(this.world, this.catalog, cmd.lotId, { bare: cmd.bare, pack: cmd.pack }));
       case 'foundFamily':
-        return this.town(foundFamily(this.world, this.catalog, cmd.draft, cmd.lotId));
+        return this.town(foundFamily(this.world, this.catalog, cmd.draft, cmd.lotId, cmd.bare));
+      // plano 2, bloco 11: família na cidade
+      case 'binDraft':
+        if (!this.world.town) return this.fail('noTown');
+        if (familyProblem(this.catalog, cmd.draft)) return this.fail('badDraft');
+        return binDraft(this.world, this.catalog, cmd.draft) !== null;
+      case 'binFamily':
+        return this.clan(binFamily(this.world, this.catalog, cmd.familyId), false);
+      case 'placeFamily':
+        return this.clan(placeFamily(this.world, this.catalog, cmd.familyId, cmd.lotId, cmd.bare), false);
+      case 'splitFamily': {
+        const names = this.household().filter((f) => cmd.memberIds.includes(f.id)).map((f) => f.name);
+        if (!this.clan(splitFamily(this.world, cmd.memberIds, cmd.money, cmd.surname), true)) return false;
+        this.log('log.splitFamily', { names: names.join(', ') });
+        return true;
+      }
+      case 'joinFamily': {
+        const other = familyById(this.world, cmd.familyId)?.name ?? '';
+        if (!this.clan(joinFamily(this.world, this.catalog, cmd.familyId, cmd.where), true)) return false;
+        this.log(cmd.where === 'there' ? 'log.joinedThere' : 'log.joinedHere', { family: other });
+        return true;
+      }
+      case 'inviteHome': {
+        const res = inviteHome(this.world, this.catalog, cmd.personId);
+        if (!this.clan(res.problem, true) || !res.folk) return false;
+        this.log(res.money ? 'log.invitedMoney' : 'log.invited', { name: res.folk.name, amount: res.money ?? 0 });
+        return true;
+      }
+      case 'storeObject':
+        return this.storeObject(cmd.objectId);
+      case 'placeStored':
+        return this.placeStored(cmd);
+      case 'sellStored': {
+        const list = this.world.household.stored ?? [];
+        const obj = list.find((o) => o.id === cmd.objectId);
+        const def = obj && this.defOf(obj);
+        if (!obj || !def) return this.fail('invalid');
+        this.world.household.funds += sellValue(this.world, obj, def);
+        this.world.household.stored = list.filter((o) => o !== obj);
+        return true;
+      }
+      case 'editFolk':
+        return this.editFolk(cmd.folkId, cmd.look, cmd.closet, cmd.traits);
       // bloco 16: centro e encontros
       case 'goDowntown':
         return this.goDowntown(cmd.folkIds, cmd.dateId);
@@ -3909,6 +3955,120 @@ export class Sim {
   // ---------- bloco 15: bairro ----------
 
   /** Depois de trocar de família ou de casa: lote novo, caminhos novos, nada para desfazer. */
+  /** Plano 2, bloco 11: resultado de um comando de família (`lot` = o lote em jogo mudou de gente). */
+  private clan(problem: ClanProblem | null, lot: boolean): boolean {
+    if (problem) return this.fail(problem);
+    if (lot) {
+      this.invalidateNav();
+      this.replanAll();
+    }
+    this.objectStamp++;
+    return true;
+  }
+
+  /** Plano 2, bloco 11: o objeto sai da casa para o inventário da família (sem vender). */
+  private storeObject(objectId: number): boolean {
+    const obj = this.findObject(objectId);
+    const def = obj && this.defOf(obj);
+    if (!obj || !def) return false;
+    if (def.price <= 0 || def.buyable === false || def.pool || obj.baby !== undefined) return this.fail('invalid');
+    if (objectBusy(this.world, objectId)) return this.fail('inUse');
+    if (itemsOn(this.world, this.catalog, obj).length) return this.fail('surfaceBusy');
+    (this.world.household.stored ??= []).push(packed(obj));
+    this.removeObject(objectId);
+    this.buyStack = [];
+    this.replanAll();
+    return true;
+  }
+
+  /** Plano 2, bloco 11: tira do inventário e põe na casa (sem pagar de novo). */
+  private placeStored(cmd: Extract<Command, { type: 'placeStored' }>): boolean {
+    const list = this.world.household.stored ?? [];
+    const obj = list.find((o) => o.id === cmd.objectId);
+    const def = obj && this.defOf(obj);
+    if (!obj || !def) return this.fail('invalid');
+    const extras = placementExtras(def, cmd);
+    const check = checkPlacement(this.world, this.catalog, obj.defId, cmd.x, cmd.y, cmd.rot, undefined, extras.lift);
+    if (!check.ok) return this.fail(check.problem ?? 'invalid');
+    this.world.household.stored = list.filter((o) => o !== obj);
+    const placed: WorldObject = { ...obj, id: this.world.nextId++, x: cmd.x, y: cmd.y, rot: cmd.rot };
+    delete placed.nudge;
+    delete placed.turn8;
+    delete placed.lift;
+    setExtras(placed, extras);
+    this.world.objects.push(placed);
+    this.buyStack = [];
+    this.replanAll();
+    return true;
+  }
+
+  /**
+   * Plano 2, bloco 11: editar um morador já em jogo (aparência e roupas; os
+   * traços só com o benefício "Página virada", que se gasta na troca).
+   */
+  private editFolk(folkId: number, look?: Look, closet?: Closet, traits?: string[]): boolean {
+    const folk = this.resident(folkId);
+    if (!folk || folk.age === 'baby') return this.fail('invalid');
+    let nextLook: Look | null = null;
+    if (look) {
+      nextLook = { ...folk.look };
+      for (const key of Object.keys(LOOK_LIMITS) as (keyof typeof LOOK_LIMITS)[]) {
+        const v = look[key];
+        if (v === undefined) continue;
+        if (!Number.isInteger(v) || v < 0 || v >= LOOK_LIMITS[key]) return this.fail('invalid');
+        nextLook[key] = v;
+      }
+    }
+    let nextCloset: Closet | null = null;
+    if (closet) {
+      const band = bandOf(folk.age);
+      const owned = ownedGarments(this.world.household.garments);
+      nextCloset = { sets: {}, pick: {} };
+      for (const occasion of OCCASIONS) {
+        const sets = closet.sets?.[occasion];
+        if (!sets?.length) continue;
+        const clean: Ensemble[] = [];
+        for (const ens of sets.slice(0, MAX_SETS)) {
+          if (ensembleProblems(ens, band, occasion).length) return this.fail('invalid');
+          const pieces: Ensemble = {};
+          for (const slot of CLOTH_SLOTS) {
+            const p = ens[slot];
+            if (!p) continue;
+            if (!owned.has(p.g)) return this.fail('invalid');
+            const piece = cleanPiece(p);
+            if (piece) pieces[slot] = piece;
+          }
+          clean.push(pieces);
+        }
+        nextCloset.sets[occasion] = clean;
+        nextCloset.pick[occasion] = Math.max(0, Math.min(clean.length - 1, closet.pick?.[occasion] ?? 0));
+      }
+    }
+    let nextTraits: string[] | null = null;
+    if (traits && (traits.length !== folk.traits.length || traits.some((id) => !folk.traits.includes(id)))) {
+      if (!hasPerk(folk, NEW_LEAF)) return this.fail('points');
+      if (traitsProblem(this.catalog, traits, folk.age)) return this.fail('invalid');
+      nextTraits = [...traits];
+    }
+    if (nextLook) folk.look = nextLook;
+    if (nextCloset) {
+      const base = this.closetFor(folk);
+      for (const o of OCCASIONS) {
+        if (nextCloset.sets[o]) {
+          base.sets[o] = nextCloset.sets[o];
+          base.pick[o] = nextCloset.pick[o];
+        }
+      }
+    }
+    if (nextTraits) {
+      folk.traits = nextTraits;
+      folk.temper = temperFromTraits(this.catalog, nextTraits);
+      folk.perks = (folk.perks ?? []).filter((p) => p !== NEW_LEAF);
+      this.log('log.newLeaf', { name: folk.name });
+    }
+    return true;
+  }
+
   private town(problem: TownProblem | null): boolean {
     if (problem) return this.fail(problem);
     this.prepare();
@@ -6862,11 +7022,15 @@ export class Sim {
     if (total > 0) {
       const shares = splitEstate(total, heirs);
       for (const [where, amount] of shares) {
-        if (where === 'home') world.household.funds += amount;
-        else if (typeof where === 'number') {
+        if (where === 'home') {
+          world.household.funds += amount;
+          const mine = world.town?.families.find((f) => f.id === world.town?.active);
+          if (mine) mine.inherited = (mine.inherited ?? 0) + amount;
+        } else if (typeof where === 'number') {
           const fam = world.town?.families.find((f) => f.id === where);
           if (fam) {
             fam.funds += amount;
+            fam.inherited = (fam.inherited ?? 0) + amount;
             pushFeed(world, 'feed.inherited', { family: fam.name, name: dead.name, amount: formatMoney(amount) });
           }
         }

@@ -557,6 +557,23 @@ npm run preview  # serve o dist/ localmente
   9 benefícios (sono de pedra, tempero de mãe, aprende rápido, firme...).
   Comida, música e cor favoritas mexem no humor. Bebês misturam a aparência
   dos pais. O espelho ganhou "Mudar o cabelo…" (penteado e cor).
+- **Família na cidade (plano 2, bloco 11)**: Cidade › Família (ou o botão
+  "Gente, fundos e bens…" no modo família) abre a tela da família em jogo.
+  Aba Gente: "Mudar…" abre o criador no folk (aparência e roupas; traços só
+  com o benefício "Página virada", 60 pontos, que some depois de usado) e
+  marcar quem sai forma outra família na gaveta, levando o dinheiro escolhido
+  (bebê fica; quem sai e quem fica precisam de um adulto). Aba Fundos e bens:
+  caixa, terreno, construção, móveis, inventário, contas, patrimônio, quanto
+  entra por semana e herança; o inventário recebe o que você guarda no modo
+  compra ("Guardar no inventário") e devolve com "Pôr na casa". Aba Juntar:
+  chamar parente, par ou amigo do peito (50 dos dois lados) para morar junto,
+  ou juntar outra família aqui (a casa dela é vendida) ou na casa dela (a sua é
+  vendida). No bairro, a aba "Famílias e gaveta" lista todas as famílias,
+  manda uma para a gaveta (a casa fica à venda, os móveis são vendidos) e cria
+  família nova direto na gaveta. Família na gaveta não envelhece nem gasta;
+  num terreno vago ou casa à venda aparece "Da gaveta: Mudar para cá". Casa à
+  venda pode ser comprada com os móveis ou só a casa (terreno e construção), e
+  a mudança pode levar os móveis para o inventário em vez de vendê-los.
 - **Peças novas (bloco 12)**: meia parede (fecha o passo sem dividir o
   cômodo), coluna nos cantos, porta de vidro, porta dupla, arco (passagem sem
   folha), janela alta (+6 de ambiente) e basculante (+2).
@@ -1247,6 +1264,10 @@ traços e cidade aberta com o bairro dentro dela).
   pares proibidos e efeitos, eixos convertidos em traços, sonho de vida,
   pontos e benefícios, gostos, voz, aparência com controles e herança,
   laços da família (cônjuges, pais, irmãos) e cabelo no espelho (save v30).
+- **Bloco 11 (feito)**: família na cidade. Gaveta de famílias, mandar uma
+  família para a gaveta, dividir e juntar famílias, chamar alguém para morar,
+  casa com ou sem móveis, inventário da família, fundos e bens, criador
+  aberto num folk em jogo e o benefício "Página virada" (save v31).
 
 ## Limitações conhecidas do bloco 7 (plano 2)
 

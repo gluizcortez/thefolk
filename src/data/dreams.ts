@@ -33,6 +33,8 @@ const perks: PerkDef[] = [
   { id: 'ironBladder', name: 'perk.ironBladder', hint: 'perkHint.ironBladder', icon: 'bladder', cost: 30 },
   { id: 'fresh', name: 'perk.fresh', hint: 'perkHint.fresh', icon: 'hygiene', cost: 30 },
   { id: 'steady', name: 'perk.steady', hint: 'perkHint.steady', icon: 'mood', cost: 70 },
+  // plano 2, bloco 11: troca os traços uma vez (pelo criador, no espelho ou na tela da família)
+  { id: 'newLeaf', name: 'perk.newLeaf', hint: 'perkHint.newLeaf', icon: 'mood', cost: 60 },
 ];
 
 export const PERKS: Record<string, PerkDef> = Object.fromEntries(perks.map((p) => [p.id, p]));

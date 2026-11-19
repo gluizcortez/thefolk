@@ -151,6 +151,31 @@ export function lotPrice(world: World, catalog: Catalog, lot: Lot): number {
   return lot.land + buildValue(catalog, home.grid) + furnitureValue(world, catalog, home.objects, false);
 }
 
+/** Plano 2, bloco 11: preço do lote sem os móveis (terreno e construção). */
+export function barePrice(world: World, catalog: Catalog, lot: Lot): number {
+  const home = homeOf(world, lot);
+  return lot.land + (home ? buildValue(catalog, home.grid) : 0);
+}
+
+/** Preço de um lote mobiliado (`bare` = false) ou só com a obra. */
+export function priceOf(world: World, catalog: Catalog, lot: Lot, bare = false): number {
+  return bare ? barePrice(world, catalog, lot) : lotPrice(world, catalog, lot);
+}
+
+/** Tira da casa guardada o que se paga (móveis e enfeites); o que é de graça fica. */
+export function stripHome(catalog: Catalog, home: LotHome): WorldObject[] {
+  const gone = home.objects.filter((o) => (catalog.objects[o.defId]?.price ?? 0) > 0);
+  home.objects = home.objects.filter((o) => !gone.includes(o));
+  return gone;
+}
+
+/** Quanto vale a casa guardada de um lote, vendida: terreno, obra e móveis pelo valor de revenda. */
+export function lotSaleValue(world: World, catalog: Catalog, lot: Lot): number {
+  const home = homeOf(world, lot);
+  if (!home) return lot.land;
+  return lot.land + buildValue(catalog, home.grid) + furnitureValue(world, catalog, home.objects, true);
+}
+
 /** O que a família em jogo recebe vendendo a casa (terreno, obra e móveis pelo valor de revenda). */
 export function salePrice(world: World, catalog: Catalog): number {
   const lot = activeLot(world);
@@ -286,7 +311,7 @@ export function foundTown(world: World, catalog: Catalog, plan: TownPlan): Town 
 // ---------- trocar de família ----------
 
 /** Vizinho a partir de um morador que sai de jogo (o emprego e o jeito vão junto). */
-function neighborFrom(folk: Folk, home: number): Neighbor {
+export function neighborFrom(folk: Folk, home: number): Neighbor {
   const n: Neighbor = {
     id: folk.id,
     name: folk.name,
@@ -363,7 +388,7 @@ export function placeAtHome(world: World, catalog: Catalog, folks: Folk[]): void
 }
 
 /** Guarda a família em jogo: moradores viram vizinhos e a casa fica no lote. */
-function stashActive(world: World): void {
+export function stashActive(world: World): void {
   const town = world.town!;
   const fam = activeFamily(world);
   const lot = activeLot(world);
@@ -390,6 +415,36 @@ function stashActive(world: World): void {
   world.folks = [];
 }
 
+/**
+ * Morador a partir de um vizinho (o Folk guardado de quando foi jogado, se
+ * houver): a vida, o emprego e as habilidades andaram fora de jogo.
+ */
+export function folkFromNeighbor(world: World, catalog: Catalog, n: Neighbor, old?: Folk): Folk {
+  const folk = old ?? makeFolk(n.id, { name: n.name, traits: n.traits, x: 0, y: 0, look: n.look, temper: copyTemper(n.temper), month: n.month, skills: n.skills });
+  folk.name = n.name;
+  if (n.bornName) folk.bornName = n.bornName;
+  else delete folk.bornName;
+  folk.skills = { ...n.skills };
+  folk.interests = { ...ensureInterests(catalog, n) };
+  // bloco 17: a vida andou fora de jogo (cresceu, envelheceu, aposentou)
+  copyLife(n, folk);
+  fitKid(folk, world.tick);
+  // o emprego andou sozinho (promoção, demissão) enquanto estava fora de jogo
+  const career = n.career && catalog.careers[n.career.id] ? n.career : null;
+  if (!career) folk.job = null;
+  else if (folk.job?.careerId === career.id && folk.job.partTime) folk.job = { ...newJob(career.id), level: 0 };
+  else if (folk.job?.careerId === career.id) folk.job.level = Math.min(career.level, catalog.careers[career.id].levels.length - 1);
+  else folk.job = { ...newJob(career.id), level: Math.min(career.level, catalog.careers[career.id].levels.length - 1) };
+  // a vida resumida deixa todo mundo nem bem nem mal
+  for (const k of Object.keys(folk.needs) as (keyof Folk['needs'])[]) {
+    if (k === 'ambience') continue;
+    folk.needs[k] = Math.round(55 + nextFloat(world) * 30);
+  }
+  settle(folk, false);
+  folk.visit = null;
+  return folk;
+}
+
 /** Abre a família `fam` no lote dela (o lote precisa estar guardado em `lot.home`). */
 function enterFamily(world: World, catalog: Catalog, fam: Family): void {
   const town = world.town!;
@@ -403,33 +458,7 @@ function enterFamily(world: World, catalog: Catalog, fam: Family): void {
   const members = world.neighbors.filter((n) => n.home === fam.id);
   world.neighbors = world.neighbors.filter((n) => n.home !== fam.id);
   const stash = fam.stash;
-  const r = () => nextFloat(world);
-  const folks: Folk[] = members.map((n) => {
-    const old = stash?.folks.find((f) => f.id === n.id);
-    const folk = old ?? makeFolk(n.id, { name: n.name, traits: n.traits, x: 0, y: 0, look: n.look, temper: copyTemper(n.temper), month: n.month, skills: n.skills });
-    folk.name = n.name;
-    if (n.bornName) folk.bornName = n.bornName;
-    else delete folk.bornName;
-    folk.skills = { ...n.skills };
-    folk.interests = { ...ensureInterests(catalog, n) };
-    // bloco 17: a vida andou fora de jogo (cresceu, envelheceu, aposentou)
-    copyLife(n, folk);
-    fitKid(folk, world.tick);
-    // o emprego andou sozinho (promoção, demissão) enquanto estava fora de jogo
-    const career = n.career && catalog.careers[n.career.id] ? n.career : null;
-    if (!career) folk.job = null;
-    else if (folk.job?.careerId === career.id && folk.job.partTime) folk.job = { ...newJob(career.id), level: 0 };
-    else if (folk.job?.careerId === career.id) folk.job.level = Math.min(career.level, catalog.careers[career.id].levels.length - 1);
-    else folk.job = { ...newJob(career.id), level: Math.min(career.level, catalog.careers[career.id].levels.length - 1) };
-    // a vida resumida deixa todo mundo nem bem nem mal
-    for (const k of Object.keys(folk.needs) as (keyof Folk['needs'])[]) {
-      if (k === 'ambience') continue;
-      folk.needs[k] = Math.round(55 + r() * 30);
-    }
-    settle(folk, false);
-    folk.visit = null;
-    return folk;
-  });
+  const folks: Folk[] = members.map((n) => folkFromNeighbor(world, catalog, n, stash?.folks.find((f) => f.id === n.id)));
   world.folks = folks;
   if (stash) {
     world.household = stash.household;
@@ -442,7 +471,8 @@ function enterFamily(world: World, catalog: Catalog, fam: Family): void {
   world.household.bills = world.household.bills ?? [];
   if (world.household.nextBills <= world.tick) world.household.nextBills = firstBillAfter(world.tick);
   // casa guardada antes do bloco 15 não tem quem ficou fora; quem é novo procura lugar
-  if (!stash || folks.some((f) => !stash.folks.some((s) => s.id === f.id))) placeAtHome(world, catalog, folks);
+  // plano 2, bloco 11: família que mudou de lote fora de jogo (gaveta, casa nova) também
+  if (!stash || stash.unplaced || folks.some((f) => !stash.folks.some((s) => s.id === f.id))) placeAtHome(world, catalog, folks);
   fam.stash = null;
   town.active = fam.id;
   world.fires = [];
@@ -470,7 +500,7 @@ export function playFamily(world: World, catalog: Catalog, familyId: number): To
  * lote do bairro: terreno vago ou casa à venda, com o que estiver dentro.
  * A casa antiga fica de pé, vazia, à venda.
  */
-export function moveHouse(world: World, catalog: Catalog, lotId: number): TownProblem | null {
+export function moveHouse(world: World, catalog: Catalog, lotId: number, opts: { bare?: boolean; pack?: boolean } = {}): TownProblem | null {
   const town = world.town;
   if (!town) return 'noTown';
   const fam = activeFamily(world);
@@ -482,15 +512,21 @@ export function moveHouse(world: World, catalog: Catalog, lotId: number): TownPr
   if (to.familyId !== 0) return 'lotTaken';
   const busy = leaveProblem(world);
   if (busy) return busy;
-  const sale = salePrice(world, catalog);
-  const cost = lotPrice(world, catalog, to);
+  // plano 2, bloco 11: levar os móveis (vão para o inventário) ou vender junto com a casa
+  const sale = opts.pack ? from.land + buildValue(catalog, world.grid) : salePrice(world, catalog);
+  const cost = priceOf(world, catalog, to, opts.bare);
   if (world.household.funds + sale < cost) return 'cantAfford';
   emptyVisitors(world);
-  // os móveis vão vendidos; o que é de graça (caixa de correio, lápide) fica
+  // os móveis vão vendidos (ou na mudança); o que é de graça (caixa de correio, lápide) fica
   const keep = world.objects.filter((o) => (catalog.objects[o.defId]?.price ?? 0) === 0);
+  if (opts.pack) {
+    const stored = (world.household.stored ??= []);
+    for (const o of world.objects) if (!keep.includes(o)) stored.push(packed(o));
+  }
   from.home = { grid: world.grid, objects: keep, exit: world.exit };
   from.familyId = 0;
   const home = to.home ?? blankHome(world, catalog);
+  if (opts.bare) stripHome(catalog, home);
   world.grid = home.grid;
   world.objects = home.objects;
   world.exit = { ...home.exit };
@@ -509,7 +545,7 @@ export function moveHouse(world: World, catalog: Catalog, lotId: number): TownPr
 }
 
 /** Família nova chega ao bairro num lote vago ou numa casa à venda e passa a ser a jogada. */
-export function foundFamily(world: World, catalog: Catalog, draft: FamilyDraft, lotId: number): TownProblem | null {
+export function foundFamily(world: World, catalog: Catalog, draft: FamilyDraft, lotId: number, bare = false): TownProblem | null {
   const town = world.town;
   if (!town) return 'noTown';
   if (familyProblem(catalog, draft)) return 'badDraft';
@@ -518,9 +554,10 @@ export function foundFamily(world: World, catalog: Catalog, draft: FamilyDraft, 
   if (lot.familyId !== 0) return 'lotTaken';
   const busy = leaveProblem(world);
   if (busy) return busy;
-  const cost = lotPrice(world, catalog, lot);
+  const cost = priceOf(world, catalog, lot, bare);
   if (cost > NEW_FAMILY_FUNDS) return 'cantAfford';
   stashActive(world);
+  if (bare && lot.home) stripHome(catalog, lot.home);
   const surname = cleanName(draft.surname);
   const fam: Family = { id: town.nextFamily++, name: surname, lotId: lot.id, funds: NEW_FAMILY_FUNDS - cost, stash: null, since: world.tick };
   town.families.push(fam);
@@ -549,7 +586,7 @@ export function leaveFamily(world: World, n: Neighbor): number {
 }
 
 /** A família acabou (todo mundo se mudou): a casa fica à venda com o que tem dentro. */
-function dissolve(world: World, fam: Family): void {
+export function dissolve(world: World, fam: Family): void {
   const town = world.town!;
   town.families = town.families.filter((f) => f.id !== fam.id);
   const lot = lotById(world, fam.lotId);
@@ -589,7 +626,8 @@ export function townDay(world: World, catalog: Catalog): void {
   const day = Math.floor(world.tick / MINUTES_PER_DAY);
   const weekday = day % 7;
   for (const fam of [...town.families]) {
-    if (fam.id === town.active) continue;
+    // plano 2, bloco 11: família na gaveta não vive (nem envelhece) até ganhar um lote
+    if (fam.id === town.active || fam.lotId === 0) continue;
     let members = world.neighbors.filter((n) => n.home === fam.id);
     if (members.length === 0) {
       dissolve(world, fam);
@@ -675,12 +713,26 @@ function passAway(world: World, n: Neighbor): void {
   for (const [where, amount] of shares) {
     if (where === 'home') {
       world.household.funds += amount;
+      const mine = activeFamily(world);
+      if (mine) mine.inherited = (mine.inherited ?? 0) + amount;
       world.log.push({ tick: world.tick, key: 'log.estateFromTown', params: { name: n.name, amount: formatMoney(amount) } });
     } else if (typeof where === 'number') {
       const f = familyById(world, where);
-      if (f) f.funds += amount;
+      if (f) {
+        f.funds += amount;
+        f.inherited = (f.inherited ?? 0) + amount;
+      }
     }
   }
+}
+
+/** Objeto que vai para o inventário: sem lugar, sem sujeira de uso, sem bebê dentro. */
+export function packed(o: WorldObject): WorldObject {
+  const copy = JSON.parse(JSON.stringify(o)) as WorldObject;
+  delete copy.baby;
+  copy.x = 0;
+  copy.y = 0;
+  return copy;
 }
 
 /** Para a tela do bairro: lotes com o que mora (ou não) em cada um. */

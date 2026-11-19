@@ -45,3 +45,4 @@ export * from './kitchen';
 export * from './hobbies';
 export * from './persona';
 export * from './ties';
+export * from './clan';

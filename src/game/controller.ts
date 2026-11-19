@@ -93,6 +93,8 @@ export interface Placing {
   lift?: number;
   /** plano 2, bloco 8: ainda não girou à mão (encosta sozinho na parede) */
   autoRot?: boolean;
+  /** plano 2, bloco 11: objeto que sai do inventário da família (já é dela, não paga) */
+  storedId?: number;
 }
 import type { WallMode } from './viewMode';
 import { stepWallMode } from './viewMode';
@@ -324,7 +326,7 @@ export class GameController {
     }
     const ok = this.sim.dispatch(cmd);
     for (const cb of this.commandListeners) cb(cmd, ok);
-    if (ok && (cmd.type === 'buy' || cmd.type === 'sell' || cmd.type === 'move' || cmd.type === 'undoBuy')) this.objectsVersion++;
+    if (ok && (cmd.type === 'buy' || cmd.type === 'sell' || cmd.type === 'move' || cmd.type === 'undoBuy' || cmd.type === 'storeObject' || cmd.type === 'placeStored')) this.objectsVersion++;
     if (ok && (isBuildCommand(cmd) || cmd.type === 'undoBuild')) this.gridVersion++;
     return ok;
   }
@@ -396,6 +398,14 @@ export class GameController {
     };
   }
 
+  /** Plano 2, bloco 11: pega um objeto do inventário para pôr na casa (abre o modo compra). */
+  startPlacingStored(objectId: number): void {
+    const obj = this.world.household.stored?.find((o) => o.id === objectId);
+    if (!obj) return;
+    if (this.mode !== 'buy') this.setMode('buy');
+    this.placing = { defId: obj.defId, rot: obj.rot, parts: obj.parts, style: obj.style, turn8: obj.turn8, lift: obj.lift, autoRot: true, storedId: obj.id };
+  }
+
   rotatePlacing(): void {
     const p = this.placing;
     if (p) {
@@ -427,7 +437,7 @@ export class GameController {
   placingPrice(): number {
     const p = this.placing;
     const def = p && this.sim.catalog.objects[p.defId];
-    if (!p || !def) return 0;
+    if (!p || !def || p.storedId !== undefined) return 0;
     const look = cleanLook(def, p.parts, p.style ?? styleFromColor(zonesOf(def), p.color));
     return priceWith(def, look.parts, look.style);
   }
@@ -437,6 +447,11 @@ export class GameController {
     const p = this.placing;
     if (!p) return false;
     const def = this.sim.catalog.objects[p.defId];
+    if (p.storedId !== undefined) {
+      const ok = this.commandOrExplain({ type: 'placeStored', objectId: p.storedId, x, y, rot: p.rot, nudge: p.nudge, turn8: p.turn8, lift: p.lift });
+      if (ok) this.placing = null;
+      return ok;
+    }
     const ok =
       p.moveId !== undefined
         ? this.commandOrExplain({ type: 'move', objectId: p.moveId, x, y, rot: p.rot, nudge: p.nudge, turn8: p.turn8, lift: p.lift })
@@ -633,6 +648,21 @@ export class GameController {
     this.lotChanged();
     this.speedBeforeTown = 1;
     this.closeTown();
+    return true;
+  }
+
+  /**
+   * Plano 2, bloco 11: gaveta, dividir, juntar e chamar para morar. Quando a
+   * gente da casa em jogo muda, a tela inteira se refaz (como numa troca de lote).
+   */
+  familyCommand(cmd: Extract<Command, { type: 'binFamily' | 'placeFamily' | 'splitFamily' | 'joinFamily' | 'inviteHome' }>): boolean {
+    const keep = this.selectedFolkId;
+    if (!this.commandOrExplain(cmd)) return false;
+    if (cmd.type === 'binFamily' || cmd.type === 'placeFamily') this.townVersion++;
+    else {
+      this.lotChanged();
+      if (this.world.folks.some((f) => f.id === keep && !f.visit)) this.selectedFolkId = keep;
+    }
     return true;
   }
 

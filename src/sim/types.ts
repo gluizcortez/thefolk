@@ -2065,6 +2065,8 @@ export interface Household {
   styles?: SavedStyle[];
   /** plano 2, bloco 9: peças de roupa compradas (as básicas toda casa tem) */
   garments?: string[];
+  /** plano 2, bloco 11: inventário da família (objetos guardados fora da casa, vão junto na mudança) */
+  stored?: WorldObject[];
 }
 
 export interface LogEntry {
@@ -2249,6 +2251,8 @@ export interface FamilyStash {
   mess: Mess[];
   /** tick em que saiu de jogo */
   at: number;
+  /** plano 2, bloco 11: a família mudou de lote fora de jogo (moradores procuram lugar na casa nova) */
+  unplaced?: boolean;
 }
 
 /** Uma família do bairro. Quem é dela: Neighbor.home (fora de jogo) ou os moradores (em jogo). */
@@ -2262,6 +2266,14 @@ export interface Family {
   stash: FamilyStash | null;
   /** tick em que chegou ao bairro */
   since: number;
+  /**
+   * Plano 2, bloco 11: família guardada na gaveta (lotId = 0). Os membros
+   * saem do mundo e ficam aqui, sem envelhecer nem visitar ninguém, até a
+   * família ser posta num lote.
+   */
+  bin?: Neighbor[];
+  /** plano 2, bloco 11: tostões recebidos de herança (para a tela de fundos) */
+  inherited?: number;
 }
 
 export interface Town {
@@ -2446,8 +2458,19 @@ export type Command =
   | { type: 'bargain'; pick: 'even' | 'odd' | null }
   // bloco 15: bairro
   | { type: 'playFamily'; familyId: number }
-  | { type: 'moveHouse'; lotId: number }
-  | { type: 'foundFamily'; lotId: number; draft: FamilyDraft }
+  | { type: 'moveHouse'; lotId: number; bare?: boolean; pack?: boolean }
+  | { type: 'foundFamily'; lotId: number; draft: FamilyDraft; bare?: boolean }
+  // plano 2, bloco 11: família na cidade (gaveta, dividir, juntar, inventário, editar)
+  | { type: 'binDraft'; draft: FamilyDraft }
+  | { type: 'binFamily'; familyId: number }
+  | { type: 'placeFamily'; familyId: number; lotId: number; bare?: boolean }
+  | { type: 'splitFamily'; memberIds: number[]; money: number; surname?: string }
+  | { type: 'joinFamily'; familyId: number; where: 'here' | 'there' }
+  | { type: 'inviteHome'; personId: number }
+  | { type: 'storeObject'; objectId: number }
+  | { type: 'placeStored'; objectId: number; x: number; y: number; rot: Rotation; nudge?: { dx: number; dy: number }; turn8?: number; lift?: number }
+  | { type: 'sellStored'; objectId: number }
+  | { type: 'editFolk'; folkId: number; look?: Look; closet?: Closet; traits?: string[] }
   // bloco 16: centro da cidade (de táxi) e encontros
   | { type: 'goDowntown'; folkIds: number[]; dateId?: number }
   | { type: 'goHome' }

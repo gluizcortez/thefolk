@@ -564,6 +564,23 @@ perder ainda), sonhos para criança e jovem, e trocar traço depois de criado.
 Pronto: testes de dividir/juntar (dinheiro, relações, quem fica na casa) e
 de mudança da gaveta; capturas da tela de família.
 
+**Feito em 19/11/2026** (save v31, uma casa a menos que o plano). Gaveta:
+família com `lotId` 0 guarda os membros em `Family.bin` (fora do mundo, sem
+envelhecer, sem visitar), nasce do criador ("Família nova na gaveta"), de uma
+divisão ou de uma família do bairro mandada para lá (casa vendida, móveis
+vendidos, a obra fica à venda); vai para um terreno vago ou casa à venda
+pagando com o próprio dinheiro. Tela da família (Cidade › Família ou o modo
+família): Gente (criador aberto no folk para aparência e roupas, traços só
+com o benefício "Página virada"; dividir com dinheiro escolhido), Fundos e
+bens (caixa, terreno, obra, móveis, inventário, contas, patrimônio, renda da
+semana, herança) e Juntar (chamar parente, par ou amigo do peito para morar;
+juntar outra família aqui ou ir para a casa dela). Casa à venda com ou sem
+móveis e mudança levando os móveis para o inventário (`Household.stored`, que
+também recebe o que se guarda no modo compra). O casamento com alguém de fora
+continua trazendo a pessoa para casa; morar na casa da outra família é pela
+aba Juntar. Trocar de família jogada segue pela tela do bairro (a lista de
+famílias tem "Jogar"); pelo mapa da cidade fica para o bloco 12.
+
 ## Bloco 12 — Cidade aberta: o bairro dentro da cidade (save v33)
 
 A maior mudança de estrutura do plano. Hoje o `World` é o lote em jogo e o

@@ -547,6 +547,10 @@ export class Hud {
   private helpEl = el('div', 'help card');
   /** bloco 5: abre a tela de criar família */
   openCreator: (() => void) | null = null;
+  /** plano 2, bloco 11: abre o criador num morador em jogo (main liga) */
+  editFolk: ((folkId: number) => void) | null = null;
+  /** plano 2, bloco 11: abre a tela da família (main liga) */
+  openFamily: (() => void) | null = null;
   private buildEl = el('div', 'card catalog build');
   private buildTabs = el('div', 'catalog-tabs');
   private buildItems = el('div', 'catalog-items');
@@ -1643,6 +1647,11 @@ export class Hud {
       items.push({ label: t('hair.open'), icon: 'mood', run: () => {
         this.closeMenu();
         this.hair.show(folk.id);
+      } });
+      // plano 2, bloco 11: o criador aberto no próprio folk (aparência, roupas e, com o benefício, traços)
+      items.push({ label: t('edit.open'), icon: 'mood', run: () => {
+        this.closeMenu();
+        this.editFolk?.(folk.id);
       } });
     }
     this.showRing(x, y, this.ringHead(t(def.name), notes), items);
@@ -2753,6 +2762,14 @@ export class Hud {
           this.ctrl.openTown();
         });
         list.append(town);
+        // plano 2, bloco 11: a tela da família (gente, fundos e bens, juntar)
+        const fam = el('button', 'btn', t('hud.family'));
+        fam.title = t('hud.familyTip');
+        fam.addEventListener('click', () => {
+          this.togglePop('city');
+          this.openFamily?.();
+        });
+        list.append(fam);
       }
     }
     this.panelEl.append(list, el('div', 'panel-note', t(world.outing ? 'city.outingNote' : 'city.note')));
@@ -2784,6 +2801,15 @@ export class Hud {
       tabs.append(b);
     }
     this.panelEl.append(tabs);
+    // plano 2, bloco 11: gente, fundos e bens, dividir e juntar
+    if (this.ctrl.world.town && !this.ctrl.houseEmpty) {
+      const manage = el('button', 'btn btn-small btn-go', t('family.manage'));
+      manage.addEventListener('click', () => {
+        this.togglePop('family');
+        this.openFamily?.();
+      });
+      this.panelEl.append(manage);
+    }
     if (this.familyTab === 'tree') this.renderTree();
     else this.renderAlbum();
   }
@@ -3964,6 +3990,12 @@ export class Hud {
         this.ctrl.toast(t('buy.sold', { name: t(def.name), price }));
       }
     });
+    // plano 2, bloco 11: guardar no inventário da família (sem vender)
+    if (def.price > 0 && !def.pool) {
+      add(t('buy.store'), () => {
+        if (this.ctrl.commandOrExplain({ type: 'storeObject', objectId: obj.id })) this.ctrl.toast(t('buy.stored', { name: t(def.name) }));
+      });
+    }
     this.showMenuAt(x, y);
   }
 
