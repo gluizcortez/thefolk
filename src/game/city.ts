@@ -30,13 +30,16 @@ import {
   toCity,
   toLocal,
   tripState,
+  cityPeople,
+  crowdOf,
+  liveEvents,
 } from '../sim';
 import type { Folk, Lot, LotHome, Place, PlaceDef, Pt, World } from '../sim';
 import { t } from '../i18n';
 import { box, colorMat, cyl, rod, setShadows, texMat, tileUV } from './art/build';
 import { objectArt } from './art/furniture';
 import { House, sceneZ } from './art/house';
-import { PAL, SKIN, seeded } from './art/palette';
+import { HAIR, PAL, PANTS, SHIRT, SKIN, seeded } from './art/palette';
 import { belltower, bush, car, hydrant, sobrado, streetLamp, tree } from './art/scenery';
 import type { GameController } from './controller';
 
@@ -57,6 +60,9 @@ export const CITY_ZOOM = 300;
 export const LABEL_ZOOM = 26;
 /** Casa detalhada só com a vista abaixo disto e perto da câmera. */
 const DETAIL_ZOOM = 70;
+/** Plano 2, bloco 14: a gente da cidade só aparece com a câmera perto (e quantos sem nome por lugar). */
+const CROWD_ZOOM = 120;
+const CROWD_PER_PLACE = 10;
 const DETAIL_RADIUS = 48;
 /** Chão além dos limites da cidade (para a borda não aparecer de longe). */
 const GROUND_PAD = 160;
@@ -90,6 +96,11 @@ export class CityLayer {
   private lotsRoot = new THREE.Group();
   private movers = new THREE.Group();
   private pick = new THREE.Group();
+  /** plano 2, bloco 14: a gente da cidade (nas ruas e nos lugares) e os enfeites dos eventos */
+  private crowd = new THREE.Group();
+  private crowdPool: THREE.Group[] = [];
+  private dogPool: THREE.Group[] = [];
+  private bunting: THREE.Group | null = null;
   private hoverMark: THREE.Group;
   private selectMark: THREE.Group;
   private hoverPlaceMark: THREE.Group;
@@ -113,7 +124,7 @@ export class CityLayer {
   viewHeight = 11;
 
   constructor(private readonly ctrl: GameController) {
-    this.root.add(this.stat, this.lotsRoot, this.movers, this.pick);
+    this.root.add(this.stat, this.lotsRoot, this.movers, this.pick, this.crowd);
     this.hoverMark = frame(0xffffff, 0.5);
     this.selectMark = frame(PAL.mustard, 0.95);
     this.hoverPlaceMark = frame(0xffffff, 0.5);
@@ -169,13 +180,14 @@ export class CityLayer {
       this.staticKey = sKey;
       this.buildStatic(world);
     }
-    const key = `${this.ctrl.townVersion}|${this.shown}|${town.lots.length}`;
+    const key = `${this.ctrl.townVersion}|${this.shown}|${town.lots.length}|${town.lots.map((l) => l.familyId).join(",")}`;
     if (key !== this.builtKey) {
       this.builtKey = key;
       this.buildLots(world);
     }
     this.updateDetail(target, viewHeight);
     this.updateMovers(world, tick);
+    this.updateCrowd(world, tick);
     punchGround(world.grid.w, world.grid.h);
     this.placeMark(this.hoverMark, this.ctrl.screen === 'town' && this.hover !== this.ctrl.townLot ? this.hover : 0);
     this.placeMark(this.selectMark, this.ctrl.screen === 'town' && !this.ctrl.townPlace ? this.ctrl.townLot : 0);
@@ -477,6 +489,93 @@ export class CityLayer {
     });
   }
 
+  // ---------- plano 2, bloco 14: a cidade viva ----------
+
+  /**
+   * Gente da cidade: quem a rotina põe na rua (andando, com o cachorro) ou
+   * num lugar aberto aparece como bonequinho; os lugares completam a lotação
+   * com gente sem nome. O lugar aberto agora (o passeio) tem a gente de
+   * verdade da sim, então fica de fora. De longe (mapa) some tudo.
+   */
+  private updateCrowd(world: World, tick: number): void {
+    const show = this.viewHeight < CROWD_ZOOM;
+    this.crowd.visible = show;
+    const praca = this.places().find((p) => p.id === 'praca');
+    const party = liveEvents(Math.floor(tick), 'praca').length > 0;
+    if (party && !this.bunting && praca) {
+      this.bunting = buntingOver(praca);
+      this.crowd.add(this.bunting);
+    }
+    if (this.bunting) this.bunting.visible = party;
+    if (!show) return;
+    const catalog = this.ctrl.sim.catalog;
+    const shownVenue = world.outing?.venue;
+    let used = 0;
+    let dogs = 0;
+    const put = (look: Partial<Folk['look']>, small: boolean, p: Pt, dir: Pt | undefined, seed: number, moving: boolean) => {
+      let m = this.crowdPool[used];
+      if (!m) {
+        m = new THREE.Group();
+        m.add(new THREE.Group());
+        this.crowdPool.push(m);
+        this.crowd.add(m);
+      }
+      used++;
+      const key = `${look.skin ?? 0}|${look.shirt ?? 0}|${look.pants ?? 0}|${look.hair ?? 0}|${small ? 1 : 0}`;
+      if (m.userData.key !== key) {
+        m.userData.key = key;
+        const body = m.children[0] as THREE.Group;
+        body.clear();
+        body.add(...cityFigure(look, small).children);
+      }
+      m.visible = true;
+      m.userData.moving = moving;
+      m.position.set(p.x, 0, p.z);
+      if (dir) m.rotation.y = Math.atan2(dir.x, dir.z);
+      else m.rotation.y = (seed % 8) * (Math.PI / 4);
+      m.children[0].position.y = moving ? Math.abs(Math.sin(tick * 3 + seed)) * 0.06 : 0;
+    };
+    // mão direita na calçada
+    const side = (p: Pt, dir: Pt | undefined, off: number): Pt => (dir ? { x: p.x - dir.z * off, z: p.z + dir.x * off } : p);
+    for (const { n, at } of cityPeople(world, catalog, tick)) {
+      if (!at.point) continue;
+      if (at.place && at.place === shownVenue && at.doing !== 'walk') continue;
+      const moving = at.doing === 'walk' || at.doing === 'dog';
+      const p = moving ? side(at.point, at.dir, 3.1) : at.point;
+      put(n.look, n.age === 'child' || n.age === 'teen', p, at.dir, n.id, moving);
+      if (at.dog) {
+        let d = this.dogPool[dogs];
+        if (!d) {
+          d = dogFigure(n.id);
+          this.dogPool.push(d);
+          this.crowd.add(d);
+        }
+        dogs++;
+        d.visible = true;
+        const ahead = at.dir ? { x: p.x + at.dir.x * 0.9 + at.dir.z * 0.4, z: p.z + at.dir.z * 0.9 - at.dir.x * 0.4 } : p;
+        d.position.set(ahead.x, Math.abs(Math.sin(tick * 5 + n.id)) * 0.04, ahead.z);
+        if (at.dir) d.rotation.y = Math.atan2(at.dir.x, at.dir.z);
+      }
+    }
+    // gente sem nome completa a lotação dos lugares abertos
+    for (const def of this.places()) {
+      if (def.kind !== 'venue' || def.id === shownVenue || def.id === 'centro') continue;
+      const want = Math.min(CROWD_PER_PLACE, crowdOf(def, Math.floor(tick)));
+      const day = Math.floor(tick / 1440);
+      for (let i = 0; i < want; i++) {
+        const h = (salt: number) => {
+          const x = Math.sin((i + 1) * 12.9898 + day * 78.233 + salt * 37.719 + def.rect.x) * 43758.5453;
+          return x - Math.floor(x);
+        };
+        const p = { x: def.rect.x + 1.5 + h(1) * Math.max(0, def.rect.w - 3), z: def.rect.z + 1.5 + h(2) * Math.max(0, def.rect.h - 3) };
+        const look = { skin: Math.floor(h(3) * 40), shirt: Math.floor(h(4) * SHIRT.length), pants: Math.floor(h(5) * PANTS.length), hair: Math.floor(h(6) * HAIR.length) };
+        put(look, h(7) < 0.2, p, undefined, i + day, false);
+      }
+    }
+    for (let i = used; i < this.crowdPool.length; i++) this.crowdPool[i].visible = false;
+    for (let i = dogs; i < this.dogPool.length; i++) this.dogPool[i].visible = false;
+  }
+
   // ---------- mapa: mouse, molduras e etiquetas ----------
 
   /** Lote (da cidade) debaixo de um ponto local do chão; 0 = nenhum. */
@@ -543,6 +642,9 @@ export class CityLayer {
         add({ key: `l${lot.id}`, kind: 'lot', text, id: lot.id, on: lot.id === this.ctrl.townLot }, { x: (x0 + x1) / 2, z: lot.side === 0 ? z1 - 2 : z0 + 2 }, 5);
       }
     }
+    // plano 2, bloco 14: quem o celular mostrou no mapa
+    const pin = this.ctrl.mapPin;
+    if (pin && this.ctrl.screen === 'town') add({ key: 'pin', kind: 'folk', text: pin.text, on: true }, pin, 2.2);
     // a família em jogo: onde está cada um
     for (const f of familyFolks(world)) {
       const p = this.folkPoint(world, f);
@@ -1126,4 +1228,78 @@ function mergeByMaterial(root: THREE.Group): THREE.Group {
     out.add(clone);
   }
   return out;
+}
+
+// ---------- plano 2, bloco 14: gente e cachorros da cidade ----------
+
+const figureGeo = {
+  legs: new THREE.CylinderGeometry(0.22, 0.26, 0.75, 8),
+  torso: new THREE.CylinderGeometry(0.26, 0.24, 0.6, 8),
+  head: new THREE.SphereGeometry(0.2, 10, 8),
+  hair: new THREE.SphereGeometry(0.21, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+};
+const figureMats = new Map<number, THREE.Material>();
+const matOf = (color: number): THREE.Material => {
+  let m = figureMats.get(color);
+  if (!m) {
+    m = colorMat(color);
+    figureMats.set(color, m);
+  }
+  return m;
+};
+
+/** Bonequinho de quem anda pela cidade (as cores vêm da aparência). */
+function cityFigure(look: Partial<Folk['look']>, small: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const s = small ? 0.72 : 1;
+  const skin = SKIN[Math.min(3, Math.floor(((look.skin ?? 10) / 40) * 4))] ?? SKIN[1];
+  const mesh = (geo: THREE.BufferGeometry, color: number, y: number) => {
+    const m = new THREE.Mesh(geo, matOf(color));
+    m.scale.setScalar(s);
+    m.position.y = y * s;
+    m.castShadow = true;
+    return m;
+  };
+  g.add(mesh(figureGeo.legs, PANTS[(look.pants ?? 0) % PANTS.length], 0.375));
+  g.add(mesh(figureGeo.torso, SHIRT[(look.shirt ?? 0) % SHIRT.length], 1.05));
+  g.add(mesh(figureGeo.head, skin, 1.55));
+  g.add(mesh(figureGeo.hair, HAIR[(look.hair ?? 0) % HAIR.length], 1.58));
+  return g;
+}
+
+/** Cachorro: corpo, cabeça, rabo e quatro patas. */
+function dogFigure(seed: number): THREE.Group {
+  const coat = [0x8a5a32, 0xe9e4d6, 0x2b2522, 0xc9a26a][seed % 4];
+  const g = new THREE.Group();
+  const mat = matOf(coat);
+  g.add(box(0.26, 0.24, 0.6, mat, 0, 0.22, 0), box(0.22, 0.22, 0.24, mat, 0, 0.4, 0.36), box(0.06, 0.06, 0.24, mat, 0, 0.42, -0.36));
+  for (const x of [-0.09, 0.09]) for (const z of [-0.22, 0.22]) g.add(box(0.07, 0.22, 0.07, mat, x, 0, z));
+  g.add(box(0.1, 0.06, 0.06, matOf(0x1b1b1e), 0, 0.42, 0.5));
+  setShadows(g, true, false);
+  return g;
+}
+
+/** Bandeirinhas de festa cruzando a praça (feira e festa junina). */
+function buntingOver(def: PlaceDef): THREE.Group {
+  const g = new THREE.Group();
+  const colors = [0xc9382f, 0xe8b830, 0x2f7fc4, 0x3f9455, 0xe9e4d6, 0x7d55ad];
+  const r = def.rect;
+  const lines = 4;
+  for (let i = 0; i < lines; i++) {
+    const z = r.z + 2 + ((r.h - 4) * (i + 0.5)) / lines;
+    g.add(rod([r.x + 1, 3.4, z], [r.x + r.w - 1, 3.4, z], 0.015, matOf(0x3a3a3a), 4));
+    for (let x = r.x + 1.6, k = i; x < r.x + r.w - 1.2; x += 0.8, k++) {
+      const flag = box(0.32, 0.36, 0.02, matOf(colors[k % colors.length]), x, 3.04 + Math.sin(x * 0.4) * 0.06, z);
+      g.add(flag);
+    }
+  }
+  for (const [x, z] of [
+    [r.x + 1, r.z + 1],
+    [r.x + r.w - 1, r.z + 1],
+    [r.x + 1, r.z + r.h - 1],
+    [r.x + r.w - 1, r.z + r.h - 1],
+  ]) {
+    g.add(cyl(0.06, 0.06, 3.5, 6, matOf(0x6b4a2b), x, 0, z));
+  }
+  return g;
 }

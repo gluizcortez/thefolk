@@ -302,7 +302,7 @@ export function createWorld(seed: WorldSeed): World {
     lastBargain: null,
     departed: [],
     spirits: [],
-    rules: { death: seed.death ?? true, life: seed.life ?? 'off' },
+    rules: { death: seed.death ?? true, life: seed.life ?? 'off', story: true },
     lastBurglary: seed.startTick,
     town: null,
     trip: null,

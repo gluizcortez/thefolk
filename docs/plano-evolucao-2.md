@@ -683,6 +683,19 @@ Pronto: simulação headless de 30 dias de cidade sem a família jogada fazer
 nada de especial, conferindo população estável, casamentos e nascimentos em
 número razoável e nenhum lote em estado impossível.
 
+**Feito em 19/11/2026** (save v34, uma casa a menos que o plano). Rotina
+calculada por pessoa e dia (escola, trabalho, eventos, cachorro, lazer
+pelos traços) que aparece como bonecos nas ruas e enche os lugares abertos.
+História da cidade uma vez por dia: namoro, noivado, casamento com mudança,
+separação rara, filhos (até 6 por casa), emprego e troca de área, mudança
+para casa maior, reforma, famílias novas quando sobram casas. Jornal com
+números da cidade, agenda e notícias, e chave de cidade parada. Eventos num
+ciclo de 4 semanas: feira de sábado na praça, concurso de culinária, xadrez
+no parque, festa junina. Celular com quem está onde, ver no mapa e chamar
+para um lugar. Teste de 30 dias confere população, casamentos, nascimentos,
+chegadas e nenhum lote impossível. Simplificações: bonecos simples nas ruas,
+encontro só em lugar aberto, sem fogueira.
+
 ## Bloco 15 — Acabamento: desempenho, equilíbrio e primeiros passos (sem save novo, ou v36)
 
 - **Desempenho**: meta de 30 quadros por segundo no mapa e 60 dentro de

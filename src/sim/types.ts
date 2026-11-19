@@ -85,7 +85,11 @@ export interface InteractionDef {
     // plano 2, bloco 13: mercado (sacolas para casa), pescaria no lago, palco do bar
     | 'buyGroceries'
     | 'fish'
-    | 'busk';
+    | 'busk'
+    // plano 2, bloco 14: concurso da cidade (culinária, xadrez)
+    | 'contest';
+  /** plano 2, bloco 14: só vale durante este evento da cidade, no lugar dele (sim/cityEvents.ts) */
+  event?: string;
   /** plano 2, bloco 13: porções que a compra no mercado põe nas sacolas */
   groceries?: number;
   /** bloco 16: prato do cardápio (id em DISHES) */
@@ -2068,6 +2072,8 @@ export interface PlaceActivity {
   obj: string;
   /** id da interação nele */
   act: string;
+  /** plano 2, bloco 14: plano que só existe durante um evento da cidade */
+  event?: string;
 }
 
 /** Recado num prédio fechado (pagar contas na prefeitura, consulta no hospital...). */
@@ -2218,7 +2224,7 @@ export interface World {
   /** bloco 14: fantasmas andando agora */
   spirits: Spirit[];
   /** bloco 14: regras do jogo novo (sem morte: quem cairia escapa por pouco) */
-  rules: { death: boolean; life?: LifePace };
+  rules: { death: boolean; life?: LifePace; story?: boolean };
   /** bloco 14: tick do último gatuno */
   lastBurglary: number;
   /** bloco 15: o bairro com os lotes e as famílias (null = só a casa, como nos testes antigos) */
@@ -2387,6 +2393,25 @@ export interface Town {
   feed: LogEntry[];
   /** plano 2, bloco 12: a cidade em volta (sem campo = só o bairro, como nos testes antigos) */
   city?: CityInfo;
+  /** plano 2, bloco 14: a história que anda sozinha (namoros, concursos) */
+  story?: StoryState;
+}
+
+// ---------- Plano 2, bloco 14: cidade viva ----------
+
+/** Quem competiu num concurso da cidade e como foi. */
+export interface ContestEntry {
+  id: number;
+  name: string;
+  points: number;
+  place: number;
+}
+
+export interface StoryState {
+  /** desde quando cada casal de fora de jogo está como está (chave "menor>maior") */
+  since: Record<string, number>;
+  /** concursos da cidade por "evento:dia": a família que competiu e se o resultado já saiu no jornal */
+  contests: Record<string, { entrants: ContestEntry[]; told?: boolean }>;
 }
 
 // ---------- Plano 2, bloco 12: cidade aberta ----------
@@ -2417,6 +2442,8 @@ export interface Trip {
   arrive: number;
   /** quem foi chamado para o encontro (ida ao centro) */
   dateId?: number;
+  /** plano 2, bloco 14: amigo chamado pelo celular (encontra a turma lá, sem ser encontro) */
+  meetId?: number;
   /** visita: lote visitado, quando sai de lá e quando chega de volta */
   lotId?: number;
   leave?: number;
@@ -2609,7 +2636,9 @@ export type Command =
   | { type: 'sellStored'; objectId: number }
   | { type: 'editFolk'; folkId: number; look?: Look; closet?: Closet; traits?: string[] }
   // bloco 16: centro da cidade (de táxi) e encontros
-  | { type: 'goDowntown'; folkIds: number[]; dateId?: number; mode?: TravelMode; place?: string; plan?: string }
+  | { type: 'goDowntown'; folkIds: number[]; dateId?: number; mode?: TravelMode; place?: string; plan?: string; meetId?: number }
+  // plano 2, bloco 14: deixar a cidade andando ou parada
+  | { type: 'setStory'; on: boolean }
   /** plano 2, bloco 13: recado num prédio fechado (prefeitura, hospital, delegacia) */
   | { type: 'runErrand'; folkIds: number[]; place: string; errand: string; mode: TravelMode }
   /** plano 2, bloco 13: como se porta no trabalho ou na escola */

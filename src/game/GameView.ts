@@ -1055,7 +1055,8 @@ export class GameView {
     if (req) {
       this.ctrl.viewRequest = null;
       this.zoomGoal = req.zoom;
-      const p = req.where === 'city' ? this.city.cityCenterLocal() : req.where === 'home' ? this.city.homeLocal() : null;
+      const w = req.where;
+      const p = typeof w === 'object' ? this.city.toLocal(w.x, w.z) : w === 'city' ? this.city.cityCenterLocal() : w === 'home' ? this.city.homeLocal() : null;
       if (p) this.focusGoal = { x: p.x, z: p.z };
     }
     if (this.zoomGoal !== null) {

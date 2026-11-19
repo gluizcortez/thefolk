@@ -277,7 +277,11 @@ export class GameController {
   /** plano 2, bloco 12: a câmera acompanha quem anda pela rua */
   followTrip = false;
   /** plano 2, bloco 12: zoom pedido para a tela (mapa da cidade, de volta para casa) */
-  viewRequest: { zoom: number; where: 'city' | 'home' | 'here' } | null = null;
+  viewRequest: { zoom: number; where: 'city' | 'home' | 'here' | { x: number; z: number } } | null = null;
+  /** plano 2, bloco 14: aba pedida para o painel da cidade (celular, jornal) */
+  townTab: '' | 'phone' | 'paper' = '';
+  /** plano 2, bloco 14: alguém mostrado no mapa pelo celular (ponto da cidade) */
+  mapPin: { x: number; z: number; text: string } | null = null;
 
   constructor() {
     this.sim = new Sim(CATALOG, townWorld(createWorld(starterHouse(freshSeed()))));
@@ -637,8 +641,9 @@ export class GameController {
    * Plano 2, bloco 12: abre o mapa da cidade. Não é outra tela: a câmera se
    * afasta da casa até a cidade inteira caber (o tempo continua andando).
    */
-  openTown(): void {
+  openTown(tab: '' | 'phone' | 'paper' = ''): void {
     if (!this.world.town) return;
+    this.townTab = tab;
     if (this.mode !== 'live') this.setMode('live');
     this.followTrip = false;
     this.viewRequest = { zoom: 170, where: 'city' };
@@ -700,7 +705,7 @@ export class GameController {
   }
 
   /** Plano 2, bloco 12: visita a um vizinho, bicicleta e carro. */
-  cityCommand(cmd: Extract<Command, { type: 'visitLot' | 'buyVehicle' | 'sellVehicle' | 'runErrand' | 'setStyle' }>): boolean {
+  cityCommand(cmd: Extract<Command, { type: 'visitLot' | 'buyVehicle' | 'sellVehicle' | 'runErrand' | 'setStyle' | 'setStory' }>): boolean {
     if (!this.commandOrExplain(cmd)) return false;
     if (cmd.type === 'visitLot' || cmd.type === 'runErrand') this.startFollow();
     return true;

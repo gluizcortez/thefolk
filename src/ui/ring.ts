@@ -15,7 +15,7 @@ import { DISH_BY_ID, interactionOpen, interactionReady, isAdult, kidAllows, know
 /** Opções que cabem soltas no anel antes de agrupar. */
 export const RING_MAX = 6;
 
-export type Unavailable = 'age' | 'broken' | 'noFood' | 'noTakeout' | 'fairClosed' | 'noBills' | 'notNight' | 'notNow' | 'skill';
+export type Unavailable = 'age' | 'broken' | 'noFood' | 'noTakeout' | 'fairClosed' | 'noBills' | 'notNight' | 'notNow' | 'skill' | 'eventClosed' | 'fairMoved';
 
 export interface InteractionState {
   show: boolean;
@@ -49,7 +49,9 @@ export function interactionState(world: World, catalog: Catalog, folk: Folk, obj
   if (state.broken && !it.care) return grey('broken');
   if (!interactionReady(world, it)) {
     if (it.takeout) return grey('noTakeout');
-    if (it.special === 'fair') return grey('fairClosed');
+    // plano 2, bloco 14: a feira foi para a praça; o que é de evento espera o dia dele
+    if (it.special === 'fair') return grey(world.town?.city ? 'fairMoved' : 'fairClosed');
+    if (it.event) return grey('eventClosed');
     if (it.special === 'payBills') return grey('noBills');
     if (it.night) return grey('notNight');
     if (it.portions) return grey('noFood');

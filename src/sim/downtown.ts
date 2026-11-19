@@ -25,7 +25,10 @@ export type OutingProblem =
   | 'busyLot'
   | 'dateBusy'
   | 'dateRefused'
-  | 'noVenue';
+  | 'noVenue'
+  // plano 2, bloco 14: amigo chamado pelo celular ocupado ou não quis
+  | 'meetBusy'
+  | 'meetRefused';
 
 /** Táxi, por viagem (ida ou volta), para quem for. */
 export const TAXI_FARE = 25;
@@ -44,6 +47,8 @@ export const SELF_SERVE_MINUTES = 25;
 export const ORDER_PATIENCE = 90;
 /** Figurantes no largo ao mesmo tempo, no máximo. */
 export const EXTRAS_MAX = 4;
+/** Plano 2, bloco 14: a mais em dia de evento da cidade. */
+export const EVENT_EXTRAS = 4;
 /** Figurante fica entre isto e o dobro. */
 export const EXTRA_STAY = 90;
 /** Cansado demais (energia abaixo disso), quem está no centro volta para casa. */

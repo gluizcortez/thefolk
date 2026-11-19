@@ -69,6 +69,63 @@ const showroom = (id: string, art: string, size: { w: number; h: number }, deliv
 });
 
 export const PLACE_OBJECTS: ObjectDef[] = [
+  // plano 2, bloco 14: barraca da praça (feira de sábado e quitutes da festa junina)
+  {
+    id: 'fairstall',
+    name: 'obj.fairstall',
+    art: 'fairstall',
+    price: 400,
+    buyable: false,
+    category: 'outdoor',
+    size: { w: 2, h: 1 },
+    useSides: ['S'],
+    slots: 2,
+    ambience: 4,
+    interactions: [
+      { ...groceries('feira', 12, 30, 12), event: 'feira' },
+      { id: 'quitute', label: 'act.quitute', duration: 20, effects: { hunger: 2.4, fun: 0.8 }, until: 'hunger', autoBelow: 45, cost: 6, hold: 'plate', anim: 'eat', event: 'arraial' },
+      { id: 'pescaria', label: 'act.pescaria', duration: 20, effects: { fun: 1.5, social: 0.2 }, until: 'fun', cost: 3, anim: 'reach', event: 'arraial' },
+    ],
+  },
+  // plano 2, bloco 14: tabuleiro do parque (o campeonato de xadrez é nele)
+  {
+    id: 'parkchess',
+    name: 'obj.parkchess',
+    art: 'chessboard',
+    price: 300,
+    buyable: false,
+    category: 'games',
+    size: { w: 1, h: 1 },
+    useSides: ['N', 'S'],
+    slots: 2,
+    ambience: 3,
+    interactions: [
+      {
+        id: 'chess',
+        label: 'act.chess',
+        duration: 60,
+        effects: { fun: 0.6, comfort: 0.3 },
+        until: 'fun',
+        pose: 'sit',
+        onObject: true,
+        skill: { id: 'logic', xpPerMinute: 1.0 },
+        duo: { effects: { fun: 0.5, social: 0.8 }, friendship: 0.05 },
+      },
+      {
+        id: 'contestChess',
+        label: 'act.contestChess',
+        duration: 60,
+        effects: { fun: 0.5, comfort: 0.2 },
+        autonomous: false,
+        residentOnly: true,
+        pose: 'sit',
+        onObject: true,
+        special: 'contest',
+        event: 'xadrez',
+        skill: { id: 'logic', xpPerMinute: 1.4 },
+      },
+    ],
+  },
   {
     id: 'gondola',
     name: 'obj.gondola',
@@ -112,6 +169,19 @@ export const PLACE_OBJECTS: ObjectDef[] = [
         skill: { id: 'cooking', xpPerMinute: 0.4 },
         duo: { effects: { social: 0.4 }, friendship: 0.1 },
       },
+      // plano 2, bloco 14: concurso de culinária da praça (domingo, semanas 2 e 4)
+      {
+        id: 'contestCook',
+        label: 'act.contestCook',
+        duration: 60,
+        effects: { fun: 0.6, social: 0.3, energy: -0.1 },
+        autonomous: false,
+        residentOnly: true,
+        anim: 'stir',
+        special: 'contest',
+        event: 'culinaria',
+        skill: { id: 'cooking', xpPerMinute: 0.8 },
+      },
     ],
   },
   {
@@ -128,6 +198,8 @@ export const PLACE_OBJECTS: ObjectDef[] = [
     interactions: [
       { id: 'watchBand', label: 'act.watchBand', duration: 60, effects: { fun: 1.1, social: 0.3 }, until: 'fun', autoBelow: 60, loops: ['watch', 'cheer', 'watch_cross'], duo: { effects: { social: 0.3 }, friendship: 0.06, romance: 0.04 } },
       { id: 'dance', label: 'act.dance', duration: 45, effects: { fun: 1.6, energy: -0.25 }, until: 'fun', pose: 'dance', skill: { id: 'fitness', xpPerMinute: 0.2 }, duo: { effects: { social: 0.6 }, friendship: 0.08, romance: 0.06 } },
+      // plano 2, bloco 14: a quadrilha da festa junina
+      { id: 'quadrilha', label: 'act.quadrilha', duration: 50, effects: { fun: 2.0, social: 0.9, energy: -0.3 }, until: 'fun', pose: 'dance', event: 'arraial', skill: { id: 'fitness', xpPerMinute: 0.3 }, duo: { effects: { social: 0.8 }, friendship: 0.12, romance: 0.08 } },
     ],
   },
   {
@@ -287,6 +359,11 @@ export const PRACA: VenuePlan = {
     { defId: 'lamppost', x: 17, y: 18 },
     { defId: 'lamppost', x: 2, y: 13 },
     { defId: 'lamppost', x: 27, y: 13 },
+    // plano 2, bloco 14: barracas da feira e da festa junina
+    { defId: 'fairstall', x: 3, y: 14 },
+    { defId: 'fairstall', x: 7, y: 14 },
+    { defId: 'fairstall', x: 21, y: 14 },
+    { defId: 'fairstall', x: 24, y: 14 },
   ],
 };
 
@@ -515,6 +592,9 @@ export const PARQUE: VenuePlan = {
     { defId: 'lamppost', x: 4, y: 10 },
     { defId: 'lamppost', x: 19, y: 10 },
     { defId: 'lamppost', x: 30, y: 10 },
+    // plano 2, bloco 14: mesas de xadrez (o campeonato de domingo)
+    { defId: 'parkchess', x: 22, y: 13 },
+    { defId: 'parkchess', x: 29, y: 13 },
   ],
 };
 
@@ -565,6 +645,10 @@ const places: PlaceDef[] = [
       { id: 'band', label: 'plan.band', obj: 'bandstand', act: 'watchBand' },
       { id: 'grill', label: 'plan.grill', obj: 'pubgrill', act: 'churrasco' },
       { id: 'chess', label: 'plan.chess', obj: 'chessboard', act: 'chess' },
+      // plano 2, bloco 14: só no dia do evento
+      { id: 'fair', label: 'plan.fair', obj: 'fairstall', act: 'groceries_feira', event: 'feira' },
+      { id: 'cookoff', label: 'plan.cookoff', obj: 'pubgrill', act: 'contestCook', event: 'culinaria' },
+      { id: 'arraial', label: 'plan.arraial', obj: 'bandstand', act: 'quadrilha', event: 'arraial' },
     ],
   },
   {
@@ -681,6 +765,7 @@ const places: PlaceDef[] = [
       { id: 'fish', label: 'plan.fish', obj: 'pier', act: 'fish' },
       { id: 'picnic', label: 'plan.picnic', obj: 'patiotable', act: 'sit' },
       { id: 'yoga', label: 'plan.yoga', obj: 'yogamat', act: 'yoga' },
+      { id: 'chessCup', label: 'plan.chessCup', obj: 'parkchess', act: 'contestChess', event: 'xadrez' },
     ],
   },
   // ---------- prédios fechados ----------

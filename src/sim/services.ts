@@ -1,3 +1,4 @@
+import { eventReady } from './cityEvents';
 import { MINUTES_PER_DAY, clockOf, nightAmount } from './clock';
 import { isAdult } from './kids';
 import { formatMoney, objectBusy, sellValue } from './economy';
@@ -115,7 +116,9 @@ export function interactionReady(world: World, it: InteractionDef): boolean {
   if (it.portions && house.pantry < it.portions) return false;
   if (it.takeout && house.takeout <= 0) return false;
   if (it.special === 'payBills') return unpaidBills(world).length > 0;
-  if (it.special === 'fair') return fairOpen(world.tick);
+  // plano 2, bloco 14: na cidade a feira saiu da calçada e foi para a praça
+  if (it.special === 'fair') return fairOpen(world.tick) && !world.town?.city;
+  if (it.event) return eventReady(world, it.event);
   // bloco 14: extintor e ligações de socorro só quando há o que fazer
   if (it.special === 'douse') return (world.fires ?? []).length > 0;
   if (it.special === 'callFire') return (world.fires ?? []).length > 0 && (world.help?.fire ?? 0) === 0;

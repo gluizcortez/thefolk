@@ -87,7 +87,7 @@ function draftFolks(world: World, catalog: Catalog, draft: FamilyDraft): Folk[] 
 }
 
 /** Família nova direto para a gaveta (chega com o mesmo dinheiro de quem chega ao bairro). */
-export function binDraft(world: World, catalog: Catalog, draft: FamilyDraft): Family | null {
+export function binDraft(world: World, catalog: Catalog, draft: FamilyDraft, quiet = false): Family | null {
   const town = world.town;
   if (!town) return null;
   const folks = draftFolks(world, catalog, draft);
@@ -95,7 +95,7 @@ export function binDraft(world: World, catalog: Catalog, draft: FamilyDraft): Fa
   fam.bin = folks.map((f) => neighborFrom(f, fam.id));
   fam.stash = { folks, household: { ...freshHousehold(START_PANTRY), funds: fam.funds, nextBills: firstBillAfter(world.tick) }, mess: [], at: world.tick, unplaced: true };
   town.families.push(fam);
-  pushFeed(world, 'feed.binNew', { family: fam.name });
+  if (!quiet) pushFeed(world, 'feed.binNew', { family: fam.name });
   return fam;
 }
 

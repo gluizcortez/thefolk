@@ -226,7 +226,41 @@ const pier: FurnitureSpec = {
   },
 };
 
+/**
+ * Plano 2, bloco 14: barraca da praça. Bancada de madeira com caixotes de
+ * frutas e verduras, quatro paus e toldo listrado (a mesma barraca serve a
+ * feira de sábado e os quitutes da festa junina).
+ */
+const fairstall: FurnitureSpec = {
+  build(seed) {
+    const wood = pine();
+    const g = group(box(1.85, 0.08, 0.75, wood, 0, 0.8, 0), box(1.8, 0.75, 0.04, wood, 0, 0.05, 0.33));
+    for (const sx of [-0.88, 0.88]) for (const sz of [-0.33, 0.33]) g.add(box(0.06, 2.1, 0.06, texMat('walnut'), sx, 0, sz));
+    // toldo listrado, caindo um pouco para a frente
+    const stripes = [[0xc9382f, 0xf2ede2], [0x2f7fc4, 0xf2ede2], [0x3f9455, 0xf4d03f]][seed % 3];
+    for (let i = 0; i < 8; i++) {
+      const strip = box(0.24, 0.04, 1.05, colorMat(stripes[i % 2], { gloss: 0.2 }), -0.84 + i * 0.24, 2.12, 0.05);
+      strip.rotation.x = 0.12;
+      g.add(strip);
+    }
+    // caixotes com frutas e verduras
+    let k = seed + 7;
+    for (const x of [-0.6, 0, 0.6]) {
+      g.add(box(0.5, 0.18, 0.4, texMat('pine'), x, 0.88, 0.05));
+      for (let j = 0; j < 6; j++) {
+        k = (k * 1103515245 + 12345) & 0x7fffffff;
+        const col = [0xd9452f, 0xe8b830, 0x5f9e3a, 0xd27a2a, 0x7d55ad][(k >>> 16) % 5];
+        g.add(ball(0.07, 0.07, 0.07, colorMat(col, { gloss: 0.5 }), x - 0.16 + (j % 3) * 0.16, 1.1, j < 3 ? -0.04 : 0.12, 8));
+      }
+    }
+    // plaquinha de preço
+    g.add(box(0.36, 0.2, 0.02, colorMat(0x2b2b2b), 0.62, 1.25, 0.32), box(0.3, 0.04, 0.025, colorMat(0xf2ede2), 0.62, 1.32, 0.33));
+    return { group: g };
+  },
+};
+
 export const PLACE_ART: Record<string, FurnitureSpec> = {
+  fairstall,
   gondola,
   checkout,
   bandstand,

@@ -34,8 +34,21 @@ import {
   placeOpen,
   SCHOOL_STYLES,
   WORK_STYLES,
+  census,
+  eventDef,
+  friendshipLabel,
+  freeToMeet,
+  hasRoutine,
+  homePoint,
+  liveEvents,
+  peopleAt,
+  placeCenter,
+  relationOf,
+  storyOn,
+  upcomingEvents,
+  whereIs,
 } from '../sim';
-import type { Folk, Lot, PlaceDef, SchoolStyle, TravelMode, WorkStyle } from '../sim';
+import type { Folk, LogEntry, Lot, Neighbor, PlaceDef, SchoolStyle, TravelMode, Whereabouts, WorkStyle, World } from '../sim';
 import { travelPicker, usableMode } from './travel';
 
 // Bloco 15: o painel da tela do bairro. Plaquinha em cima de cada lote, um
@@ -67,8 +80,11 @@ export class TownPanel {
   newFamilyAt: ((lotId: number) => void) | null = null;
   /** plano 2, bloco 11: abre o criador para uma família da gaveta */
   newFamilyInBin: (() => void) | null = null;
-  /** plano 2, bloco 11: cartão do lote ou lista de famílias (com a gaveta) */
-  private tab: 'lot' | 'families' = 'lot';
+  /** plano 2, bloco 11: cartão do lote ou lista de famílias (com a gaveta); bloco 14: celular e jornal */
+  private tab: 'lot' | 'families' | 'phone' | 'paper' = 'lot';
+  /** plano 2, bloco 14: com quem marcar pelo celular, onde e como ir */
+  private meetWith = 0;
+  private meetPlace = '';
   /** plano 2, bloco 11: comprar a casa à venda sem os móveis */
   private bare = false;
   /** plano 2, bloco 11: na mudança, levar os móveis para o inventário */
@@ -100,19 +116,27 @@ export class TownPanel {
     document.body.classList.toggle('town-open', open);
     this.root.hidden = false;
     for (const card of [this.head, this.detail, this.feed]) card.hidden = !open;
+    // plano 2, bloco 14: com o jornal aberto as manchetes saem do caminho
+    if (this.tab === 'paper') this.feed.hidden = true;
     this.updateMarks();
     if (!open) {
       this.shownKey = '';
       return;
     }
     const trip = this.ctrl.world.trip;
+    // plano 2, bloco 14: o menu da cidade pede o celular ou o jornal
+    if (this.ctrl.townTab) {
+      this.tab = this.ctrl.townTab;
+      this.ctrl.townTab = '';
+      this.shownKey = '';
+    }
     if (this.ctrl.townPlace !== this.shownPlace) {
       this.shownPlace = this.ctrl.townPlace;
       this.placePlan = '';
       this.errand = '';
       this.visitors = null;
     }
-    const key = `${this.ctrl.townVersion}|${this.ctrl.townLot}|${this.ctrl.townPlace}|${this.placePlan}|${this.errand}|${world_jobs(this.ctrl.world)}|${this.ctrl.world.household.funds}|${this.tab}|${this.bare}|${this.pack}|${trip?.from ?? 0}|${(this.ctrl.world.household.vehicles ?? []).join()}|${[...(this.visitors ?? [])].join()}|${this.visitMode}|${Math.floor(this.ctrl.world.tick / 30)}`;
+    const key = `${this.ctrl.townVersion}|${this.ctrl.townLot}|${this.ctrl.townPlace}|${this.placePlan}|${this.errand}|${world_jobs(this.ctrl.world)}|${this.ctrl.world.household.funds}|${this.tab}|${this.bare}|${this.pack}|${trip?.from ?? 0}|${(this.ctrl.world.household.vehicles ?? []).join()}|${[...(this.visitors ?? [])].join()}|${this.visitMode}|${this.meetWith}|${this.meetPlace}|${this.ctrl.selectedFolkId}|${this.ctrl.world.rules.story}|${Math.floor(this.ctrl.world.tick / 15)}`;
     if (key !== this.shownKey) {
       this.shownKey = key;
       this.render();
@@ -186,8 +210,9 @@ export class TownPanel {
     back.hidden = this.ctrl.houseEmpty;
     // plano 2, bloco 11: lista de famílias com a gaveta
     const tabs = el('div', 'town-tabs');
-    for (const id of ['lot', 'families'] as const) {
-      const b = el('button', 'tab', id === 'lot' ? t('town.tab.lot') : t('town.tab.families', { n: binFamilies(world).length }));
+    const ids = town.city ? (['lot', 'families', 'phone', 'paper'] as const) : (['lot', 'families'] as const);
+    for (const id of ids) {
+      const b = el('button', 'tab', id === 'families' ? t('town.tab.families', { n: binFamilies(world).length }) : t(`town.tab.${id}`));
       b.classList.toggle('on', this.tab === id);
       b.addEventListener('click', () => {
         this.tab = id;
@@ -197,16 +222,180 @@ export class TownPanel {
     }
     this.head.append(tabs, back);
     const place = this.ctrl.townPlace ? this.ctrl.sim.catalog.places?.[this.ctrl.townPlace] : undefined;
+    if (this.tab !== 'phone') this.ctrl.mapPin = null;
     if (this.tab === 'families') this.renderFamilies();
+    else if (this.tab === 'phone') this.renderPhone();
+    else if (this.tab === 'paper') this.renderPaper();
     else if (place) this.renderPlace(place);
     else this.renderDetail(town.lots.find((l) => l.id === this.ctrl.townLot));
-    // mural
-    this.feed.replaceChildren(el('div', 'town-sub', t('town.feed')));
+    // mural (plano 2, bloco 14: as manchetes do jornal da cidade)
+    this.feed.hidden = this.tab === 'paper';
+    this.feed.replaceChildren(el('div', 'town-sub', town.city ? t('paper.headlines') : t('town.feed')));
     const list = el('ul', 'town-feed-list');
     const items = [...town.feed].reverse().slice(0, 6);
-    for (const e of items) list.append(el('li', '', `${t('hud.dayShort', { day: Math.floor(e.tick / 1440) + 1 })} · ${t(e.key, e.params)}`));
+    for (const e of items) list.append(el('li', '', `${t('hud.dayShort', { day: Math.floor(e.tick / 1440) + 1 })} · ${feedText(e)}`));
     if (items.length === 0) list.append(el('li', 'panel-note', t('town.feedEmpty')));
     this.feed.append(list);
+    if (town.city) {
+      const read = el('button', 'btn btn-small', t('paper.read'));
+      read.addEventListener('click', () => {
+        this.tab = 'paper';
+        this.render();
+      });
+      this.feed.append(read);
+    }
+  }
+
+  // ---------- plano 2, bloco 14: jornal e celular ----------
+
+  /** O jornal da cidade: quantos somos, a agenda dos próximos dias, as notícias por dia e a opção de cidade parada. */
+  private renderPaper(): void {
+    const d = this.detail;
+    d.replaceChildren();
+    const world = this.ctrl.world;
+    const town = world.town!;
+    d.append(el('div', 'town-title paper-title', t('paper.title', { name: town.city?.name ?? town.name })));
+    const c = census(world);
+    d.append(el('div', 'panel-note', t('paper.census', c)));
+    // agenda
+    d.append(el('div', 'town-sub', t('paper.agenda')));
+    const agenda = el('ul', 'town-people paper-agenda');
+    const today = Math.floor(world.tick / 1440);
+    for (const ev of upcomingEvents(world.tick, 8)) {
+      const li = el('li');
+      const when = t('event.when', { day: dayName(ev.day, today), from: ev.def.from, to: ev.def.to });
+      li.append(el('b', '', t(`event.title.${ev.def.id}`)), el('span', '', ` · ${t(`place.${ev.def.place}`)} · ${when}`));
+      li.title = t(`event.tip.${ev.def.id}`);
+      if (world.tick >= ev.start) li.classList.add('on');
+      agenda.append(li);
+    }
+    if (!agenda.childElementCount) agenda.append(el('li', 'panel-note', t('paper.agendaEmpty')));
+    d.append(agenda);
+    // edições: as notícias dos últimos dias, do mais novo ao mais velho
+    const byDay = new Map<number, LogEntry[]>();
+    for (const e of [...town.feed].reverse()) {
+      const day = Math.floor(e.tick / 1440) + 1;
+      if (!byDay.has(day) && byDay.size >= 7) continue;
+      const list = byDay.get(day) ?? [];
+      list.push(e);
+      byDay.set(day, list);
+    }
+    const paper = el('div', 'paper');
+    for (const [day, list] of byDay) {
+      paper.append(el('div', 'paper-edition', t('paper.edition', { day })));
+      const ul = el('ul', 'town-feed-list');
+      for (const e of list) ul.append(el('li', e.key.startsWith('feed.story.today') ? 'paper-today' : '', feedText(e)));
+      paper.append(ul);
+    }
+    if (!byDay.size) paper.append(el('div', 'panel-note', t('paper.empty')));
+    d.append(paper);
+    // história andando ou parada
+    d.append(el('div', 'town-sub', t('paper.story')));
+    const on = storyOn(world);
+    d.append(el('div', 'panel-note', t(on ? 'paper.storyOn' : 'paper.storyOff')));
+    const toggle = el('button', 'btn btn-small', t(on ? 'paper.storyToggleOn' : 'paper.storyToggleOff'));
+    toggle.addEventListener('click', () => {
+      if (this.ctrl.cityCommand({ type: 'setStory', on: !on })) this.shownKey = '';
+    });
+    d.append(toggle);
+  }
+
+  /** O celular de quem está selecionado: onde está cada conhecido agora, ver no mapa e chamar para sair. */
+  private renderPhone(): void {
+    const d = this.detail;
+    d.replaceChildren();
+    const world = this.ctrl.world;
+    const catalog = this.ctrl.sim.catalog;
+    const me = this.ctrl.sim.household().find((f) => f.id === this.ctrl.selectedFolkId && f.age !== 'baby' && f.age !== 'child');
+    if (!me) {
+      d.append(el('div', 'town-title', t('town.tab.phone')), el('div', 'panel-note', t('phone.noOne')));
+      return;
+    }
+    d.append(el('div', 'town-title', t('phone.title', { name: me.name.split(' ')[0] })));
+    const here = new Set(world.folks.map((f) => f.id));
+    const contacts = world.neighbors
+      .filter((n) => hasRoutine(n) && n.age !== 'baby' && (relationOf(world, me.id, n.id)?.friendship ?? -999) > -999)
+      .sort((a, b) => (relationOf(world, me.id, b.id)?.friendship ?? 0) - (relationOf(world, me.id, a.id)?.friendship ?? 0) || a.name.localeCompare(b.name))
+      .slice(0, 16);
+    if (!contacts.length) {
+      d.append(el('div', 'panel-note', t('phone.noContacts')));
+      return;
+    }
+    if (this.meetWith && !contacts.some((n) => n.id === this.meetWith)) this.meetWith = 0;
+    d.append(el('div', 'town-sub', t('phone.contacts')));
+    const list = el('ul', 'town-people phone-list');
+    for (const n of contacts) {
+      const li = el('li', n.id === this.meetWith ? 'on' : '');
+      const at = here.has(n.id) ? null : whereIs(world, catalog, n, world.tick);
+      const rel = relationOf(world, me.id, n.id);
+      li.append(el('b', '', n.name), el('span', 'phone-where', ` · ${at ? whereText(n, at) : t('phone.where.visiting')}`), el('span', 'panel-note', ` · ${t(friendshipLabel(rel))}`));
+      const row = el('span', 'town-row-actions');
+      const show = el('button', 'btn btn-small btn-quiet', t('phone.show'));
+      show.addEventListener('click', () => {
+        const p = at ? pointOf(world, catalog, n, at) : null;
+        if (!p) return;
+        this.ctrl.mapPin = { ...p, text: n.name.split(' ')[0] };
+        // fica no mapa (acima do zoom do mapa), perto o bastante para ver a gente
+        this.ctrl.viewRequest = { zoom: 66, where: p };
+      });
+      show.disabled = !at;
+      const meet = el('button', 'btn btn-small', t('phone.meet'));
+      const free = !!at && freeToMeet(world, catalog, n);
+      meet.disabled = !free || !!world.trip || !!world.outing || this.ctrl.houseEmpty;
+      if (!free && at) meet.title = t('phone.busy');
+      meet.addEventListener('click', () => {
+        this.meetWith = this.meetWith === n.id ? 0 : n.id;
+        this.shownKey = '';
+      });
+      row.append(show, meet);
+      li.append(row);
+      list.append(li);
+    }
+    d.append(list);
+    const friend = contacts.find((n) => n.id === this.meetWith);
+    if (friend) this.renderMeet(d, me, friend);
+  }
+
+  /** Onde e como encontrar o amigo chamado pelo celular. */
+  private renderMeet(d: HTMLElement, me: Folk, friend: Neighbor): void {
+    const world = this.ctrl.world;
+    const catalog = this.ctrl.sim.catalog;
+    const home = activeLot(world);
+    if (!home) return;
+    d.append(el('div', 'town-sub', t('phone.meetTitle', { name: friend.name.split(' ')[0] })));
+    const venues = Object.values(catalog.places ?? {}).filter((p) => p.kind === 'venue');
+    if (!venues.some((p) => p.id === this.meetPlace)) this.meetPlace = venues.find((p) => placeOpen(p, world.tick))?.id ?? '';
+    const row = el('div', 'place-plans');
+    for (const p of venues) {
+      const b = el('button', `tab${this.meetPlace === p.id ? ' on' : ''}`, t(p.name));
+      b.disabled = !placeOpen(p, world.tick);
+      b.addEventListener('click', () => {
+        this.meetPlace = p.id;
+        this.shownKey = '';
+      });
+      row.append(b);
+    }
+    d.append(row);
+    const def = catalog.places?.[this.meetPlace];
+    const plan = def ? catalog.venues?.[def.id] : undefined;
+    const length = def && plan ? streetRoute(world.town!, lotDoor(home, world.exit), placeDoor(def, plan.exit)).length : 0;
+    this.visitMode = usableMode(world, [me], length, this.visitMode);
+    d.append(
+      travelPicker(world, [me], length, this.visitMode, (m) => {
+        this.visitMode = m;
+        this.shownKey = '';
+      }),
+    );
+    const go = el('button', 'btn btn-go', t('phone.meetGo'));
+    go.disabled = !def || !canGo(me);
+    go.addEventListener('click', () => {
+      if (!def) return;
+      if (this.ctrl.outingCommand({ type: 'goDowntown', folkIds: [me.id], mode: this.visitMode, place: def.id, meetId: friend.id })) {
+        this.ctrl.toast(t('phone.sent', { name: friend.name.split(' ')[0], place: t(def.name) }));
+        this.meetWith = 0;
+      }
+    });
+    d.append(go, el('div', 'panel-note', t('phone.meetHint')));
   }
 
   private renderDetail(lot: Lot | undefined): void {
@@ -365,6 +554,16 @@ export class TownPanel {
         open ? (allDay && shut >= 1440 ? t('place.openAllDay') : t('place.open', { time: span(shut) })) : t('place.closed', { time: span(minutesToOpen(def, tick)) }),
       ),
     );
+    // plano 2, bloco 14: evento da cidade aqui agora (ou o próximo) e conhecidos lá dentro
+    for (const ev of liveEvents(tick, def.id)) d.append(el('div', 'town-line place-event', t('event.now', { event: t(`event.title.${ev.id}`) })));
+    const next = upcomingEvents(tick, 8).find((x) => x.def.place === def.id && x.start > tick);
+    if (next) d.append(el('div', 'panel-note', `${t(`event.title.${next.def.id}`)} · ${t('event.when', { day: dayName(next.day, Math.floor(tick / 1440)), from: next.def.from, to: next.def.to })}`));
+    const there = peopleAt(world, this.ctrl.sim.catalog, def.id);
+    if (there.length) {
+      const known = there.filter((n) => this.ctrl.sim.household().some((f) => relationOf(world, f.id, n.id)));
+      d.append(el('div', 'panel-note', t('place.cityHere', { n: there.length })));
+      if (known.length) d.append(el('div', 'panel-note', t('place.cityNames', { names: known.slice(0, 5).map((n) => n.name.split(' ')[0]).join(', ') })));
+    }
     if (def.kind === 'venue') {
       d.append(el('div', 'panel-note', t('place.crowd', { n: crowdOf(def, tick), max: def.capacity })));
       d.append(el('div', 'panel-note', def.fee ? t('place.fee', { fee: formatMoney(def.fee) }) : t('place.free')));
@@ -461,8 +660,16 @@ export class TownPanel {
     // o que fazer ao chegar
     d.append(el('div', 'town-sub', t('place.what')));
     const plans = el('div', 'place-plans');
-    for (const p of [{ id: '', label: 'place.nothing' }, ...(def.plans ?? [])]) {
-      const b = el('button', `tab${this.placePlan === p.id ? ' on' : ''}`, t(p.label));
+    // plano 2, bloco 14: plano de evento só aparece no dia (e a partir de três horas antes)
+    const soon = (id?: string) => {
+      const ev = eventDef(id);
+      if (!ev) return true;
+      const x = upcomingEvents(world.tick, 1).find((u) => u.def.id === ev.id);
+      return !!x && x.start - world.tick <= 180;
+    };
+    for (const p of [{ id: '', label: 'place.nothing' } as { id: string; label: string; event?: string }, ...(def.plans ?? [])]) {
+      if (!soon(p.event)) continue;
+      const b = el('button', `tab${this.placePlan === p.id ? ' on' : ''}${p.event ? ' plan-event' : ''}`, t(p.label));
       b.addEventListener('click', () => {
         this.placePlan = p.id;
         this.shownKey = '';
@@ -684,4 +891,47 @@ export class TownPanel {
 /** Plano 2, bloco 13: muda quando alguém troca de emprego, de jeito ou entra no prédio (o cartão refaz). */
 function world_jobs(world: { folks: Folk[] }): string {
   return world.folks.map((f) => `${f.job?.style ?? ''}${f.kid?.style ?? ''}${f.away ? 'a' : ''}`).join('');
+}
+
+/** Plano 2, bloco 14: texto de uma notícia do jornal (parâmetros que são chaves viram texto). */
+export function feedText(e: LogEntry): string {
+  const params: Record<string, string | number> = {};
+  for (const [k, v] of Object.entries(e.params ?? {})) params[k] = typeof v === 'string' && /^(event|place|obj|job|career)\./.test(v) ? t(v) : v;
+  return t(e.key, params);
+}
+
+/** Hoje, amanhã ou o dia da semana. */
+function dayName(day: number, today: number): string {
+  if (day === today) return t('event.today');
+  if (day === today + 1) return t('event.tomorrow');
+  return t(`weekday.${day % 7}`);
+}
+
+/** Onde está, em palavras (para o celular). */
+function whereText(n: Neighbor, at: Whereabouts): string {
+  const place = at.place ? t(`place.${at.place}`) : '';
+  switch (at.doing) {
+    case 'work':
+      return t('phone.where.work', { place });
+    case 'school':
+      return t('phone.where.school');
+    case 'event':
+      return t('phone.where.event', { event: t(`event.${at.event}`), place });
+    case 'place':
+      return t('phone.where.place', { place });
+    case 'walk':
+      return at.place ? t('phone.where.walkTo', { place }) : t('phone.where.walk');
+    case 'dog':
+      return t('phone.where.dog');
+    default:
+      return n.home !== undefined || n.downtown ? t('phone.where.home') : t('phone.where.homeOut');
+  }
+}
+
+/** Ponto da cidade para mostrar a pessoa no mapa. */
+function pointOf(world: World, catalog: Parameters<typeof whereIs>[1], n: Neighbor, at: Whereabouts): { x: number; z: number } | null {
+  if (at.point) return at.point;
+  const def = at.place ? catalog.places?.[at.place] : undefined;
+  if (def) return placeCenter(def);
+  return homePoint(world, n);
 }

@@ -34,7 +34,7 @@ export const NEW_FAMILY_FUNDS = 6000;
 /** Quanto a vida resumida gasta por pessoa por dia (comida e miudezas). */
 export const DAILY_UPKEEP = 18;
 /** Entradas guardadas no mural do bairro. */
-export const FEED_MAX = 24;
+export const FEED_MAX = 80;
 /** Amizade de quem mora junto no começo. */
 export const HOUSEMATE_FRIENDSHIP = 35;
 /** Chance por dia de um morador de fora de jogo passar na casa de um amigo (resumido). */
@@ -695,6 +695,11 @@ export function townDay(world: World, catalog: Catalog): void {
       else if (changed) pushFeed(world, `feed.became.${changed}`, { name: n.name });
     }
     members = members.filter((n) => world.neighbors.includes(n));
+    // plano 2, bloco 14: quem morava sozinho e se foi deixa a casa à venda no mesmo dia
+    if (members.length === 0) {
+      dissolve(world, fam);
+      continue;
+    }
     for (const n of members) {
       pay += n.pension ?? 0;
       if (!n.career) continue;

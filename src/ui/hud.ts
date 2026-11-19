@@ -2824,6 +2824,18 @@ export class Hud {
         list.append(fam);
       }
     }
+    // plano 2, bloco 14: celular (quem está onde, chamar para sair) e o jornal da cidade
+    if (world.town?.city) {
+      for (const tab of ['phone', 'paper'] as const) {
+        const b = el('button', 'btn', t(`town.tab.${tab}`));
+        b.title = t(tab === 'phone' ? 'hud.phone' : 'paper.read');
+        b.addEventListener('click', () => {
+          this.togglePop('city');
+          this.ctrl.openTown(tab);
+        });
+        list.append(b);
+      }
+    }
     this.panelEl.append(list, el('div', 'panel-note', t(world.outing ? 'city.outingNote' : 'city.note')));
   }
 

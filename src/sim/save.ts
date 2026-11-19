@@ -20,7 +20,7 @@ import type { TownPlan } from './town';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 33;
+export const SAVE_VERSION = 34;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -523,6 +523,15 @@ const migrations: Record<number, Migration> = {
     h.shipping ??= [];
     h.stolen ??= [];
     if (world.outing) world.outing.bags ??= 0;
+    return { ...save, world: world as unknown as Obj };
+  },
+  // plano 2, bloco 14: cidade viva. A história começa a andar (com a opção de
+  // deixar a cidade parada desligada), sem casais contados nem concursos.
+  33: (save) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    if (world.town) world.town.story ??= { since: {}, contests: {} };
+    world.rules = { ...world.rules };
+    world.rules.story ??= true;
     return { ...save, world: world as unknown as Obj };
   },
 };

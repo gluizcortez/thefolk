@@ -609,6 +609,30 @@ npm run preview  # serve o dist/ localmente
   na delegacia se dá queixa do que o ladrão levou. Com a cidade ligada, a
   roupa comprada no guarda-roupa chega em casa no dia seguinte às 9h (frete
   ⟡ 6) ou fica esperando na loja.
+- **Cidade viva (plano 2, bloco 14)**: os outros moradores de Arribada têm
+  rotina. Chegue a câmera perto das ruas e se vê gente indo e voltando do
+  trabalho e da escola, passeando com o cachorro, entrando na praça, na
+  biblioteca ou no bar; nos lugares abertos quem aparece é essa mesma gente.
+  As famílias que você não está jogando seguem a vida sozinhas: namoram,
+  noivam, casam (e um vai morar com o outro), têm filhos, arrumam e trocam de
+  emprego, mudam para uma casa maior e reformam a casa. Quando sobram casas
+  vazias chegam famílias novas. Tudo isso sai no **Jornal** (menu Cidade →
+  Jornal, ou a aba no painel do mapa): números da cidade, agenda e as
+  notícias dos últimos dias. No jornal há a chave "Cidade parada" para quem
+  prefere que nada mude fora da família jogada.
+- **Eventos (bloco 14)**: feira todo sábado de manhã na praça (barracas com
+  sacolas de comida mais baratas; com a cidade, a feira não vem mais em
+  casa), concurso de culinária na churrasqueira da praça e campeonato de
+  xadrez no parque em domingos alternados (cozinhar e lógica contam; prêmio
+  em dinheiro do 1º ao 3º lugar) e a festa junina na praça no último sábado
+  do ciclo de quatro semanas, à noite, com bandeirinhas, quitutes, pescaria
+  e quadrilha no coreto. O cartão do lugar mostra o evento de hoje ou o
+  próximo, e o plano do evento aparece até 3 horas antes.
+- **Celular (bloco 14)**: menu Cidade → Celular. Mostra onde está cada
+  conhecido agora (em casa, no trabalho, num lugar, andando pela rua, fora
+  da cidade). "Ver no mapa" marca a pessoa no mapa; "Chamar para…" escolhe
+  um lugar aberto e o jeito de ir. A pessoa topa conforme a amizade e se
+  estiver livre, e espera lá.
 - **Peças novas (bloco 12)**: meia parede (fecha o passo sem dividir o
   cômodo), coluna nos cantos, porta de vidro, porta dupla, arco (passagem sem
   folha), janela alta (+6 de ambiente) e basculante (+2).
@@ -1025,6 +1049,20 @@ Decisões principais do núcleo:
   `game/art/places.ts`. `goDowntown` leva `place` e `plan`; comandos
   `runErrand` e `setStyle`. Os prédios e o cartão do lugar em `game/city.ts`
   e `ui/town.ts`.
+- **Cidade viva (plano 2, bloco 14)**: três módulos puros. `sim/cityEvents.ts`
+  é o calendário (ciclo de 4 semanas, `liveEvents`, `upcomingEvents`,
+  `eventReady`, pontos dos concursos sem gastar o sorteio do mundo).
+  `sim/routine.ts` calcula onde cada morador está a cada minuto (`dayPlan`
+  por pessoa e dia, `whereIs`, `peopleAt`, `freeToMeet`) por hash, sem
+  guardar nada no save e sem gastar o sorteio do mundo; a arte usa isso para
+  desenhar os bonecos nas ruas (`updateCrowd` em `game/city.ts`) e o
+  passeio usa para escolher quem aparece no lugar. `sim/story.ts` roda uma
+  vez por dia depois de `townDay` (`storyDay`: namoro, casamento, filhos,
+  empregos, mudanças, reformas, chegadas) e escreve no feed; `census` e
+  `cityProblems` servem ao jornal e ao teste de 30 dias. Estado em
+  `town.story` e `rules.story` (save v34). O encontro pelo celular é
+  `goDowntown` com `meetId`; o concurso é a interação `special: 'contest'`
+  ligada a um `event`. Telas em `ui/town.ts` (abas Celular e Jornal).
 - **Quadros por segundo (plano 2, bloco 12)**: medidos no Chromium sem placa
   de vídeo (SwiftShader, desenho todo no processador, 1280x800), que só serve
   para comparar: antes da cidade, 3,3 quadros por segundo na vista da casa;
@@ -1334,6 +1372,23 @@ traços e cidade aberta com o bairro dentro dela).
   mercado, pesca, cinema, bar, academia, prédios fechados com jeito no
   trabalho e na escola, recados na prefeitura, hospital e delegacia, roupas
   pela loja (save v33).
+- **Bloco 14 (feito)**: cidade viva. Rotina dos outros nas ruas e nos
+  lugares, famílias não jogadas que namoram, casam, têm filhos, trocam de
+  emprego, mudam e reformam, famílias novas, jornal, cidade parada, feira na
+  praça, festa junina, concurso de culinária, xadrez no parque e celular
+  (save v34).
+
+## Limitações conhecidas do bloco 14 (plano 2)
+
+- Os moradores na rua são bonecos simples (sem rosto nem animação de
+  passos) e só aparecem com a câmera perto; os cachorros são só de enfeite.
+- Na simulação de 30 dias a família jogada parada passa fome por volta do
+  dia 20 (já acontecia antes do bloco): fica para o equilíbrio do bloco 15.
+- O celular só marca encontro em lugar aberto (não em casa de ninguém).
+- A festa junina não tem fogueira nem roupa própria; os concursos não têm
+  plateia ou jurados que se vejam.
+- As reformas dos outros são um objeto de decoração por vez.
+- Persistente: o lago do parque aparece só com o contorno na vista de longe.
 
 ## Limitações conhecidas do bloco 7 (plano 2)
 
