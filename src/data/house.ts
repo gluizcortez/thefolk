@@ -102,21 +102,28 @@ export function starterHouse(seed = 20001): WorldSeed {
     folks: [
       {
         name: 'Tomé Varanda',
-        traits: ['tagarela', 'caseiro'],
+        traits: ['tagarela', 'caseiro', 'mao_de_fada', 'madrugador', 'familia'],
         x: 8,
         y: 8,
         needs: { hunger: 55, energy: 80, bladder: 60, fun: 50, social: 45, hygiene: 65 },
         look: { skin: 1, hair: 2, shirt: 0, pants: 1, style: 0, face: 0, body: 1, formal: 0, sleepwear: 2, swimwear: 1, headShape: 3, eyes: 0, eyeColor: 0, lashes: 0, brows: 2, nose: 1, mouth: 3, ears: 1, beard: 2, marks: 0 },
         ...bornOf(['tagarela', 'caseiro']),
+        // plano 2, bloco 10: sonho, gostos e voz
+        dream: 'casaCheia',
+        tastes: { food: 'soup', music: 'brisa', color: 'mustard' },
+        voice: 5,
       },
       {
         name: 'Lia Sacada',
-        traits: ['agitado', 'gentil'],
+        traits: ['agitado', 'gentil', 'artistico', 'coruja', 'pe_de_valsa'],
         x: 10,
         y: 9,
         needs: { hunger: 70, energy: 65, bladder: 75, fun: 40, social: 55, hygiene: 80 },
         look: { skin: 3, hair: 1, shirt: 4, pants: 2, style: 2, face: 0, body: 0, formal: 2, sleepwear: 1, swimwear: 3, headShape: 0, eyes: 1, eyeColor: 3, lashes: 1, brows: 3, nose: 0, mouth: 2, ears: 0, beard: 0, marks: 1 },
         ...bornOf(['agitado', 'gentil']),
+        dream: 'galeria',
+        tastes: { food: 'pancakes', music: 'chiclete', color: 'teal' },
+        voice: 14,
       },
     ],
     // dividem a casa há pouco tempo: já se conhecem, mas ainda sem intimidade

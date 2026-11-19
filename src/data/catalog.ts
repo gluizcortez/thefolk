@@ -14,6 +14,7 @@ import { TRAITS } from './traits';
 import { WISHES } from './wishes';
 import { TOPICS } from './topics';
 import { DISHES, GIFTS, VENUES } from './downtown';
+import { DREAMS, PERKS } from './dreams';
 
 export const CATALOG: Catalog = {
   needs: NEEDS,
@@ -22,6 +23,8 @@ export const CATALOG: Catalog = {
   parts: PARTS,
   objects: OBJECTS,
   traits: TRAITS,
+  dreams: DREAMS,
+  perks: PERKS,
   socials: SOCIALS,
   memories: MEMORIES,
   skills: SKILLS,

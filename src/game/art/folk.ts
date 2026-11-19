@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ball, box, colorMat, cyl, loft, rbox, rod, texMat } from './build';
 import type { Ring } from './build';
-import { HAIR, PAL, SHIRT, SKIN, mix, shade } from './palette';
+import { PAL, SHIRT, hairColor, mix, shade, skinColor } from './palette';
 import { faceTextureName, getTexture } from './textures';
 import type { Expression, FaceLook } from './textures';
 import { PoseMixer, rest, variantOf } from './anims';
@@ -26,7 +26,13 @@ export type { FolkAnim } from './anims';
 export type FolkLook = Look;
 
 /** Bloco 5: largura do corpo (magro, médio, forte). */
-const BODY_WIDTH = [0.88, 1, 1.14];
+/** Plano 2, bloco 10: largura do corpo pelo controle (0 magro, 10 médio, 20 forte). */
+export function bodyWidth(body: number): number {
+  const b = Math.max(0, Math.min(20, body));
+  return b <= 10 ? 0.88 + (b / 10) * 0.12 : 1 + ((b - 10) / 10) * 0.14;
+}
+/** Plano 2, bloco 10: os outros controles (10 = meio) viram escala. */
+const slide = (v: number | undefined, span: number) => 1 + (((v ?? 10) - 10) / 10) * span;
 
 export interface FolkFrame {
   anim: FolkAnim;
@@ -67,8 +73,8 @@ export const BABY_SCALE = 0.4;
 /** Bloco 17: jovem quase do tamanho de adulto; idoso um tico menor e de cabelo branco. */
 export const TEEN_SCALE = 0.86;
 export const ELDER_SCALE = 0.96;
-/** índice do cinza em HAIR */
-export const ELDER_HAIR = 4;
+/** cabelo branco do idoso: a ponta da escala de cor do cabelo */
+export const ELDER_HAIR = 40;
 const THIGH = 0.42;
 const SHIN = 0.41;
 const UPPER_ARM = 0.28;
@@ -99,6 +105,9 @@ export function faceLookOf(look: Look, age?: Age): FaceLook {
     beard: grown && age !== 'teen' ? (look.beard ?? 0) : 0,
     marks: look.marks ?? (look.face === 1 ? 1 : 0),
     wrinkles: age === 'elder' ? 1 : 0,
+    eyeSize: look.eyeSize ?? 10,
+    eyeGap: look.eyeGap ?? 10,
+    mouthSize: look.mouthSize ?? 10,
   };
 }
 
@@ -193,8 +202,8 @@ export class FolkModel {
     if (age === 'elder' && look.hair !== ELDER_HAIR) {
       look = { ...look, hair: ELDER_HAIR };
     }
-    const skinColor = SKIN[look.skin % SKIN.length];
-    const skin = texMat(`skin:${look.skin % SKIN.length}`, { gloss: 0.12 });
+    const skinTone = skinColor(look.skin);
+    const skin = texMat(`skin:${look.skin}`, { gloss: 0.12 });
     // plano 2, bloco 9: a roupa é montada por peças (o conjunto da ocasião);
     // o uniforme da carreira (bloco 8) segue com a pintura própria
     const uni = wear === 'work' ? uniform : undefined;
@@ -226,7 +235,7 @@ export class FolkModel {
     const hairMat = texMat(`hair:${look.hair}`, { gloss: 0.25 });
     const sole = colorMat(0xd8d0bc);
     const SIDES = 12;
-    const k = BODY_WIDTH[look.body ?? 1] ?? 1;
+    const k = bodyWidth(look.body ?? 10);
     this.wide = k;
     this.faceLook = faceLookOf(look, age);
     const widen = <T extends THREE.Object3D>(o: T): T => {
@@ -379,7 +388,7 @@ export class FolkModel {
     // cabeça: o rosto vai na textura; nariz, orelhas e cabelo são modelados
     this.faceMat = new THREE.MeshPhongMaterial({ map: null, specular: 0x1a1a1a, shininess: 14 });
     const skull = ball(0.1, 0.136, 0.11, this.faceMat, 0, 0.132, 0, 20);
-    const skinSolid = colorMat(shade(skinColor, 0.9), { gloss: 0.12 });
+    const skinSolid = colorMat(shade(skinTone, 0.9), { gloss: 0.12 });
     const cap = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 7, 0, Math.PI * 2, 0, Math.PI * 0.48), hairMat);
     cap.scale.set(0.105, 0.143, 0.117);
     cap.position.set(0, 0.132, -0.004);
@@ -393,7 +402,8 @@ export class FolkModel {
     );
     this.addFeatures(look, skinSolid, age);
     const [hx, hy, hz] = HEAD_SHAPES[(look.headShape ?? 0) % HEAD_SHAPES.length];
-    this.shape.scale.set(hx, hy, hz);
+    // plano 2, bloco 10: largura do rosto
+    this.shape.scale.set(hx * slide(look.jaw, 0.08), hy, hz);
     this.shape.position.y = 0.132 * (1 - hy);
     const style = look.style ?? look.hair % 2;
     if (style === 0) {
@@ -464,6 +474,9 @@ export class FolkModel {
       [this.armR, this.foreR, 1],
     ] as const) {
       arm.position.set(sx * 0.196 * k, SHOULDER_Y, 0);
+      // plano 2, bloco 10: musculatura engrossa os braços
+      const brawn = slide(look.muscle, 0.22);
+      arm.scale.set(brawn, 1, brawn);
       arm.add(widen(loft(upperArm, 10, longSleeve ? sleeve : skin)));
       if (sleeveCut !== 'none') arm.add(widen(loft(sleeveRings, 10, sleeve)));
       fore.position.y = -UPPER_ARM;
@@ -691,7 +704,10 @@ export class FolkModel {
       this.head.scale.setScalar(1.06);
     } else if (age === 'elder') {
       this.group.scale.setScalar(ELDER_SCALE);
-    } else if (age === 'baby') {
+    }
+    // plano 2, bloco 10: altura (até 5% a mais ou a menos)
+    if (age !== 'baby') this.group.scale.multiplyScalar(slide(look.height, 0.05));
+    if (age === 'baby') {
       this.group.scale.setScalar(BABY_SCALE);
       this.head.scale.setScalar(1.6);
       this.legL.visible = false;
@@ -855,6 +871,11 @@ export class FolkModel {
 
   /** Plano 2, bloco 5: nariz, orelhas e barba modelados, conforme as peças do rosto. */
   private addFeatures(look: Look, skinSolid: THREE.Material, age?: Age): void {
+    // plano 2, bloco 10: tamanho do nariz e das orelhas (cada peça cresce no lugar)
+    const grow = (from: number, k: number) => {
+      for (let i = from; i < this.shape.children.length; i++) this.shape.children[i].scale.multiplyScalar(k);
+    };
+    const noseFrom = this.shape.children.length;
     // nariz: pequeno, reto, largo, adunco
     switch ((look.nose ?? 1) % 4) {
       case 0:
@@ -872,16 +893,19 @@ export class FolkModel {
       default:
         this.shape.add(ball(0.016, 0.025, 0.022, skinSolid, 0, 0.104, 0.106, 8));
     }
+    grow(noseFrom, slide(look.noseSize, 0.3));
     // orelhas: pequenas, médias, de abano
+    const earFrom = this.shape.children.length;
     const ears = (look.ears ?? 1) % 3;
     for (const sx of [-1, 1]) {
       const ear = ears === 0 ? ball(0.01, 0.025, 0.016, skinSolid, sx * 0.097, 0.126, 0, 8) : ears === 2 ? ball(0.012, 0.035, 0.024, skinSolid, sx * 0.1, 0.124, -0.004, 8) : ball(0.012, 0.03, 0.019, skinSolid, sx * 0.098, 0.124, 0, 8);
       if (ears === 2) ear.rotation.y = sx * -0.55;
       this.shape.add(ear);
     }
+    grow(earFrom, slide(look.earSize, 0.3));
     // barba com volume: cavanhaque no queixo, barba cheia no queixo e no maxilar
     const beard = this.faceLook.beard;
-    const fuzz = colorMat(shade(HAIR[look.hair % HAIR.length], 0.92), { gloss: 0.05 });
+    const fuzz = colorMat(shade(hairColor(look.hair), 0.92), { gloss: 0.05 });
     if (beard === 3) this.shape.add(ball(0.02, 0.02, 0.016, fuzz, 0, 0.006, 0.084, 8));
     if (beard === 4) {
       this.shape.add(ball(0.055, 0.028, 0.045, fuzz, 0, 0.004, 0.05, 10));

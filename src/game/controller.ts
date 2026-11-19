@@ -4,7 +4,7 @@ import { styleFromColor } from '../sim/style';
 import { LIFT_MAX, LIFT_MIN, cleanLook, priceWith, zonesOf } from '../sim/modular';
 import { CATALOG } from '../data/catalog';
 import { starterHouse } from '../data/house';
-import { familySeed } from '../data/family';
+import { familyWorld } from '../data/family';
 import { NEIGHBORS, NEIGHBOR_TIES } from '../data/neighbors';
 import { TOWN } from '../data/town';
 import { hasText, t } from '../i18n';
@@ -798,7 +798,7 @@ export class GameController {
   /** Bloco 5: começa de novo com a família criada na tela de criação. */
   newFamily(draft: FamilyDraft, death = true, life: LifePace = 'off'): boolean {
     if (familyProblem(this.sim.catalog, draft)) return false;
-    this.replaceWorld(townWorld(createWorld({ ...familySeed(draft, freshSeed()), death, life })));
+    this.replaceWorld(townWorld(familyWorld(draft, freshSeed(), { death, life })));
     this.toast(t('toast.newFamily', { name: cleanName(draft.surname) }));
     void this.freshSlot();
     return true;

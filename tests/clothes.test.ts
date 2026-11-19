@@ -22,9 +22,9 @@ import type { Ensemble } from '../src/sim/clothes';
 import { setStage } from '../src/sim/life';
 import { CHANGE_MINUTES, SAVE_VERSION, Sim, createWorld, deserialize, serialize, wearOf } from '../src/sim';
 import type { Folk, InteractionDef } from '../src/sim';
-import { faceFromSeed } from '../src/sim/temper';
+import { faceFromSeed, fullLook } from '../src/sim/temper';
 
-const LOOK = { skin: 1, hair: 2, shirt: 1, pants: 2, style: 2, face: 0, body: 1, formal: 2, sleepwear: 1, swimwear: 3, ...faceFromSeed(4) };
+const LOOK = fullLook({ skin: 1, hair: 2, shirt: 1, pants: 2, style: 2, face: 0, body: 1, formal: 2, sleepwear: 1, swimwear: 3, ...faceFromSeed(4) });
 
 function itOf(defId: string, id: string): InteractionDef {
   const it = CATALOG.objects[defId]?.interactions.find((i) => i.id === id);

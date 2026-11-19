@@ -102,3 +102,58 @@ export function seeded(seed: number): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+
+/**
+ * Plano 2, bloco 10: pele, cabelo e olhos em escala contínua (0 a 40). As
+ * cores antigas viram pontos da escala (veja OLD_*_TONES em sim/temper.ts) e
+ * o que fica entre elas é a mistura das vizinhas.
+ */
+const TONE_MAX = 40;
+function ramp(stops: [number, number][], v: number): number {
+  const x = Math.max(0, Math.min(TONE_MAX, v));
+  for (let i = 1; i < stops.length; i++) {
+    const [p1, c1] = stops[i];
+    const [p0, c0] = stops[i - 1];
+    if (x <= p1) return mix(c0, c1, p1 === p0 ? 0 : (x - p0) / (p1 - p0));
+  }
+  return stops[stops.length - 1][1];
+}
+const SKIN_STOPS: [number, number][] = [
+  [0, SKIN[0]],
+  [13, SKIN[1]],
+  [27, SKIN[2]],
+  [40, SKIN[3]],
+];
+const HAIR_STOPS: [number, number][] = [
+  [0, HAIR[0]],
+  [10, HAIR[1]],
+  [20, HAIR[2]],
+  [30, HAIR[3]],
+  [40, HAIR[4]],
+];
+/** escuro, castanho, mel, verde, azul */
+const EYE_STOPS: [number, number][] = [
+  [0, 0x2a1d16],
+  [10, 0x5a3a22],
+  [20, 0x9a6a2a],
+  [30, 0x4f7a3c],
+  [40, 0x3f6fa8],
+];
+export function skinColor(tone: number): number {
+  return ramp(SKIN_STOPS, tone);
+}
+export function hairColor(tone: number): number {
+  return ramp(HAIR_STOPS, tone);
+}
+export function eyeColor(tone: number): number {
+  return ramp(EYE_STOPS, tone);
+}
+/** Pele escura (corado aparece menos). */
+export function darkSkin(tone: number): boolean {
+  return tone >= 22;
+}
+/** Para as amostras do criador: a escala inteira em CSS. */
+export function toneGradient(kind: 'skin' | 'hair' | 'eye'): string {
+  const stops = kind === 'skin' ? SKIN_STOPS : kind === 'hair' ? HAIR_STOPS : EYE_STOPS;
+  return `linear-gradient(90deg, ${stops.map(([p, c]) => `${css(c)} ${(p / TONE_MAX) * 100}%`).join(', ')})`;
+}

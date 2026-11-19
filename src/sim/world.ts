@@ -8,7 +8,8 @@ import { freshState } from './upkeep';
 import { NEUTRAL_TEMPER, fullLook } from './temper';
 import { storied } from './grid';
 import { BASE_PENSION, schoolKid } from './life';
-import type { EdgeKind, Folk, Grid, LifePace, Look, Neighbor, Needs, Outfit, Rotation, Temper, Vec, World } from './types';
+import type { EdgeKind, Folk, Grid, LifePace, Look, Neighbor, Needs, Outfit, Rotation, Tastes, Temper, Vec, World } from './types';
+import type { Closet } from './clothes';
 
 export interface RoomStyle {
   floor: string;
@@ -72,8 +73,13 @@ export interface FolkSeed {
   temper?: Temper;
   month?: number;
   outfit?: Outfit;
-  /** bloco 17: jovem ou idoso (sem campo = adulto) */
-  age?: 'teen' | 'elder';
+  /** bloco 17: jovem ou idoso (sem campo = adulto); plano 2, bloco 10: criança também */
+  age?: 'child' | 'teen' | 'elder';
+  /** plano 2, bloco 10: sonho, gostos, voz e guarda-roupa do criador */
+  dream?: string;
+  tastes?: Tastes;
+  voice?: number;
+  closet?: Closet;
 }
 
 export interface ObjectSeed {
@@ -242,7 +248,11 @@ export function makeFolk(id: number, f: FolkSeed): Folk {
     business: null,
     visit: null,
     // bloco 17: jovem vai para a escola; idoso já chega aposentado
-    ...(f.age === 'teen' ? { age: 'teen' as const, kid: schoolKid(0, []) } : {}),
+    ...(f.age === 'teen' || f.age === 'child' ? { age: f.age, kid: schoolKid(0, []) } : {}),
+    ...(f.dream ? { dream: { id: f.dream } } : {}),
+    ...(f.tastes ? { tastes: { ...f.tastes } } : {}),
+    ...(f.voice !== undefined ? { voice: f.voice } : {}),
+    ...(f.closet ? { closet: JSON.parse(JSON.stringify(f.closet)) as Closet } : {}),
     ...(f.age === 'elder' ? { age: 'elder' as const, retired: { careerId: '', level: -1 }, pension: BASE_PENSION } : {}),
   };
 }

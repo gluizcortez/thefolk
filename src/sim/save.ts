@@ -13,13 +13,14 @@ import type { NeighborSeed, RelationSeed } from './world';
 import { freshState } from './upkeep';
 import { freshPlant } from './garden';
 import { NEUTRAL_TEMPER, fullLook, monthFor, temperFromTraits } from './temper';
+import { completeTraits, defaultTastes, suggestDream } from './persona';
 import { seedInterests } from './topics';
 import { foundTown } from './town';
 import type { TownPlan } from './town';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 29;
+export const SAVE_VERSION = 30;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -457,6 +458,40 @@ const migrations: Record<number, Migration> = {
     world.folks = (world.folks ?? []).map((f) => (f.visit || f.age === 'baby' || f.closet || !f.look ? f : { ...f, closet: legacyCloset(f.look, f.age) }));
     world.household = { ...world.household, garments: world.household?.garments ?? [] };
     return { ...save, world: world as unknown as Obj };
+  },
+  /**
+   * Plano 2, bloco 10: aparência com controles deslizantes (pele, cabelo e
+   * olhos em escala contínua, corpo de 0 a 20, medidas do rosto no meio) e
+   * traços no lugar dos eixos: quem tem menos traços do que a idade pede
+   * ganha os que combinam com o temperamento que já tinha. Morador ganha
+   * sonho de vida (o que mais combina com os traços), gostos e pontos zerados.
+   */
+  29: (save, ctx) => {
+    const traits = ctx.catalog?.traits;
+    const fix = (v: unknown): unknown => {
+      if (Array.isArray(v)) return v.map(fix);
+      if (!v || typeof v !== 'object') return v;
+      const out: Obj = {};
+      for (const [k, x] of Object.entries(v as Obj)) {
+        if (k === 'look' && x && typeof x === 'object' && 'skin' in (x as Obj)) out[k] = fullLook(x as Partial<Look>);
+        else out[k] = fix(x);
+      }
+      const person = out as unknown as Partial<Folk>;
+      if (traits && Array.isArray(person.traits) && person.temper && typeof person.name === 'string' && typeof person.id === 'number') {
+        person.traits = completeTraits({ traits }, person.traits, person.temper, person.age, person.id);
+        // morador (tem fila de ações e não é visita)
+        if (Array.isArray(person.queue) && !person.visit && person.age !== 'baby') {
+          if (ctx.catalog?.dreams && !person.dream) {
+            const id = suggestDream(ctx.catalog, person.traits);
+            if (id) person.dream = { id };
+          }
+          person.points ??= 0;
+          person.tastes ??= defaultTastes(person.temper, person.id);
+        }
+      }
+      return out;
+    };
+    return { ...save, world: fix(save.world) as Obj };
   },
 };
 

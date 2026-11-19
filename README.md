@@ -540,6 +540,23 @@ npm run preview  # serve o dist/ localmente
   cada área. "Montar roupas…" no guarda-roupa ou no espelho abre o painel,
   com prévia e loja de peças; dormir, nadar e malhar trocam de roupa
   sozinhos na entrada. Crianças, jovens e idosos têm peças próprias.
+- **Criador em sete passos (plano 2, bloco 10)**: membros (idade, mês,
+  voz e gostos), aparência (controles de pele, cabelo e olhos em escala
+  contínua, corpo, altura, musculatura e medidas do rosto, com sortear e
+  herdar dos pais), roupas, traços, sonho, laços e revisão. Cada adulto tem
+  **5 traços** de uma lista de 40 (criança 3, jovem 4, bebê 1), com pares
+  proibidos (madrugador e coruja, sortudo e desastrado...) e efeitos de
+  verdade: treino mais rápido, humor em certas situações (ao ar livre, na
+  bagunça, com gente, de manhã), sorte com quebras, nota no trabalho e na
+  cozinha, conversas e interações só de quem tem o traço (assaltar a
+  geladeira, mostrar uns passos, maratona de novela). Quem cresce ganha os
+  traços que faltam, puxados por quem cuidou e pelo que treinou.
+- **Sonho de vida, pontos e benefícios (plano 2, bloco 10)**: 14 sonhos
+  (chegar ao topo, casa cheia, amigo de todos, pé-de-meia, galeria...) que
+  dão pontos de satisfação; desejos cumpridos também dão. Os pontos compram
+  9 benefícios (sono de pedra, tempero de mãe, aprende rápido, firme...).
+  Comida, música e cor favoritas mexem no humor. Bebês misturam a aparência
+  dos pais. O espelho ganhou "Mudar o cabelo…" (penteado e cor).
 - **Peças novas (bloco 12)**: meia parede (fecha o passo sem dividir o
   cômodo), coluna nos cantos, porta de vidro, porta dupla, arco (passagem sem
   folha), janela alta (+6 de ambiente) e basculante (+2).
@@ -1226,6 +1243,10 @@ traços e cidade aberta com o bairro dentro dela).
   prontos, quadro que aparece no cavalete, instrumentos, exercícios, gestos
   de conversa por tipo, sentar junto para conversar, acompanhar até a porta,
   fala com sílabas na boca, olhar puxado pela TV e janela (save v27).
+- **Bloco 10 (feito)**: criar família refeito. Sete passos, 40 traços com
+  pares proibidos e efeitos, eixos convertidos em traços, sonho de vida,
+  pontos e benefícios, gostos, voz, aparência com controles e herança,
+  laços da família (cônjuges, pais, irmãos) e cabelo no espelho (save v30).
 
 ## Limitações conhecidas do bloco 7 (plano 2)
 

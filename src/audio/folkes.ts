@@ -103,10 +103,12 @@ export function seeded(seed: number): () => number {
  * mais grave, o Pique acelera, a Expansão faz subir e descer mais e o Afeto
  * põe ar na voz.
  */
-export function voiceOf(folk: Pick<Folk, 'id' | 'name' | 'look' | 'temper'>): Voice {
-  const h = hash01(`${folk.id}:${folk.name}`);
+export function voiceOf(folk: Pick<Folk, 'id' | 'name' | 'look' | 'temper'> & { voice?: number }): Voice {
+  // plano 2, bloco 10: tom de voz escolhido no criador (0 grave a 20 agudo)
+  const h = folk.voice !== undefined ? folk.voice / 20 : hash01(`${folk.id}:${folk.name}`);
   const h2 = hash01(`${folk.name}#voz`);
-  const body = folk.look?.body ?? 1;
+  // corpo de 0 (magro) a 20 (forte); 10 é o médio de antes
+  const body = (folk.look?.body ?? 10) / 10;
   const t = folk.temper;
   const pitch = (105 + h * 135) * (1.08 - body * 0.08);
   return {

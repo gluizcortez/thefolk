@@ -1,3 +1,4 @@
+import { clockEnergy, perkDecay } from './persona';
 import { roomAmbience } from './rooms';
 import { skillBoost } from './skills';
 import { temperDecay, temperWeight } from './temper';
@@ -23,7 +24,8 @@ export function fullNeeds(value = NEED_MAX): Needs {
 export function decayMultiplier(catalog: Catalog, folk: Folk, need: NeedId): number {
   let m = 1;
   for (const t of folk.traits) m *= catalog.traits[t]?.decay?.[need] ?? 1;
-  return m * temperDecay(folk.temper, need);
+  // plano 2, bloco 10: benefícios (dormir menos, estômago de ferro...)
+  return m * temperDecay(folk.temper, need) * perkDecay(folk, need);
 }
 
 /** Peso que a IA do folk dá a uma necessidade (traços). */
@@ -45,7 +47,9 @@ export function ambienceTarget(world: World, catalog: Catalog, folk: Folk): numb
 export function decayNeeds(world: World, catalog: Catalog, folk: Folk, scale = 1): void {
   for (const id of NEED_IDS) {
     if (id === 'ambience') continue;
-    const rate = catalog.needs[id].decayPerMinute * decayMultiplier(catalog, folk, id) * scale;
+    let rate = catalog.needs[id].decayPerMinute * decayMultiplier(catalog, folk, id) * scale;
+    // plano 2, bloco 10: madrugador e coruja cansam conforme a hora
+    if (id === 'energy') rate *= clockEnergy(catalog, folk, world.tick);
     folk.needs[id] = clampNeed(folk.needs[id] - rate);
   }
   const target = ambienceTarget(world, catalog, folk);

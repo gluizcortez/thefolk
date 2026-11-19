@@ -1,5 +1,6 @@
 import { MINUTES_PER_DAY } from './clock';
 import { NEED_MAX, clampNeed } from './needs';
+import { ALL_WISHES_POINTS, WISH_POINTS } from './persona';
 import { relationOf } from './relations';
 import { SKILL_AXIS, axisPull } from './temper';
 import type { Catalog, Folk, InteractionDef, ObjectCategory, SocialDef, TemperAxis, Wish, WishDef, World } from './types';
@@ -148,10 +149,13 @@ function advance(world: World, catalog: Catalog, log: Logger, folk: Folk, wish: 
   folk.needs.fun = clampNeed(folk.needs.fun + WISH_FUN);
   folk.needs.comfort = clampNeed(Math.min(NEED_MAX, folk.needs.comfort + WISH_COMFORT));
   folk.spark = Math.min(MAX_SPARK, folk.spark + 1);
+  // plano 2, bloco 10: desejo cumprido dá pontos de satisfação
+  folk.points = (folk.points ?? 0) + WISH_POINTS;
   setThought(folk, 'wish', def.icon, world.tick, 8);
   log('log.wishDone', { name: folk.name, wish: def.label, ...wishParams(world, catalog, wish) });
   if (folk.wishes.length === MAX_WISHES && folk.wishes.every((w) => w.done)) {
     folk.spark = Math.min(MAX_SPARK, folk.spark + 1);
+    folk.points = (folk.points ?? 0) + ALL_WISHES_POINTS;
     log('log.allWishes', { name: folk.name });
   }
 }

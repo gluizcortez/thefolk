@@ -238,20 +238,36 @@ export function settleHabits(folk: Pick<Folk, 'habits' | 'temper'>): { axis: Tem
 
 // ---------- aparência ----------
 
+/** Plano 2, bloco 10: pele, cabelo e olhos em escala contínua de 0 a TONE_MAX. */
+export const TONE_MAX = 40;
+/** Plano 2, bloco 10: controles deslizantes do corpo e do rosto (0 a SLIDER_MAX, meio = SLIDER_MID). */
+export const SLIDER_MAX = 20;
+export const SLIDER_MID = 10;
+/** Onde caem na escala nova as cores do formato antigo (pele 0-3, cabelo 0-4, olhos 0-4). */
+export const OLD_SKIN_TONES = [0, 13, 27, 40];
+export const OLD_HAIR_TONES = [0, 10, 20, 30, 40];
+/** olhos antigos: castanho, escuro, mel, verde, azul; na escala: escuro, castanho, mel, verde, azul */
+export const OLD_EYE_TONES = [10, 0, 20, 30, 40];
+/** cabelo branco do idoso (ponta da escala) */
+export const GRAY_HAIR = TONE_MAX;
+
+/** Controles deslizantes do bloco 10 (fora pele, cabelo, olhos e corpo). */
+export const SLIDER_ROWS = ['height', 'muscle', 'jaw', 'eyeSize', 'eyeGap', 'noseSize', 'earSize', 'mouthSize'] as const satisfies readonly (keyof Look)[];
+
 export const LOOK_LIMITS: Record<keyof Look, number> = {
-  skin: 4,
-  hair: 5,
+  skin: TONE_MAX + 1,
+  hair: TONE_MAX + 1,
   shirt: 6,
   pants: 4,
   style: 4,
   face: 3,
-  body: 3,
+  body: SLIDER_MAX + 1,
   formal: 4,
   sleepwear: 4,
   swimwear: 4,
   headShape: 4,
   eyes: 4,
-  eyeColor: 5,
+  eyeColor: TONE_MAX + 1,
   lashes: 2,
   brows: 4,
   nose: 4,
@@ -259,6 +275,14 @@ export const LOOK_LIMITS: Record<keyof Look, number> = {
   ears: 3,
   beard: 5,
   marks: 4,
+  height: SLIDER_MAX + 1,
+  muscle: SLIDER_MAX + 1,
+  jaw: SLIDER_MAX + 1,
+  noseSize: SLIDER_MAX + 1,
+  earSize: SLIDER_MAX + 1,
+  eyeSize: SLIDER_MAX + 1,
+  eyeGap: SLIDER_MAX + 1,
+  mouthSize: SLIDER_MAX + 1,
 };
 
 /**
@@ -299,9 +323,42 @@ function pickDefined<K extends keyof Look>(l: Partial<Look>, keys: readonly K[])
   return out;
 }
 
-/** Aparência completa a partir da antiga (só pele, cabelo, camisa e calça). */
+const oldTone = (table: number[], v: number) => table[Math.max(0, Math.min(table.length - 1, Math.round(v)))];
+
+/**
+ * Aparência completa a partir da antiga (só pele, cabelo, camisa e calça).
+ * Plano 2, bloco 10: aparência sem `height` é do formato antigo; pele,
+ * cabelo, olhos e corpo passam para as escalas contínuas e os controles
+ * deslizantes começam no meio.
+ */
 export function fullLook(look: Partial<Look> | undefined): Look {
   const l = look ?? {};
+  const base = legacyFull(l);
+  if (l.height !== undefined) return { ...base, ...SLIDER_DEFAULTS, ...pickDefined(l, SLIDER_ROWS) };
+  return {
+    ...base,
+    skin: oldTone(OLD_SKIN_TONES, base.skin),
+    hair: oldTone(OLD_HAIR_TONES, base.hair),
+    eyeColor: oldTone(OLD_EYE_TONES, base.eyeColor),
+    body: Math.max(0, Math.min(2, base.body)) * SLIDER_MID,
+    ...SLIDER_DEFAULTS,
+  };
+}
+
+/** Controles deslizantes no ponto de partida (a musculatura começa um pouco abaixo do meio). */
+export const SLIDER_DEFAULTS: Pick<Look, (typeof SLIDER_ROWS)[number]> = {
+  height: SLIDER_MID,
+  muscle: 8,
+  jaw: SLIDER_MID,
+  eyeSize: SLIDER_MID,
+  eyeGap: SLIDER_MID,
+  noseSize: SLIDER_MID,
+  earSize: SLIDER_MID,
+  mouthSize: SLIDER_MID,
+};
+
+/** O que a aparência tinha até o bloco 9 (as escalas de cada campo ficam como vieram). */
+function legacyFull(l: Partial<Look>): Omit<Look, (typeof SLIDER_ROWS)[number]> & Partial<Look> {
   const hair = l.hair ?? 0;
   const shirt = l.shirt ?? 0;
   return {

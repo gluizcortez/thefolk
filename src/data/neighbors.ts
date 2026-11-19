@@ -1,4 +1,5 @@
 import { monthFor, temperFromTraits } from '../sim/temper';
+import { completeTraits } from '../sim/persona';
 import type { NeighborSeed, RelationSeed } from '../sim/world';
 import { MONTHS } from './months';
 import { TRAITS } from './traits';
@@ -281,8 +282,13 @@ export const NEIGHBOR_TIES: RelationSeed[] = [
   { a: 'Tião Mangueira', b: 'Marta Rodapé', friendship: 30 },
 ];
 
-/** Bloco 5: o temperamento dos vizinhos sai dos traços e o mês, do temperamento. */
-export const NEIGHBORS: NeighborSeed[] = [...RAW, ...DOWNTOWN_FOLKS].map((n) => {
+/**
+ * Bloco 5: o temperamento dos vizinhos sai dos traços e o mês, do
+ * temperamento. Plano 2, bloco 10: cada um completa os traços da idade com
+ * os que combinam com o temperamento (sempre os mesmos para a mesma pessoa).
+ */
+export const NEIGHBORS: NeighborSeed[] = [...RAW, ...DOWNTOWN_FOLKS].map((n, i) => {
   const temper = n.temper ?? temperFromTraits({ traits: TRAITS }, n.traits);
-  return { ...n, temper, month: n.month ?? monthFor({ months: MONTHS }, temper) };
+  const traits = completeTraits({ traits: TRAITS }, n.traits, temper, n.age, 1000 + i);
+  return { ...n, traits, temper, month: n.month ?? monthFor({ months: MONTHS }, temper) };
 });

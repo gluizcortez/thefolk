@@ -1,8 +1,10 @@
 import { buildNav } from '../sim/grid';
-import { cleanName, copyTemper } from '../sim/family';
+import { cleanName, memberSeed } from '../sim/family';
 import type { FamilyDraft } from '../sim/family';
 import type { RelationSeed, WorldSeed } from '../sim/world';
 import { createWorld } from '../sim/world';
+import { applyFamilyTies } from '../sim/ties';
+import type { World } from '../sim/types';
 import { CATALOG } from './catalog';
 import { starterHouse } from './house';
 
@@ -27,17 +29,7 @@ export function familySeed(draft: FamilyDraft, seed: number): WorldSeed {
     for (let x = 3; x <= 13; x++) if (nav.isFree(x, y)) spots.push({ x, y });
   }
   spots.sort((a, b) => Math.abs(a.x - GATHER.x) + Math.abs(a.y - GATHER.y) - (Math.abs(b.x - GATHER.x) + Math.abs(b.y - GATHER.y)) || a.y - b.y || a.x - b.x);
-  base.folks = draft.members.map((m, i) => ({
-    name: names[i],
-    traits: [...m.traits],
-    x: spots[i].x,
-    y: spots[i].y,
-    needs: { hunger: 70, energy: 80, bladder: 70, fun: 60, social: 55, hygiene: 80 },
-    look: { ...m.look },
-    temper: copyTemper(m.temper),
-    month: m.month,
-    ...(m.age ? { age: m.age } : {}),
-  }));
+  base.folks = draft.members.map((m, i) => memberSeed(m, names[i], spots[i].x, spots[i].y));
   const family: RelationSeed[] = [];
   for (let i = 0; i < names.length; i++) {
     for (let j = i + 1; j < names.length; j++) family.push({ a: names[i], b: names[j], friendship: FAMILY_FRIENDSHIP, respect: 10 });
@@ -46,4 +38,14 @@ export function familySeed(draft: FamilyDraft, seed: number): WorldSeed {
   const known = new Set([...names, ...(base.neighbors ?? []).map((n) => n.name)]);
   base.relations = [...family, ...(base.relations ?? []).filter((r) => known.has(r.a) && known.has(r.b))];
   return base;
+}
+
+/**
+ * Plano 2, bloco 10: o mundo novo da família criada, já com os laços do
+ * criador (cônjuges casados, pais e filhos, irmãos).
+ */
+export function familyWorld(draft: FamilyDraft, seed: number, rules: Pick<WorldSeed, 'death' | 'life'> = {}): World {
+  const world = createWorld({ ...familySeed(draft, seed), ...rules });
+  applyFamilyTies(world, world.folks, draft);
+  return world;
 }

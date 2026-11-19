@@ -1,10 +1,11 @@
-import { HAIR, SHIRT, SKIN } from '../game/art/palette';
+import { SHIRT, hairColor, skinColor } from '../game/art/palette';
 import { COVER_ART, FLOOR_ART } from '../game/art/house';
 import type { BuildTool, FocusTarget, GameController } from '../game/controller';
 import { OPENING_TOOLS, isOpeningTool } from '../game/controller';
 import { WALL_MODES, isWallMode } from '../game/viewMode';
 import { StyleEditor } from './styleEditor';
 import { WardrobePanel } from './wardrobe';
+import { HairPanel } from './hair';
 import type { Portraiter } from './wardrobe';
 import type { WallMode } from '../game/viewMode';
 import { ROOF_COLORS } from '../data/build';
@@ -125,6 +126,9 @@ import {
   SKIP_SPEED,
   canSkip,
   feelingsOf,
+  dreamProgress,
+  dreamsFor,
+  hasPerk,
   socialAllowed,
 } from '../sim';
 import type {
@@ -350,9 +354,9 @@ const HAIR_PATHS = [
 
 /** Rostinho do folk em SVG, na cor de pele, com o cabelo, a camisa e a expressão de agora. */
 function faceSvg(look: Folk['look'], size: number, mood = 60, state: FaceState = 'calm'): string {
-  const skin = hex(SKIN[look.skin % SKIN.length]);
+  const skin = hex(skinColor(look.skin));
   const shirt = hex(SHIRT[look.shirt % SHIRT.length]);
-  const hair = hex(HAIR[look.hair % HAIR.length]);
+  const hair = hex(hairColor(look.hair));
   const ink = '#2a2320';
   const curve = 11 + (mood / 100) * 8;
   const eyes =
@@ -503,6 +507,8 @@ export class Hud {
   /** bloco 6: desejos do dia e ânimo */
   private wishesEl = el('div', 'wishes');
   private wishesSig = '';
+  /** plano 2, bloco 10: lista de sonhos aberta para trocar */
+  private dreamPick = false;
   /** bloco 6: cartões de aviso (algo quebrou, conta chegou, campainha) */
   private noticesEl = el('div', 'notices');
   /** plano 2, bloco 2: os avisos que já saíram da tela */
@@ -518,6 +524,8 @@ export class Hud {
   readonly styleEditor: StyleEditor;
   /** plano 2, bloco 9: guarda-roupa */
   readonly wardrobe: WardrobePanel;
+  /** plano 2, bloco 10: cabelo no espelho */
+  readonly hair: HairPanel;
   private catalogTabs = el('div', 'catalog-tabs');
   private catalogItems = el('div', 'catalog-items');
   private catalogHint = el('div', 'catalog-hint');
@@ -558,6 +566,7 @@ export class Hud {
     this.system.onChange = () => this.renderPop();
     this.styleEditor = new StyleEditor(ctrl);
     this.wardrobe = new WardrobePanel(ctrl);
+    this.hair = new HairPanel(ctrl);
     this.styleEditor.onClose = () => {
       this.catalogSig = '';
       this.renderCatalog();
@@ -1033,7 +1042,7 @@ export class Hud {
     const world = this.ctrl.world;
     const catalog = this.ctrl.sim.catalog;
     const inspired = isInspired(folk, world.tick);
-    const sig = `${folk.id}|${JSON.stringify(folk.wishes)}|${folk.spark}|${inspired ? folk.inspired : 0}`;
+    const sig = `${folk.id}|${JSON.stringify(folk.wishes)}|${folk.spark}|${inspired ? folk.inspired : 0}|${folk.points ?? 0}|${(folk.perks ?? []).join(',')}`;
     if (sig === this.wishesSig) return;
     this.wishesSig = sig;
     this.wishesEl.replaceChildren();
@@ -1082,6 +1091,30 @@ export class Hud {
       spark.append(b);
     }
     this.wishesEl.append(list, spark, el('div', 'panel-note', t('spark.hint')));
+    // plano 2, bloco 10: pontos de satisfação e benefícios
+    if (!folk.visit) {
+      const perks = el('div', 'perk-list');
+      const points = el('div', 'spark-row perk-head');
+      points.append(el('span', 'wish-label', t('perk.title')), el('span', 'perk-points', t('perk.points', { n: folk.points ?? 0 })));
+      points.title = t('perk.pointsHint');
+      perks.append(points);
+      for (const def of Object.values(catalog.perks ?? {})) {
+        const have = hasPerk(folk, def.id);
+        const row = el('div', `perk-card${have ? ' have' : ''}`);
+        const icon = el('span', 'wish');
+        icon.innerHTML = iconSvg(def.icon as IconId, 16);
+        const body = el('div', 'wish-body');
+        body.append(el('div', 'wish-text', t(def.name)), el('div', 'wish-sub', t(def.hint)));
+        const b = el('button', 'btn btn-small', have ? t('perk.have') : t('perk.buy', { n: def.cost }));
+        b.disabled = have || (folk.points ?? 0) < def.cost;
+        b.addEventListener('click', () => {
+          if (this.ctrl.commandOrExplain({ type: 'buyPerk', folkId: folk.id, perkId: def.id })) this.wishesSig = '';
+        });
+        row.append(icon, body, b);
+        perks.append(row);
+      }
+      this.wishesEl.append(perks);
+    }
   }
 
   // ---------- avisos ----------
@@ -1603,6 +1636,13 @@ export class Hud {
       items.push({ label: t('wardrobe.open'), icon: 'mood', run: () => {
         this.closeMenu();
         this.wardrobe.show(folk.id, def.interactions.some((i) => i.dress) ? obj.id : undefined);
+      } });
+    }
+    // plano 2, bloco 10: no espelho, corte e cor do cabelo
+    if (def.art === 'mirror' && folk.age !== 'baby' && !folk.visit) {
+      items.push({ label: t('hair.open'), icon: 'mood', run: () => {
+        this.closeMenu();
+        this.hair.show(folk.id);
       } });
     }
     this.showRing(x, y, this.ringHead(t(def.name), notes), items);
@@ -2312,7 +2352,7 @@ export class Hud {
       case 'skills':
         return `s|${folk.id}|${Object.entries(folk.skills).map(([k, v]) => `${k}:${Math.floor(v)}`).join(',')}`;
       case 'temper':
-        return `t|${folk.id}|${JSON.stringify(folk.temper)}|${folk.traits.join(',')}|${folk.age ?? ''}`;
+        return `t|${folk.id}|${JSON.stringify(folk.temper)}|${folk.traits.join(',')}|${folk.age ?? ''}|${JSON.stringify(folk.dream)}|${this.dreamPick}|${Math.floor(world.tick / 60)}`;
       case 'inventory':
         return `i|${folk.id}|${(folk.gifts ?? []).join(',')}|${world.household.pantry}|${world.household.takeout}`;
       case 'relations':
@@ -2395,8 +2435,14 @@ export class Hud {
     this.panelEl.append(box);
   }
 
-  /** Plano 2, bloco 2: temperamento (cinco eixos), traços com o que querem dizer e o mês. */
+  /**
+   * Plano 2, bloco 2: temperamento (cinco eixos), traços com o que querem
+   * dizer e o mês. Plano 2, bloco 10: sonho de vida (com andamento e troca)
+   * e gostos.
+   */
   private renderTemper(folk: Folk): void {
+    const catalog = this.ctrl.sim.catalog;
+    const world = this.ctrl.world;
     const traits = el('div', 'trait-list');
     for (const id of folk.traits) {
       const row = el('div', 'trait-card');
@@ -2405,6 +2451,60 @@ export class Hud {
       traits.append(row);
     }
     if (!folk.traits.length) traits.append(el('div', 'panel-note', t('temper.noTraits')));
+    // sonho de vida
+    const dreamBox = el('div', 'dream-box');
+    const dream = folk.dream ? catalog.dreams?.[folk.dream.id] : undefined;
+    if (folk.age !== 'baby' && !folk.visit) {
+      dreamBox.append(el('div', 'panel-sub', t('dream.title')));
+      if (dream) {
+        const card = el('div', `wish-card dream-card${folk.dream?.done !== undefined ? ' done' : ''}`);
+        const icon = el('span', 'wish');
+        icon.innerHTML = iconSvg(dream.icon as IconId, 16);
+        const body = el('div', 'wish-body');
+        body.append(el('div', 'wish-text', t(dream.name)), el('div', 'wish-sub', t(dream.hint)));
+        if (folk.dream?.done !== undefined) body.append(el('div', 'wish-sub', t('dream.done')));
+        else {
+          const p = dreamProgress(world, catalog, folk, dream);
+          const bar = el('div', 'skill-bar');
+          const fill = el('div', 'skill-fill');
+          fill.style.width = `${Math.min(100, Math.round((p.have / p.need) * 100))}%`;
+          bar.append(fill);
+          body.append(bar, el('div', 'wish-sub', `${t('dream.progress', { have: Math.floor(p.have).toLocaleString('pt-BR'), need: p.need.toLocaleString('pt-BR') })} · ${t('dream.reward', { n: dream.reward })}`));
+        }
+        card.append(icon, body);
+        dreamBox.append(card);
+      } else dreamBox.append(el('div', 'panel-note', t('dream.none')));
+      if (folk.dream?.done === undefined) {
+        const change = el('button', 'btn btn-small', t('dream.change'));
+        change.addEventListener('click', () => {
+          this.dreamPick = !this.dreamPick;
+          this.refreshPanel();
+        });
+        dreamBox.append(change);
+        if (this.dreamPick) {
+          const fits = dreamsFor(catalog, folk.traits);
+          const list = el('div', 'chip-row dream-pick');
+          for (const d of fits.length ? fits : Object.values(catalog.dreams ?? {})) {
+            const b = el('button', 'chip', t(d.name));
+            b.title = t(d.hint);
+            b.classList.toggle('on', d.id === folk.dream?.id);
+            b.addEventListener('click', () => {
+              if (this.ctrl.commandOrExplain({ type: 'pickDream', folkId: folk.id, dreamId: d.id })) this.dreamPick = false;
+              this.refreshPanel();
+            });
+            list.append(b);
+          }
+          dreamBox.append(list);
+        }
+      }
+    }
+    // gostos
+    if (folk.tastes) {
+      dreamBox.append(
+        el('div', 'panel-sub', t('taste.title')),
+        el('div', 'panel-note', t('create.review.tastes', { food: t(`dish.${folk.tastes.food}`), music: t(`station.${folk.tastes.music}`), color: t(`color.${folk.tastes.color}`) })),
+      );
+    }
     const temper = el('div', 'temper-list');
     temper.append(el('div', 'panel-sub', t('temper.title')));
     for (const axis of TEMPER_AXES) {
@@ -2421,7 +2521,7 @@ export class Hud {
       born.title = t(month.hint);
       temper.append(born);
     }
-    this.panelEl.append(el('div', 'panel-sub', t('temper.traits')), traits, temper, el('div', 'panel-note', t('skills.mood')));
+    this.panelEl.append(el('div', 'panel-sub', t('temper.traits')), traits, dreamBox, temper, el('div', 'panel-note', t('skills.mood')));
   }
 
   /** Plano 2, bloco 2: o que o folk carrega (presentes) e o que a casa tem guardado. */
@@ -3483,6 +3583,7 @@ export class Hud {
   /** Plano 2, bloco 9: retrato do folk vestido (prévia do guarda-roupa). */
   setPortraiter(fn: Portraiter): void {
     this.wardrobe.portraiter = fn;
+    this.hair.portraiter = fn;
   }
 
   setThumbnailer(fn: (art: string) => string): void {
@@ -3724,7 +3825,7 @@ export class Hud {
     foot.append(this.catalogHint, this.colorRow);
     this.catalogEl.append(head, this.catalogItems, foot);
     this.catalogEl.hidden = true;
-    this.root.append(this.catalogEl, this.styleEditor.el, this.wardrobe.el);
+    this.root.append(this.catalogEl, this.styleEditor.el, this.wardrobe.el, this.hair.el);
   }
 
   private renderCatalog(): void {

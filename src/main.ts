@@ -44,7 +44,7 @@ async function boot(): Promise<void> {
   requestAnimationFrame(audioLoop);
   if (import.meta.env.DEV) (window as unknown as { thefolkAudio: AudioEngine }).thefolkAudio = engine;
   // bloco 5: sem save, o jogo começa na tela de criar família
-  const creator = new FamilyCreator(document.getElementById('ui')!, ctrl, (look, wear) => view.portrait(look, wear));
+  const creator = new FamilyCreator(document.getElementById('ui')!, ctrl, (look, wear, opts) => view.portrait(look, wear, 120, 200, opts));
   hud.openCreator = () => creator.show(true);
   // bloco 15: a tela do bairro (vista na tela do jogo, painel por cima)
   const town = new TownPanel(document.getElementById('ui')!, ctrl, view.town);

@@ -1,4 +1,5 @@
 import { temperMessSense, temperTidy } from './temper';
+import { traitProduct } from './persona';
 import type { Nav } from './grid';
 import { edgeKey, footprint } from './grid';
 import type { Logger } from './gossip';
@@ -174,7 +175,7 @@ export function afterUse(
   it: InteractionDef,
 ): Chain {
   const s = stateOf(obj);
-  if (def.upkeep?.breaks && !s.broken && nextFloat(world) < breakChance(s)) {
+  if (def.upkeep?.breaks && !s.broken && nextFloat(world) < breakChance(s) * traitProduct(catalog, folk.traits, 'luck')) {
     s.broken = true;
     s.repair = 0;
     log('log.broke', { object: def.name, name: folk.name });

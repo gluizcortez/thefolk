@@ -97,6 +97,8 @@ export interface InteractionDef {
   baby?: BabyCare;
   /** bloco 11: 'only' = só criança (pião, cavalinho); 'no' = criança não faz (fogão) */
   kids?: 'only' | 'no';
+  /** plano 2, bloco 10: só quem tem este traço vê a interação */
+  trait?: string;
   /** bloco 11: lição de casa (só criança com lição pendente) */
   homework?: boolean;
   /** bloco 10: coisa de casal (cama): chama o par para junto, se ele puder vir */
@@ -364,7 +366,7 @@ export type LifeStage = 'baby' | 'child' | 'teen' | 'adult' | 'elder';
 export type LifePace = 'off' | 'short' | 'normal' | 'long';
 
 /** Bloco 17: o que vai para o álbum da casa. */
-export type AlbumKind = 'photo' | 'birth' | 'adopted' | 'wedding' | 'topJob' | 'teen' | 'graduated' | 'elder' | 'retired' | 'passing' | 'heirloom';
+export type AlbumKind = 'photo' | 'birth' | 'adopted' | 'wedding' | 'topJob' | 'teen' | 'graduated' | 'elder' | 'retired' | 'passing' | 'heirloom' | 'dream';
 
 /** Bloco 17: uma página do álbum (foto tirada pelo jogador ou marco automático). */
 export interface AlbumEntry {
@@ -935,6 +937,106 @@ export interface TraitDef {
   saver?: number;
   /** bloco 5: para que lado o traço puxa o temperamento sugerido */
   temper?: Partial<Temper>;
+  /** plano 2, bloco 10: só a partir de jovem (criança não tem) */
+  grown?: boolean;
+  /** plano 2, bloco 10: multiplica o treino de cada habilidade */
+  skills?: Record<string, number>;
+  /** plano 2, bloco 10: relógio do corpo (cotovia rende de manhã, coruja à noite) */
+  clock?: 'lark' | 'owl';
+  /** plano 2, bloco 10: chance de quebrar o que usa (1 = normal) */
+  luck?: number;
+  /** plano 2, bloco 10: ganho de desempenho no trabalho (1 = normal) */
+  work?: number;
+  /** plano 2, bloco 10: pontos a mais (ou a menos) na nota do prato que cozinha */
+  cook?: number;
+  /** plano 2, bloco 10: quanto tempo dura o susto (1 = normal) */
+  scare?: number;
+  /** plano 2, bloco 10: o que mexe com o humor (veja sim/persona.ts) */
+  moods?: TraitMood[];
+}
+
+/** Plano 2, bloco 10: situação que um traço sente (efeito por minuto enquanto durar). */
+export type TraitMoodWhen =
+  | 'outdoors'
+  | 'indoors'
+  | 'clean'
+  | 'messy'
+  | 'rich'
+  | 'broke'
+  | 'crowd'
+  | 'alone'
+  | 'morning'
+  | 'night'
+  | 'music'
+  | 'tv'
+  | 'kids'
+  | 'working'
+  | 'reading';
+
+export interface TraitMood {
+  when: TraitMoodWhen;
+  /** efeito por minuto em diversão e conforto */
+  fun?: number;
+  comfort?: number;
+  social?: number;
+  /** a sensação que aparece no painel (feel.trait.<id>) */
+  feel: string;
+}
+
+/** Plano 2, bloco 10: sonho de vida (objetivo longo). */
+export type DreamGoal =
+  | 'careerTop'
+  | 'kids'
+  | 'friends'
+  | 'skillsMax'
+  | 'skillMax'
+  | 'funds'
+  | 'works'
+  | 'married'
+  | 'houseValue'
+  | 'paintings'
+  | 'books';
+
+export interface DreamDef {
+  id: string;
+  name: string;
+  hint: string;
+  icon: string;
+  goal: DreamGoal;
+  /** quanto precisa (filhos, amigos, habilidades, tostões, obras) */
+  amount: number;
+  /** habilidade ('skillMax') ou carreira ('careerTop', vazio = qualquer uma) */
+  ref?: string;
+  /** traços que combinam com o sonho (o criador sugere esses primeiro) */
+  traits: string[];
+  /** pontos de satisfação ao realizar */
+  reward: number;
+}
+
+/** Plano 2, bloco 10: benefício comprado com pontos de satisfação. */
+export interface PerkDef {
+  id: string;
+  name: string;
+  hint: string;
+  icon: string;
+  cost: number;
+}
+
+/** Plano 2, bloco 10: gostos do folk. */
+export interface Tastes {
+  /** prato de casa (id em HOME_DISHES) */
+  food: string;
+  /** estação de som (id em STATIONS) */
+  music: string;
+  /** amostra de cor (chave em SWATCHES) */
+  color: string;
+}
+
+/** Plano 2, bloco 10: sonho escolhido e o andamento. */
+export interface Dream {
+  id: string;
+  /** tick em que se realizou */
+  done?: number;
 }
 
 // ---------- Relações ----------
@@ -1006,6 +1108,8 @@ export interface SocialRequires {
   homework?: boolean;
   /** bloco 16: quem puxa leva um presente comprado na loja */
   gift?: boolean;
+  /** plano 2, bloco 10: só quem tem este traço puxa a conversa */
+  trait?: string;
 }
 
 /** Bloco 10: estágio de um casal (namoro, noivado, casamento). */
@@ -1283,6 +1387,9 @@ export interface Catalog {
   dishes?: Record<string, DishDef>;
   gifts?: Record<string, GiftDef>;
   venues?: Record<string, VenuePlan>;
+  /** plano 2, bloco 10 */
+  dreams?: Record<string, DreamDef>;
+  perks?: Record<string, PerkDef>;
 }
 
 /** Bloco 16: um prato do cardápio. */
@@ -1777,6 +1884,16 @@ export interface Folk {
   projects?: Partial<Record<ProjectKind, Project>>;
   /** plano 2, bloco 7: quantos de cada já terminou (romances, programas, músicas, quadros) */
   works?: Partial<Record<ProjectKind | 'painting', number>>;
+  /** plano 2, bloco 10: sonho de vida */
+  dream?: Dream;
+  /** plano 2, bloco 10: pontos de satisfação (desejos e sonho) */
+  points?: number;
+  /** plano 2, bloco 10: benefícios comprados (ids em catalog.perks) */
+  perks?: string[];
+  /** plano 2, bloco 10: comida, música e cor favoritas */
+  tastes?: Tastes;
+  /** plano 2, bloco 10: tom de voz da fala inventada (0 grave a 20 agudo) */
+  voice?: number;
 }
 
 /** Aparência: índices nas paletas da arte. */
@@ -1807,6 +1924,20 @@ export interface Look {
   ears: number;
   beard: number;
   marks: number;
+  /**
+   * Plano 2, bloco 10: controles deslizantes (0 a 20, 10 = meio). Pele,
+   * cabelo e cor dos olhos passam a ser escalas contínuas (0 a TONE_MAX) e o
+   * corpo vai de 0 (magro) a 20 (forte). Aparência sem `height` é do formato
+   * antigo (veja fullLook).
+   */
+  height: number;
+  muscle: number;
+  jaw: number;
+  noseSize: number;
+  earSize: number;
+  eyeSize: number;
+  eyeGap: number;
+  mouthSize: number;
 }
 
 export interface Job {
@@ -2280,6 +2411,12 @@ export type Command =
   | { type: 'dropOutfit'; folkId: number; occasion: Occasion; index: number }
   | { type: 'pickOutfit'; folkId: number; occasion: Occasion; index: number }
   | { type: 'buyGarment'; garmentId: string }
+  /** plano 2, bloco 10: compra um benefício com pontos de satisfação */
+  | { type: 'buyPerk'; folkId: number; perkId: string }
+  /** plano 2, bloco 10: troca o sonho de vida (só enquanto não realizou) */
+  | { type: 'pickDream'; folkId: number; dreamId: string }
+  /** plano 2, bloco 10: corte e cor do cabelo no espelho (cor de 0 a TONE_MAX) */
+  | { type: 'restyleHair'; folkId: number; style: number; hair: number }
   | { type: 'undoBuy' }
   | { type: 'closeBuy' }
   | { type: 'sell'; objectId: number }

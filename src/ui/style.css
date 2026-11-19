@@ -3936,3 +3936,339 @@ body.town-open #ui > *:not(.town):not(.creator):not(.toasts):not(.notices-col) {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- plano 2, bloco 10: criador em passos ---------- */
+
+.creator-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 100%;
+}
+
+.creator-step {
+  padding: 4px 12px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--cream);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.creator-step.done {
+  background: #d9e3c8;
+}
+
+.creator-step.on {
+  background: var(--terracotta);
+  color: var(--cream);
+}
+
+.creator-body.step-members,
+.creator-body.step-looks,
+.creator-body.step-clothes,
+.creator-body.step-traits,
+.creator-body.step-dream {
+  grid-template-columns: 190px 1fr;
+}
+
+.creator-body.step-ties,
+.creator-body.step-review {
+  grid-template-columns: 1fr;
+}
+
+.creator-left {
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.creator-look-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.creator-row .creator-slider {
+  width: 100%;
+}
+
+.creator-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 14px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: linear-gradient(90deg, #e9dcc2, #cdb88f);
+  cursor: pointer;
+}
+
+.creator-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--mustard);
+  box-shadow: 1px 1px 0 rgba(20, 14, 10, 0.5);
+}
+
+.creator-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--mustard);
+}
+
+.creator-garment .zone-dot {
+  margin-right: 4px;
+}
+
+.creator-trait-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.creator-trait-slot {
+  min-width: 110px;
+  padding: 8px 10px;
+  border: 2px dashed rgba(42, 35, 32, 0.45);
+  border-radius: 12px;
+  background: transparent;
+  font: inherit;
+  font-weight: 800;
+  font-size: 13px;
+  color: rgba(42, 35, 32, 0.5);
+}
+
+.creator-trait-slot.on {
+  border-style: solid;
+  border-color: var(--ink);
+  background: var(--mustard);
+  color: var(--ink);
+  cursor: pointer;
+  box-shadow: 2px 2px 0 rgba(20, 14, 10, 0.4);
+}
+
+.creator-traits .tab.blocked {
+  text-decoration: line-through;
+}
+
+.creator-trait-info {
+  min-height: 74px;
+  padding: 8px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  background: #fffaf0;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.creator-trait-info .good,
+.creator-dream .good {
+  color: var(--moss);
+  font-weight: 700;
+}
+
+.creator-trait-info .bad {
+  color: var(--terracotta);
+  font-weight: 700;
+}
+
+.creator-trait-name {
+  font-weight: 800;
+  font-size: 14px;
+  text-transform: capitalize;
+}
+
+.creator-dreams {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+}
+
+.creator-dream {
+  text-align: left;
+  padding: 8px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  background: var(--cream);
+  font: inherit;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.creator-dream.fits {
+  opacity: 1;
+}
+
+.creator-dream.on {
+  background: var(--teal);
+  color: var(--cream);
+  box-shadow: 3px 3px 0 rgba(20, 14, 10, 0.45);
+}
+
+.creator-dream.on .good {
+  color: #d9e3c8;
+}
+
+.creator-dream-name {
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.creator-dream-reward {
+  font-weight: 700;
+  color: var(--terracotta);
+}
+
+.creator-dream.on .creator-dream-reward {
+  color: var(--mustard);
+}
+
+.creator-tie {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px dashed rgba(42, 35, 32, 0.25);
+}
+
+.creator-tie-who {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.creator-tie-who img,
+.creator-review-card img {
+  width: 34px;
+  height: 56px;
+  object-fit: cover;
+  object-position: top;
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  background: radial-gradient(circle at 50% 40%, #f6e7c4, #d6bf94);
+  image-rendering: pixelated;
+}
+
+.creator-review {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.creator-review-card {
+  display: flex;
+  gap: 10px;
+  text-align: left;
+  padding: 8px;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  background: var(--cream);
+  font: inherit;
+  cursor: pointer;
+}
+
+.creator-review-card img {
+  width: 64px;
+  height: 106px;
+}
+
+.creator-review-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.creator-review-traits {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--teal);
+}
+
+@media (max-width: 760px) {
+  .creator-body.step-members,
+  .creator-body.step-looks,
+  .creator-body.step-clothes,
+  .creator-body.step-traits,
+  .creator-body.step-dream {
+    grid-template-columns: 1fr;
+  }
+  .creator-look-grid,
+  .creator-tie {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* plano 2, bloco 10: sonho de vida e benefícios no painel */
+.dream-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.dream-box > .btn {
+  align-self: flex-start;
+}
+
+.dream-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.perk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.perk-points {
+  font-weight: 800;
+  color: var(--terracotta);
+}
+
+.perk-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 2px solid rgba(42, 35, 32, 0.35);
+  border-radius: 10px;
+  background: rgba(255, 250, 240, 0.6);
+}
+
+.perk-card.have {
+  border-color: var(--moss);
+  background: #e3ebd5;
+}
+
+.hair-panel {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.perk-head {
+  justify-content: space-between;
+}
+
+.perk-head .wish-label {
+  width: auto;
+}

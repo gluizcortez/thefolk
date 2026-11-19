@@ -174,8 +174,8 @@ describe('bloco 15: bairro', () => {
     const draft: FamilyDraft = {
       surname: 'Goiabeira',
       members: [
-        { name: 'Iara', look: { ...w.folks[0].look }, traits: ['gentil'], temper: { ...w.folks[0].temper }, month: w.folks[0].month },
-        { name: 'Davi', look: { ...w.folks[1].look }, traits: ['agitado'], temper: { ...w.folks[1].temper }, month: w.folks[1].month },
+        { name: 'Iara', look: { ...w.folks[0].look }, traits: ['gentil', 'caseiro', 'tagarela', 'romantico', 'ambicioso'], temper: { ...w.folks[0].temper }, month: w.folks[0].month },
+        { name: 'Davi', look: { ...w.folks[1].look }, traits: ['agitado', 'artistico', 'coruja', 'festeiro', 'atletico'], temper: { ...w.folks[1].temper }, month: w.folks[1].month },
       ],
     };
     expect(sim.dispatch({ type: 'foundFamily', lotId: lot.id, draft })).toBe(true);

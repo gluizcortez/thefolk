@@ -1,3 +1,4 @@
+import { PERK_ACCEPT } from './persona';
 import type { Nav } from './grid';
 import { blocksStep, edgeKey } from './grid';
 import { moodOf } from './needs';
@@ -52,6 +53,8 @@ export function socialAllowed(world: World, catalog: Catalog, def: SocialDef, a:
   const req = def.requires;
   // bloco 16: presente só com presente na mão
   if (req?.gift && !(a.gifts?.length ?? 0)) return false;
+  // plano 2, bloco 10: conversa de traço
+  if (req?.trait && !a.traits.includes(req.trait)) return false;
   if (req?.adult && !isAdult(a)) return false;
   if (req?.child && b.age !== 'child') return false;
   if (req?.kid && a.age !== 'child' && b.age !== 'child') return false;
@@ -93,6 +96,8 @@ export function acceptChance(world: World, catalog: Catalog, a: Folk, b: Folk, d
   p += (moodOf(catalog, b.needs) - 50) / 250;
   p += (socialTaste(catalog, b, def.category) - 1) * 0.25;
   for (const t of b.traits) p += def.traitAccept?.[t] ?? 0;
+  // plano 2, bloco 10: sorte no amor e charme (benefícios de quem puxa)
+  for (const perk of a.perks ?? []) if (PERK_ACCEPT[perk]?.category === def.category) p += PERK_ACCEPT[perk].bonus;
   // fama de quem puxa conversa abre (ou fecha) portas
   p += reputationOf(world, a.id) / 300;
   // fidelidade: quem namora firme outra pessoa resiste a gracinhas

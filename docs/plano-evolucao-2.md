@@ -525,6 +525,24 @@ Pronto: testes de compatibilidade de traços (pares proibidos, como Capricho Fin
 com Deixa-Pra-Lá), conversão dos eixos, herança de aparência; capturas de cada
 passo do criador.
 
+**Feito em 19/11/2026** (save v30, uma casa a menos que o plano). 40 traços
+(os 14 antigos e 26 novos), 14 pares proibidos e vagas por idade (bebê 1,
+criança 3, jovem 4, adulto e idoso 5; alguns só de adulto). Efeitos: treino
+por habilidade, humor por situação (ao ar livre, dentro de casa, limpeza,
+bagunça, dinheiro, gente, sozinho, manhã, noite, música, TV, crianças,
+trabalho, leitura), relógio do corpo (madrugador e coruja), sorte nas
+quebras, nota no trabalho, nota do prato, susto, seis interações e cinco
+conversas exclusivas. Os cinco eixos ficaram como temperamento interno; a
+migração completa os traços pelo temperamento de cada um. 14 sonhos de vida
+com progresso no painel, 9 benefícios comprados com pontos (desejo cumprido
+dá 10, os três do dia dão mais 15). Gostos com efeito no humor, voz de 0 a
+20, aparência em escala contínua com 8 controles novos (altura, musculatura,
+largura do rosto, olhos, distância dos olhos, nariz, orelhas, boca), sortear
+e herdar dos pais; o bebê mistura os dois. Laços no criador: cônjuges já
+casados, pais e filhos na árvore, irmãos. O espelho troca penteado e cor do
+cabelo. Ficou para depois: benefícios de "nunca se perder" (não há como se
+perder ainda), sonhos para criança e jovem, e trocar traço depois de criado.
+
 ## Bloco 11 — Gestão de família na cidade (save v32)
 
 - **Gaveta de famílias**: famílias criadas e sem casa ficam guardadas; dá

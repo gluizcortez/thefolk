@@ -47,7 +47,14 @@ export function playing(obj: WorldObject, def?: ObjectDef): boolean {
 }
 
 /** Nota de 0 a 20 do quanto o folk gosta da estação (10 = tanto faz). */
-export function stationTaste(folk: Pick<Folk, 'temper'>, station: StationDef): number {
+export function stationTaste(folk: Pick<Folk, 'temper'> & { tastes?: Folk['tastes'] }, station: StationDef): number {
+  // plano 2, bloco 10: a estação favorita é nota máxima
+  if (folk.tastes?.music === station.id) return 20;
+  if (folk.tastes?.music) return Math.min(16, stationScore(folk, station));
+  return stationScore(folk, station);
+}
+
+function stationScore(folk: Pick<Folk, 'temper'>, station: StationDef): number {
   const t = folk.temper;
   let score = 0;
   let weight = 0;

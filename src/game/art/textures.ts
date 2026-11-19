@@ -1,6 +1,6 @@
 import { finishSpec } from './finish';
 import * as THREE from 'three';
-import { FORMAL, HAIR, PAJAMA, PAL, PANTS, SHIRT, SKIN, SWIM, css, seeded, shade } from './palette';
+import { FORMAL, PAJAMA, PAL, PANTS, SHIRT, SWIM, css, darkSkin, eyeColor, hairColor, seeded, shade, skinColor } from './palette';
 import { garbSpec } from './garb';
 import { ICON_PATHS, STROKED, TOPIC_PATHS } from '../../ui/icons';
 import type { IconId } from '../../ui/icons';
@@ -1503,6 +1503,10 @@ export interface FaceLook {
   marks: number;
   /** 0 liso, 1 rugas de idoso */
   wrinkles: number;
+  /** plano 2, bloco 10: medidas do rosto (0 a 20, 10 = meio) */
+  eyeSize?: number;
+  eyeGap?: number;
+  mouthSize?: number;
 }
 
 /** O que muda de um quadro para o outro: expressão, pálpebra, boca falando e olhar. */
@@ -1572,8 +1576,8 @@ function face(f: FaceLook, st: FaceState): Painter {
   return (c, w, h, rnd) => {
     const S = w / 128;
     const e = EXPR[st.expr] ?? EXPR.neutral;
-    const skin = SKIN[f.skin % SKIN.length];
-    const hair = HAIR[f.hair % HAIR.length];
+    const skin = skinColor(f.skin);
+    const hair = hairColor(f.hair);
     fill(c, skin);
     wrapShade(c, w, h, 0.2);
     const g = c.createLinearGradient(0, 0, 0, h);
@@ -1619,7 +1623,7 @@ function face(f: FaceLook, st: FaceState): Painter {
 
     // corado das bochechas (mais forte com bochecha rosada)
     // na pele escura o corado aparece menos
-    const blush = (e.blush + (f.marks === 3 ? 0.2 : 0)) * (f.skin % SKIN.length >= 2 ? 0.55 : 1);
+    const blush = (e.blush + (f.marks === 3 ? 0.2 : 0)) * (darkSkin(f.skin) ? 0.55 : 1);
     for (const s of [-1, 1]) oval(c, ...at(s * 11, 8), 5 * S, 3.5 * S, st.expr === 'angry' ? 0xc94a3a : 0xd9655a, blush);
 
     // marcas: sardas, pinta perto da boca
@@ -1641,13 +1645,17 @@ function face(f: FaceLook, st: FaceState): Painter {
       [3.6, 1.7, 0.8],
       [3.4, 2.2, -0.8],
     ];
-    const [erx, ery0, slant] = EYES[f.eyes % EYES.length];
-    const ery = ery0 * (1 - Math.min(0, e.lid) * -0.6);
-    const iris = EYE_COLORS[f.eyeColor % EYE_COLORS.length];
+    // plano 2, bloco 10: tamanho e distância dos olhos (controles deslizantes, 10 = meio)
+    const eyeK = 0.8 + (f.eyeSize ?? 10) * 0.02;
+    const gap = 7.5 + ((f.eyeGap ?? 10) - 10) * 0.12;
+    const [erx0, ery0, slant] = EYES[f.eyes % EYES.length];
+    const erx = erx0 * eyeK;
+    const ery = ery0 * eyeK * (1 - Math.min(0, e.lid) * -0.6);
+    const iris = eyeColor(f.eyeColor);
     const ink = 0x2a1d16;
     const lash = f.lashes ? 1.4 : 0.9;
     for (const s of [-1, 1]) {
-      const [ex, eyY] = at(s * 7.5, 0);
+      const [ex, eyY] = at(s * gap, 0);
       // sombra da órbita
       oval(c, ex, eyY - 0.5 * S, 5.5 * S, 3.6 * S, shade(skin, 0.72), 0.45);
       if (e.bags) oval(c, ex, eyY + 3 * S, 3.2 * S, 1 * S, shade(skin, 0.6), 0.5);
@@ -1792,7 +1800,8 @@ function face(f: FaceLook, st: FaceState): Painter {
       [1, 1.6],
       [1.25, 1],
     ];
-    const [mw, lip] = MOUTHS[f.mouth % MOUTHS.length];
+    const [mw0, lip] = MOUTHS[f.mouth % MOUTHS.length];
+    const mw = mw0 * (0.8 + (f.mouthSize ?? 10) * 0.02);
     const my = ey + 15 * S;
     const W = 4 * mw * S;
     const lipC = 0xb5625a;
@@ -2197,7 +2206,7 @@ function pants(idx: number): Painter {
 /** Cabelo: fios descendo do alto da cabeça. */
 function hairTex(idx: number): Painter {
   return (c, w, h, rnd) => {
-    const base = HAIR[idx % HAIR.length];
+    const base = hairColor(idx);
     fill(c, base);
     for (let i = 0; i < 70; i++) {
       const x = rnd() * w;
@@ -2210,7 +2219,7 @@ function hairTex(idx: number): Painter {
 /** Pele lisa dos braços e do pescoço, com um leve volume. */
 function skinTex(idx: number): Painter {
   return (c, w, h) => {
-    fill(c, SKIN[idx % SKIN.length]);
+    fill(c, skinColor(idx));
     wrapShade(c, w, h, 0.2);
   };
 }
@@ -2469,7 +2478,7 @@ function specFor(name: string): Spec | undefined {
   const n = Number(parts[1]);
   switch (parts[0]) {
     case 'face': {
-      // face:pele:cabelo:olhos:cor:cílios:sobrancelha:nariz:boca:barba:marcas:rugas:expressão:fechado:fala:olhar
+      // face:pele:cabelo:olhos:cor:cílios:sobrancelha:nariz:boca:barba:marcas:rugas:expressão:fechado:fala:olhar:tamanho dos olhos:distância:boca
       const v = parts.slice(1, 12).map(Number);
       const look: FaceLook = {
         skin: v[0],
@@ -2483,6 +2492,9 @@ function specFor(name: string): Spec | undefined {
         beard: v[8],
         marks: v[9],
         wrinkles: v[10],
+        eyeSize: Number(parts[16] ?? 10),
+        eyeGap: Number(parts[17] ?? 10),
+        mouthSize: Number(parts[18] ?? 10),
       };
       const st: FaceState = { expr: parts[12] as Expression, closed: parts[13] === '1', talk: Number(parts[14]) as 0 | 1 | 2, gaze: Number(parts[15]) as -1 | 0 | 1 };
       return { w: 256, h: 128, paint: face(look, st), grain: 3 };
@@ -2576,5 +2588,5 @@ export function getTexture(name: string): THREE.CanvasTexture {
 
 /** Plano 2, bloco 5: nome da textura do rosto (peças da pessoa + estado do quadro). */
 export function faceTextureName(f: FaceLook, st: FaceState): string {
-  return `face:${f.skin}:${f.hair}:${f.eyes}:${f.eyeColor}:${f.lashes}:${f.brows}:${f.nose}:${f.mouth}:${f.beard}:${f.marks}:${f.wrinkles}:${st.expr}:${st.closed ? 1 : 0}:${st.talk}:${st.gaze}`;
+  return `face:${f.skin}:${f.hair}:${f.eyes}:${f.eyeColor}:${f.lashes}:${f.brows}:${f.nose}:${f.mouth}:${f.beard}:${f.marks}:${f.wrinkles}:${st.expr}:${st.closed ? 1 : 0}:${st.talk}:${st.gaze}:${f.eyeSize ?? 10}:${f.eyeGap ?? 10}:${f.mouthSize ?? 10}`;
 }

@@ -205,7 +205,8 @@ import { findPath, findPathToAny } from './pathfinding';
 import { nextFloat, nextInt } from './rng';
 import { addMemory, affinity, applyDelta, coolRelations, ensureRelation, relationOf, setDating, touch } from './relations';
 import { skillLevel, trainSkill } from './skills';
-import { HABIT_PERIOD_DAYS, countHabit, settleHabits } from './temper';
+import { HABIT_PERIOD_DAYS, LOOK_LIMITS, countHabit, settleHabits } from './temper';
+import { MOOD_EVERY, FAV_FOOD_FUN, checkDream, cookBonus, growTraits, perkProblem, stepTraitMoods, traitProduct, traitTraining } from './persona';
 import {
   MAX_SPARK,
   THINK_EVERY,
@@ -476,6 +477,9 @@ export type CommandProblem =
   | 'badParts'
   | 'refused'
   | 'noSpark'
+  // plano 2, bloco 10
+  | 'points'
+  | 'dreamDone'
   | 'locked'
   | 'noRoom'
   | 'partyOn'
@@ -1078,6 +1082,33 @@ export class Sim {
         this.log('log.boughtGarment', { garment: `garment.${g.id}` });
         return true;
       }
+      // plano 2, bloco 10: benefício com pontos de satisfação, sonho de vida, cabelo no espelho
+      case 'buyPerk': {
+        const folk = this.findFolk(cmd.folkId);
+        if (!folk || folk.visit) return this.fail('invalid');
+        const why = perkProblem(this.catalog, folk, cmd.perkId);
+        if (why) return this.fail(why === 'have' ? 'already' : why === 'points' ? 'points' : 'invalid');
+        const def = this.catalog.perks![cmd.perkId];
+        folk.points = (folk.points ?? 0) - def.cost;
+        (folk.perks ??= []).push(def.id);
+        this.log('log.perkBought', { name: folk.name, perk: def.name });
+        return true;
+      }
+      case 'pickDream': {
+        const folk = this.findFolk(cmd.folkId);
+        if (!folk || folk.visit || !this.catalog.dreams?.[cmd.dreamId]) return this.fail('invalid');
+        if (folk.dream?.done !== undefined) return this.fail('dreamDone');
+        folk.dream = { id: cmd.dreamId };
+        return true;
+      }
+      case 'restyleHair': {
+        const folk = this.findFolk(cmd.folkId);
+        if (!folk || folk.visit || folk.age === 'baby') return this.fail('invalid');
+        if (!Number.isInteger(cmd.style) || cmd.style < 0 || cmd.style >= LOOK_LIMITS.style) return this.fail('invalid');
+        if (!Number.isInteger(cmd.hair) || cmd.hair < 0 || cmd.hair >= LOOK_LIMITS.hair) return this.fail('invalid');
+        folk.look = { ...folk.look, style: cmd.style, hair: cmd.hair };
+        return true;
+      }
       case 'undoBuy':
         return this.undoBuy();
       case 'closeBuy':
@@ -1606,6 +1637,8 @@ export class Sim {
     if (minute === TOWN_HOUR * 60) {
       townDay(world, this.catalog);
       this.payPensions();
+      // plano 2, bloco 10: o sonho de vida se realizou?
+      for (const f of this.residents()) this.dreamCheck(f);
     }
     // bloco 17: relógio da vida
     if (lifeOn(world) && !world.outing) this.stepLife();
@@ -1631,6 +1664,21 @@ export class Sim {
     // plano 2, bloco 1: pular volta ao normal quando alguém acorda, chega ou fica livre
     if (world.speed === SKIP_SPEED && !canSkip(world, this.catalog)) world.speed = 1;
     if (world.log.length > MAX_LOG) world.log.splice(0, world.log.length - MAX_LOG);
+  }
+
+  /** Plano 2, bloco 10: sonho realizado vira página do álbum e balão. */
+  dreamCheck(folk: Folk): boolean {
+    if (!checkDream(this.world, this.catalog, this.logger, folk)) return false;
+    const def = this.catalog.dreams?.[folk.dream!.id];
+    addAlbum(this.world, { kind: 'dream', who: [folk.id], names: [folk.name], params: { dream: def?.name ?? '' } });
+    setThought(folk, 'wish', 'spark', this.world.tick, 60);
+    return true;
+  }
+
+  /** Plano 2, bloco 10: quem cresce ganha os traços que faltam para a idade nova. */
+  private growTraitsOf(folk: Folk): void {
+    const added = growTraits(this.world, this.catalog, folk);
+    for (const id of added) this.log('log.newTrait', { name: folk.name, trait: this.catalog.traits[id]?.name ?? id });
   }
 
   /** Bloco 5: o hábito de semanas puxa um eixo do temperamento um ponto. */
@@ -1942,7 +1990,9 @@ export class Sim {
     this.world.household.funds += pay;
     job.shifts++;
     const avgMood = (away.mood + moodOf(this.catalog, folk.needs)) / 2;
-    const score = shiftScore(this.catalog, folk, job, avgMood, away.late) + workRelationTerm(this.world, folk);
+    let score = shiftScore(this.catalog, folk, job, avgMood, away.late) + workRelationTerm(this.world, folk);
+    // plano 2, bloco 10: quem é pé de boi (ou ambicioso) rende mais no turno
+    if (score > 0) score *= traitProduct(this.catalog, folk.traits, 'work');
     job.performance = Math.max(-100, Math.min(100, job.performance + score));
     this.log('log.backFromWork', { name: folk.name, pay: formatMoney(pay) });
     workplaceShift(this.world, this.catalog, folk, score);
@@ -2007,6 +2057,8 @@ export class Sim {
       this.stepBaby(folk);
       return;
     }
+    // plano 2, bloco 10: o que os traços sentem (e a cor favorita), de tempos em tempos
+    if ((this.world.tick + folk.id) % MOOD_EVERY === 0 && !folk.down) stepTraitMoods(this.world, this.catalog, folk);
 
     if (folk.away) {
       this.stepAway(folk);
@@ -2870,14 +2922,16 @@ export class Sim {
   }
 
   /** Bloco 6: dia inspirado treina em dobro. */
-  private trainBoost(folk: Folk): number {
-    return isInspired(folk, this.world.tick) ? INSPIRED_TRAINING : 1;
+  private trainBoost(folk: Folk, skill?: string): number {
+    // plano 2, bloco 10: traços e o benefício de aprender rápido
+    const traits = skill ? traitTraining(this.catalog, folk, skill) : 1;
+    return (isInspired(folk, this.world.tick) ? INSPIRED_TRAINING : 1) * traits;
   }
 
   /** Um minuto de treino da habilidade da interação (avisa quando sobe de nível). */
   private trainCare(folk: Folk, it: InteractionDef): void {
     if (!it.skill) return;
-    const up = trainSkill(folk, it, moodOf(this.catalog, folk.needs), this.trainBoost(folk));
+    const up = trainSkill(folk, it, moodOf(this.catalog, folk.needs), this.trainBoost(folk, it.skill.id));
     if (up !== null && !folk.visit) {
       const skill = this.catalog.skills[it.skill.id];
       this.log('log.skillUp', { name: folk.name, skill: skill?.name ?? it.skill.id, level: up });
@@ -3198,7 +3252,7 @@ export class Sim {
     if (def.category === 'friendly' || def.category === 'romantic') countHabit(folk, 'warmth', 1);
     else if (def.category === 'mean') countHabit(folk, 'warmth', -2);
     if (def.skill) {
-      const up = trainSkill(folk, { skill: def.skill } as InteractionDef, mood, this.trainBoost(folk));
+      const up = trainSkill(folk, { skill: def.skill } as InteractionDef, mood, this.trainBoost(folk, def.skill.id));
       if (up !== null && !folk.visit) {
         const skill = this.catalog.skills[def.skill.id];
         this.log('log.skillUp', { name: folk.name, skill: skill?.name ?? def.skill.id, level: up });
@@ -4821,7 +4875,7 @@ export class Sim {
         countHabit(f, 'outgoing', 1);
         if (f !== speaker) f.needs.fun = clampNeed(f.needs.fun + REACTION_FUN[reactionTo(this.catalog, f, c.topic)]);
       }
-      const up = trainSkill(speaker, CIRCLE_TALK, moodOf(this.catalog, speaker.needs), this.trainBoost(speaker));
+      const up = trainSkill(speaker, CIRCLE_TALK, moodOf(this.catalog, speaker.needs), this.trainBoost(speaker, CIRCLE_TALK.skill?.id));
       if (up !== null && !speaker.visit) {
         this.log('log.skillUp', { name: speaker.name, skill: this.catalog.skills.charisma?.name ?? 'charisma', level: up });
       }
@@ -5519,6 +5573,7 @@ export class Sim {
     baby.facing = { x: 0, y: 1 };
     this.log('log.grewUp', { name: baby.name });
     this.learnFromCare(baby);
+    this.growTraitsOf(baby);
     // bloco 17: com o relógio ligado, a infância começa a contar agora
     scheduleAge(this.world, baby, true);
   }
@@ -6184,7 +6239,7 @@ export class Sim {
     const here = this.findObject(action.objectId!) ?? stove;
     const spot = this.defOf(here)?.interactions.some((i) => i.served) ? this.freeMealTile(here) : null;
     const place = spot ?? mealSpot(this.world, this.catalog, stove);
-    const quality = dishQuality(this.world, skillLevel(folk, 'cooking'), job.bonus, moodOf(this.catalog, folk.needs), !!job.burnt);
+    const quality = dishQuality(this.world, skillLevel(folk, 'cooking'), job.bonus + cookBonus(this.catalog, folk), moodOf(this.catalog, folk.needs), !!job.burnt);
     serveMeal(this.world, place.obj, place.x, place.y, dish.id, job.servings, quality, !!job.burnt, folk.id);
     this.log(job.burnt ? 'log.cookedBurnt' : quality >= 75 ? 'log.cookedGreat' : 'log.cooked', { name: folk.name, dish: `dish.${dish.id}`, n: job.servings });
     if (!folk.visit) addTrash(this.world, this.catalog, this.logger, folk, 6);
@@ -6212,6 +6267,8 @@ export class Sim {
   /** Acabou o prato: o gosto fica (muito bom anima, queimado desanima). */
   private ateServed(folk: Folk, p: ServedPlate): void {
     folk.lastMeal = { dish: p.dish, quality: p.quality, tick: this.world.tick, burnt: p.burnt };
+    // plano 2, bloco 10: o prato favorito alegra
+    if (folk.tastes?.food === p.dish && !p.burnt) folk.needs.fun = Math.min(NEED_MAX, folk.needs.fun + FAV_FOOD_FUN);
     if (folk.visit) return;
     if (p.burnt || p.quality < 25) {
       folk.needs.fun = Math.max(0, folk.needs.fun - 6);
@@ -6748,6 +6805,7 @@ export class Sim {
     }
     setStage(folk, next);
     const params = { name: folk.name };
+    if (next === 'teen' || next === 'adult') this.growTraitsOf(folk);
     if (next === 'teen') {
       this.log('log.becameTeen', params);
       addAlbum(world, { kind: 'teen', who: [folk.id], names: [folk.name] });

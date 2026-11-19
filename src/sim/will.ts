@@ -123,6 +123,8 @@ export function refusal(catalog: Catalog, folk: Folk, it: InteractionDef, tick: 
     if (folk.needs[id] < REFUSE_NEED && (!worst || folk.needs[id] < folk.needs[worst])) worst = id;
   }
   if (worst) return worst;
+  // plano 2, bloco 10: com o benefício "firme", o mau humor não faz recusar
+  if (folk.perks?.includes('steady')) return null;
   return moodOf(catalog, folk.needs) < refuseMood(folk) ? 'mood' : null;
 }
 

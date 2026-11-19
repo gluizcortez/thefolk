@@ -3,7 +3,7 @@ import { NEED_MAX, clampNeed } from './needs';
 import { ensureRelation } from './relations';
 import { nextFloat, nextInt } from './rng';
 import { skillLevel } from './skills';
-import { FACE_ROWS, LOOK_LIMITS, TEMPER_AXES, TEMPER_MAX, fitTemper, monthFor } from './temper';
+import { FACE_ROWS, LOOK_LIMITS, SLIDER_MAX, SLIDER_ROWS, TEMPER_AXES, TEMPER_MAX, TONE_MAX, fitTemper, fullLook, monthFor } from './temper';
 import type {
   Age,
   BabyCare,
@@ -119,8 +119,10 @@ const ADULT_SPECIALS = new Set(['services', 'payBills', 'party', 'invite', 'adop
  * criança não cozinha no fogão, não conserta, não trabalha por conta nem
  * resolve coisa da casa pelo telefone; brinquedo de criança é só dela.
  */
-export function kidAllows(folk: Pick<Folk, 'age' | 'kid'>, it: InteractionDef): boolean {
+export function kidAllows(folk: Pick<Folk, 'age' | 'kid'> & { traits?: string[] }, it: InteractionDef): boolean {
   if (folk.age === 'baby') return false;
+  // plano 2, bloco 10: interação de traço só para quem tem o traço
+  if (it.trait && !folk.traits?.includes(it.trait)) return false;
   if (it.homework) return (folk.age === 'child' || folk.age === 'teen') && folk.kid?.homework === 'due';
   if (it.kids === 'only') return folk.age === 'child';
   if (it.baby) return isAdult(folk);
@@ -208,39 +210,59 @@ export function inheritTraits(world: World, parents: Parent[]): string[] {
     const t = p.traits[nextInt(world, p.traits.length)];
     if (!out.includes(t)) out.push(t);
   }
-  return out.slice(0, 2);
+  // plano 2, bloco 10: bebê tem um traço só; os outros vêm ao crescer
+  return out.slice(0, 1);
 }
 
-function inheritFace(world: World, parents: Parent[]): Pick<Look, (typeof FACE_ROWS)[number]> {
-  const out = {} as Pick<Look, (typeof FACE_ROWS)[number]>;
-  for (const k of FACE_ROWS) {
-    const from = parents.map((p) => p.look[k]).filter((v): v is number => typeof v === 'number');
-    out[k] = from.length && nextInt(world, 5) > 0 ? from[nextInt(world, from.length)] : nextInt(world, LOOK_LIMITS[k]);
-  }
-  // barba não passa para bebê; cresce (ou não) depois
-  out.beard = 0;
-  return out;
-}
-
-/** Cara de quem nasce: pele e cabelo dos pais, o resto da sorte. */
-export function inheritLook(world: World, parents: Parent[]): Look {
-  const pick = <T>(xs: T[], fallback: T) => (xs.length ? xs[nextInt(world, xs.length)] : fallback);
-  const skins = parents.map((p) => p.look.skin);
-  const hairs = parents.map((p) => p.look.hair);
-  return {
-    skin: pick(skins, nextInt(world, 4)),
-    hair: pick(hairs, nextInt(world, 5)),
-    shirt: nextInt(world, 6),
-    pants: nextInt(world, 4),
-    style: nextInt(world, 4),
-    face: nextInt(world, 3),
-    body: 1,
-    formal: nextInt(world, 4),
-    sleepwear: nextInt(world, 4),
-    swimwear: nextInt(world, 4),
-    // plano 2, bloco 5: cada peça do rosto vem de um dos pais (ou da sorte, sem pais)
-    ...inheritFace(world, parents),
+/**
+ * Mistura a aparência de pais (ou nada, sem pais). Plano 2, bloco 10: as
+ * escalas contínuas (pele, corpo, altura, medidas do rosto) saem da média dos
+ * pais com um pouco de sorte; cabelo e olhos vêm de um dos dois (com um tom
+ * de diferença); cada peça do rosto de um dos pais (às vezes da sorte); a
+ * roupa é sorteada. `rand(n)` dá um inteiro de 0 a n - 1.
+ */
+export function mixLooks(parentLooks: Partial<Look>[], rand: (n: number) => number): Look {
+  const looks = parentLooks.map((l) => fullLook(l));
+  const clamp = (v: number, max: number) => Math.max(0, Math.min(max, Math.round(v)));
+  const blend = (k: keyof Look, max: number, spread: number) => {
+    if (!looks.length) return rand(max + 1);
+    const avg = looks.reduce((s, l) => s + l[k], 0) / looks.length;
+    return clamp(avg + rand(spread * 2 + 1) - spread, max);
   };
+  const fromOne = (k: keyof Look, max: number, spread: number) => {
+    if (!looks.length) return rand(max + 1);
+    return clamp(looks[rand(looks.length)][k] + rand(spread * 2 + 1) - spread, max);
+  };
+  const face = {} as Pick<Look, (typeof FACE_ROWS)[number]>;
+  for (const k of FACE_ROWS) face[k] = looks.length && rand(5) > 0 ? looks[rand(looks.length)][k] : rand(LOOK_LIMITS[k]);
+  // barba não passa para bebê; cresce (ou não) depois
+  face.beard = 0;
+  const sliders = {} as Pick<Look, (typeof SLIDER_ROWS)[number]>;
+  for (const k of SLIDER_ROWS) sliders[k] = looks.length ? blend(k, SLIDER_MAX, 3) : 6 + rand(9);
+  return {
+    skin: blend('skin', TONE_MAX, 2),
+    // cabelo branco não passa (é de idade)
+    hair: Math.min(TONE_MAX - 4, fromOne('hair', TONE_MAX, 2)),
+    shirt: rand(6),
+    pants: rand(4),
+    style: rand(4),
+    face: rand(3) === 0 ? 2 : 0,
+    body: looks.length ? blend('body', SLIDER_MAX, 3) : 4 + rand(13),
+    formal: rand(4),
+    sleepwear: rand(4),
+    swimwear: rand(4),
+    ...face,
+    eyeColor: fromOne('eyeColor', TONE_MAX, 2),
+    ...sliders,
+  };
+}
+
+/** Cara de quem nasce (a sorte é a do mundo, para o jogo repetir igual). */
+export function inheritLook(world: World, parents: Parent[]): Look {
+  return mixLooks(
+    parents.map((p) => p.look),
+    (n) => nextInt(world, n),
+  );
 }
 
 /** Ficha nova de bebê. */

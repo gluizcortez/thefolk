@@ -1,4 +1,4 @@
-import type { TraitDef } from '../sim/types';
+import type { InteractionDef, ObjectDef, TraitDef } from '../sim/types';
 
 // Traços: multiplicam o peso que a IA dá a cada necessidade (needWeight) e a
 // velocidade com que ela decai (decay). `likes` e `dislikes` dizem com que
@@ -10,6 +10,7 @@ import type { TraitDef } from '../sim/types';
 export const TRAITS: Record<string, TraitDef> = {
   caseiro: {
     id: 'caseiro',
+    moods: [{ when: 'indoors', comfort: 0.015, feel: 'homebody' }],
     temper: { order: 2, outgoing: -2 },
     roomTaste: { full: 6, cozy: 3 },
     saver: 0.7,
@@ -24,6 +25,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   tagarela: {
     id: 'tagarela',
+    skills: { charisma: 1.15 },
     temper: { outgoing: 3, wit: 1 },
     roomTaste: { large: 5 },
     name: 'trait.tagarela',
@@ -37,6 +39,8 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   agitado: {
     id: 'agitado',
+    skills: { fitness: 1.15 },
+    moods: [{ when: 'alone', fun: -0.02, feel: 'restless' }],
     temper: { pep: 3, order: -1 },
     roomTaste: { large: 4, small: -3, bright: 3 },
     saver: 0.2,
@@ -50,6 +54,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   guloso: {
     id: 'guloso',
+    cook: 3,
     temper: { pep: -1, warmth: 1 },
     name: 'trait.guloso',
     hint: 'traitHint.guloso',
@@ -59,6 +64,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   brincalhao: {
     id: 'brincalhao',
+    skills: { creativity: 1.1 },
     temper: { wit: 3 },
     roomTaste: { bright: 3 },
     name: 'trait.brincalhao',
@@ -71,6 +77,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   romantico: {
     id: 'romantico',
+    grown: true,
     temper: { warmth: 2 },
     roomTaste: { cozy: 7 },
     name: 'trait.romantico',
@@ -81,6 +88,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   esquentado: {
     id: 'esquentado',
+    scare: 0.6,
     temper: { warmth: -3, pep: 1 },
     name: 'trait.esquentado',
     hint: 'traitHint.esquentado',
@@ -92,6 +100,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   reservado: {
     id: 'reservado',
+    moods: [{ when: 'crowd', fun: -0.03, feel: 'crowded' }],
     temper: { outgoing: -3 },
     roomTaste: { small: 6, large: -4 },
     name: 'trait.reservado',
@@ -105,6 +114,8 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   ambicioso: {
     id: 'ambicioso',
+    grown: true,
+    work: 1.2,
     temper: { wit: -2, pep: 1 },
     saver: 0.6,
     name: 'trait.ambicioso',
@@ -128,6 +139,7 @@ export const TRAITS: Record<string, TraitDef> = {
   // fatia 5: ciúme e fofoca
   ciumento: {
     id: 'ciumento',
+    grown: true,
     temper: { warmth: -1 },
     name: 'trait.ciumento',
     hint: 'traitHint.ciumento',
@@ -150,6 +162,8 @@ export const TRAITS: Record<string, TraitDef> = {
   // bloco 1: casa viva
   caprichoso: {
     id: 'caprichoso',
+    skills: { tidiness: 1.3 },
+    moods: [{ when: 'messy', comfort: -0.03, feel: 'mess' }],
     temper: { order: 3 },
     roomTaste: { bare: 4 },
     saver: 0.9,
@@ -163,6 +177,7 @@ export const TRAITS: Record<string, TraitDef> = {
   },
   desleixado: {
     id: 'desleixado',
+    skills: { tidiness: 0.75 },
     temper: { order: -3 },
     saver: 0.1,
     name: 'trait.desleixado',
@@ -173,4 +188,305 @@ export const TRAITS: Record<string, TraitDef> = {
     tidy: 0.4,
     messSense: 0.4,
   },
+  // ---------- plano 2, bloco 10: a lista própria de traços ----------
+  pe_de_valsa: {
+    id: 'pe_de_valsa',
+    temper: { pep: 2, outgoing: 1 },
+    name: 'trait.pe_de_valsa',
+    hint: 'traitHint.pe_de_valsa',
+    needWeight: { fun: 1.1 },
+    likes: ['agitado', 'festeiro', 'pe_de_valsa'],
+    skills: { fitness: 1.1 },
+    moods: [{ when: 'music', fun: 0.06, feel: 'dancing' }],
+  },
+  mao_de_vaca: {
+    id: 'mao_de_vaca',
+    grown: true,
+    temper: { order: 1, warmth: -1 },
+    saver: 1,
+    name: 'trait.mao_de_vaca',
+    hint: 'traitHint.mao_de_vaca',
+    likes: ['mao_de_vaca', 'pe_no_chao'],
+    dislikes: ['festeiro'],
+    moods: [
+      { when: 'rich', comfort: 0.03, feel: 'savings' },
+      { when: 'broke', fun: -0.05, feel: 'pinched' },
+    ],
+  },
+  avoado: {
+    id: 'avoado',
+    temper: { wit: 2, order: -1 },
+    name: 'trait.avoado',
+    hint: 'traitHint.avoado',
+    skills: { creativity: 1.2, logic: 0.85 },
+    tidy: 0.8,
+    likes: ['artistico', 'avoado'],
+    dislikes: ['pe_no_chao'],
+  },
+  ranzinza: {
+    id: 'ranzinza',
+    temper: { warmth: -2, outgoing: -1 },
+    name: 'trait.ranzinza',
+    hint: 'traitHint.ranzinza',
+    decay: { social: 0.7 },
+    social: { friendly: 0.7, mean: 1.4 },
+    likes: ['ranzinza'],
+    dislikes: ['brincalhao', 'tagarela'],
+    moods: [
+      { when: 'crowd', fun: -0.04, feel: 'grumpy' },
+      { when: 'alone', comfort: 0.02, feel: 'peace' },
+    ],
+  },
+  madrugador: {
+    id: 'madrugador',
+    temper: { pep: 1, order: 1 },
+    clock: 'lark',
+    name: 'trait.madrugador',
+    hint: 'traitHint.madrugador',
+    likes: ['madrugador'],
+    dislikes: ['coruja'],
+    moods: [{ when: 'morning', fun: 0.03, feel: 'earlyBird' }],
+  },
+  coruja: {
+    id: 'coruja',
+    temper: { wit: 1, order: -1 },
+    clock: 'owl',
+    name: 'trait.coruja',
+    hint: 'traitHint.coruja',
+    likes: ['coruja'],
+    dislikes: ['madrugador'],
+    moods: [{ when: 'night', fun: 0.03, feel: 'nightOwl' }],
+  },
+  pe_no_chao: {
+    id: 'pe_no_chao',
+    temper: { order: 1, wit: -1 },
+    name: 'trait.pe_no_chao',
+    hint: 'traitHint.pe_no_chao',
+    skills: { logic: 1.15, handiness: 1.1 },
+    decay: { fun: 0.9 },
+    likes: ['caprichoso', 'mao_de_vaca'],
+    dislikes: ['avoado'],
+  },
+  atletico: {
+    id: 'atletico',
+    temper: { pep: 3 },
+    name: 'trait.atletico',
+    hint: 'traitHint.atletico',
+    skills: { fitness: 1.4 },
+    decay: { energy: 0.9 },
+    needWeight: { comfort: 0.8 },
+    likes: ['atletico', 'agitado'],
+    dislikes: ['molenga'],
+  },
+  molenga: {
+    id: 'molenga',
+    temper: { pep: -3 },
+    roomTaste: { cozy: 4 },
+    name: 'trait.molenga',
+    hint: 'traitHint.molenga',
+    skills: { fitness: 0.7 },
+    needWeight: { comfort: 1.3, energy: 1.2 },
+    decay: { energy: 1.1 },
+    likes: ['caseiro', 'molenga'],
+    dislikes: ['atletico'],
+  },
+  cabeca_boa: {
+    id: 'cabeca_boa',
+    temper: { wit: -2, order: 1 },
+    name: 'trait.cabeca_boa',
+    hint: 'traitHint.cabeca_boa',
+    skills: { logic: 1.4 },
+    likes: ['cabeca_boa', 'rato_de_biblioteca'],
+  },
+  artistico: {
+    id: 'artistico',
+    temper: { wit: 2 },
+    roomTaste: { bright: 3 },
+    name: 'trait.artistico',
+    hint: 'traitHint.artistico',
+    skills: { creativity: 1.4 },
+    likes: ['artistico', 'avoado'],
+  },
+  mao_de_fada: {
+    id: 'mao_de_fada',
+    temper: { order: 1, warmth: 1 },
+    name: 'trait.mao_de_fada',
+    hint: 'traitHint.mao_de_fada',
+    skills: { cooking: 1.4 },
+    cook: 8,
+    likes: ['guloso'],
+  },
+  faz_tudo: {
+    id: 'faz_tudo',
+    temper: { pep: 1, order: 1 },
+    name: 'trait.faz_tudo',
+    hint: 'traitHint.faz_tudo',
+    skills: { handiness: 1.4 },
+    luck: 0.8,
+    likes: ['pe_no_chao'],
+  },
+  boa_pinta: {
+    id: 'boa_pinta',
+    grown: true,
+    temper: { outgoing: 2 },
+    name: 'trait.boa_pinta',
+    hint: 'traitHint.boa_pinta',
+    skills: { charisma: 1.3 },
+    social: { romantic: 1.2, friendly: 1.1 },
+    likes: ['romantico', 'vaidoso'],
+  },
+  rato_de_biblioteca: {
+    id: 'rato_de_biblioteca',
+    temper: { outgoing: -1, wit: -1 },
+    roomTaste: { small: 3 },
+    name: 'trait.rato_de_biblioteca',
+    hint: 'traitHint.rato_de_biblioteca',
+    skills: { logic: 1.1, creativity: 1.1 },
+    likes: ['rato_de_biblioteca', 'reservado'],
+    moods: [{ when: 'reading', fun: 0.05, feel: 'bookworm' }],
+  },
+  festeiro: {
+    id: 'festeiro',
+    temper: { outgoing: 3 },
+    roomTaste: { large: 4 },
+    saver: 0.2,
+    name: 'trait.festeiro',
+    hint: 'traitHint.festeiro',
+    decay: { social: 1.2 },
+    needWeight: { social: 1.3 },
+    likes: ['festeiro', 'pe_de_valsa', 'tagarela'],
+    dislikes: ['ranzinza'],
+    moods: [
+      { when: 'crowd', fun: 0.05, feel: 'lively' },
+      { when: 'alone', fun: -0.03, feel: 'bored' },
+    ],
+  },
+  coracao_mole: {
+    id: 'coracao_mole',
+    temper: { warmth: 2 },
+    name: 'trait.coracao_mole',
+    hint: 'traitHint.coracao_mole',
+    social: { mean: 0.3, friendly: 1.2 },
+    scare: 1.2,
+    likes: ['gentil', 'coracao_mole'],
+    dislikes: ['esquentado', 'ranzinza'],
+    moods: [{ when: 'tv', fun: 0.02, comfort: 0.02, feel: 'touched' }],
+  },
+  bicho_do_mato: {
+    id: 'bicho_do_mato',
+    temper: { outgoing: -2, pep: 1 },
+    name: 'trait.bicho_do_mato',
+    hint: 'traitHint.bicho_do_mato',
+    likes: ['bicho_do_mato', 'atletico'],
+    moods: [{ when: 'outdoors', fun: 0.05, comfort: 0.02, feel: 'outdoors' }],
+  },
+  familia: {
+    id: 'familia',
+    grown: true,
+    temper: { warmth: 2, order: 1 },
+    name: 'trait.familia',
+    hint: 'traitHint.familia',
+    likes: ['gentil', 'caseiro', 'familia'],
+    moods: [{ when: 'kids', fun: 0.04, social: 0.03, feel: 'family' }],
+  },
+  pe_de_boi: {
+    id: 'pe_de_boi',
+    grown: true,
+    temper: { pep: 1, wit: -1 },
+    name: 'trait.pe_de_boi',
+    hint: 'traitHint.pe_de_boi',
+    work: 1.35,
+    needWeight: { fun: 0.9 },
+    likes: ['ambicioso', 'pe_de_boi'],
+    moods: [{ when: 'working', fun: 0.02, feel: 'busy' }],
+  },
+  sortudo: {
+    id: 'sortudo',
+    temper: { wit: 1 },
+    name: 'trait.sortudo',
+    hint: 'traitHint.sortudo',
+    luck: 0.5,
+    scare: 0.7,
+  },
+  desastrado: {
+    id: 'desastrado',
+    temper: { pep: 1, order: -2 },
+    name: 'trait.desastrado',
+    hint: 'traitHint.desastrado',
+    luck: 1.8,
+    cook: -6,
+    likes: ['brincalhao'],
+  },
+  noveleiro: {
+    id: 'noveleiro',
+    temper: { pep: -2 },
+    name: 'trait.noveleiro',
+    hint: 'traitHint.noveleiro',
+    needWeight: { fun: 1.1 },
+    likes: ['noveleiro', 'fofoqueiro'],
+    moods: [{ when: 'tv', fun: 0.05, feel: 'hooked' }],
+  },
+  vaidoso: {
+    id: 'vaidoso',
+    temper: { order: 1, outgoing: 1 },
+    name: 'trait.vaidoso',
+    hint: 'traitHint.vaidoso',
+    needWeight: { hygiene: 1.3 },
+    decay: { hygiene: 1.1 },
+    likes: ['vaidoso', 'boa_pinta'],
+    dislikes: ['desleixado'],
+    moods: [{ when: 'clean', comfort: 0.03, feel: 'spotless' }],
+  },
+  medroso: {
+    id: 'medroso',
+    temper: { pep: -1, outgoing: -1 },
+    name: 'trait.medroso',
+    hint: 'traitHint.medroso',
+    scare: 2,
+    likes: ['caseiro', 'gentil'],
+  },
+  destemido: {
+    id: 'destemido',
+    temper: { pep: 2 },
+    name: 'trait.destemido',
+    hint: 'traitHint.destemido',
+    scare: 0.3,
+    likes: ['destemido', 'atletico'],
+  },
 };
+
+/**
+ * Plano 2, bloco 10: interações que só quem tem o traço vê. Cada uma copia
+ * uma interação que o objeto já tem (pose, mão, tela e lugar continuam os
+ * mesmos) e troca o efeito.
+ */
+export interface TraitUse {
+  trait: string;
+  /** linha do objeto (ou id, para o espelho) */
+  line?: string;
+  object?: string;
+  /** interação do objeto que serve de base */
+  base: string | ((it: InteractionDef) => boolean);
+  make: Pick<InteractionDef, 'id' | 'label' | 'duration' | 'effects'> & Partial<InteractionDef>;
+}
+
+export const TRAIT_USES: TraitUse[] = [
+  { trait: 'guloso', line: 'fridge', base: 'snack', make: { id: 'raidFridge', label: 'act.raidFridge', duration: 6, effects: { hunger: 2.6, fun: 0.4 }, cost: 1 } },
+  { trait: 'pe_de_valsa', line: 'stereo', base: (it) => it.pose === 'dance', make: { id: 'showDance', label: 'act.showDance', duration: 45, effects: { fun: 2.2, energy: -0.3 }, skill: { id: 'fitness', xpPerMinute: 0.35 } } },
+  { trait: 'rato_de_biblioteca', line: 'bookshelf', base: 'read', make: { id: 'reread', label: 'act.reread', duration: 60, effects: { fun: 1.6, comfort: 0.2 } } },
+  { trait: 'noveleiro', line: 'tv', base: 'watch', make: { id: 'binge', label: 'act.binge', duration: 150, effects: { fun: 1.6, comfort: 0.1 }, autonomous: false } },
+  { trait: 'mao_de_vaca', line: 'computer', base: () => true, make: { id: 'deals', label: 'act.deals', duration: 40, effects: { fun: 0.9, comfort: 0.2 }, screen: 'web', project: undefined, online: undefined } },
+  { trait: 'vaidoso', object: 'mirror', base: 'practice', make: { id: 'vanity', label: 'act.vanity', duration: 20, effects: { fun: 0.9, comfort: 0.5 }, skill: undefined } },
+];
+
+/** Acrescenta ao objeto as interações de traço que cabem nele. */
+export function withTraitUses(def: ObjectDef): ObjectDef {
+  const extra: InteractionDef[] = [];
+  for (const u of TRAIT_USES) {
+    if (u.line ? def.line !== u.line : def.id !== u.object) continue;
+    const base = def.interactions.find((it) => (typeof u.base === 'string' ? it.id === u.base : u.base(it)));
+    if (!base || def.interactions.some((it) => it.id === u.make.id)) continue;
+    extra.push({ ...base, ...u.make, trait: u.trait, autonomous: u.make.autonomous ?? true, until: base.until });
+  }
+  return extra.length ? { ...def, interactions: [...def.interactions, ...extra] } : def;
+}

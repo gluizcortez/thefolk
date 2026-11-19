@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { faceFromSeed } from '../src/sim/temper';
+import { OLD_HAIR_TONES, OLD_SKIN_TONES, faceFromSeed, fullLook } from '../src/sim/temper';
 import { CATALOG } from '../src/data/catalog';
 import { familySeed } from '../src/data/family';
 import { starterHouse } from '../src/data/house';
@@ -34,9 +34,11 @@ import type { FamilyDraft, Folk, Look, LogEntry, MemberDraft, Temper } from '../
 import { run } from './helpers';
 import { play, playStep } from './helpers/player';
 
-const LOOK: Look = { skin: 1, hair: 2, shirt: 3, pants: 1, style: 2, face: 1, body: 2, formal: 1, sleepwear: 0, swimwear: 3, ...faceFromSeed(1) };
+const LOOK: Look = fullLook({ skin: 1, hair: 2, shirt: 3, pants: 1, style: 2, face: 1, body: 2, formal: 1, sleepwear: 0, swimwear: 3, ...faceFromSeed(1) });
+/** plano 2, bloco 10: adulto escolhe cinco traços */
+const FIVE = ['gentil', 'caseiro', 'tagarela', 'romantico', 'ambicioso'];
 
-function member(name: string, temper: Temper, traits: string[] = [], month = 0): MemberDraft {
+function member(name: string, temper: Temper, traits: string[] = FIVE, month = 0): MemberDraft {
   return { name, look: { ...LOOK }, traits, temper: { ...temper }, month };
 }
 
@@ -121,22 +123,23 @@ describe('criar família (bloco 5)', () => {
     expect(familyProblem(CATALOG, { ...draftOf(member('Bento', NEUTRAL_TEMPER)), surname: '  ' })).toBe('noSurname');
     expect(familyProblem(CATALOG, draftOf(member(' ', NEUTRAL_TEMPER)))).toBe('noName');
     expect(familyProblem(CATALOG, draftOf(member('Bento', NEUTRAL_TEMPER), member('bento', NEUTRAL_TEMPER)))).toBe('sameName');
-    expect(familyProblem(CATALOG, draftOf(member('Bento', NEUTRAL_TEMPER, ['gentil', 'caseiro', 'tagarela'])))).toBe('tooManyTraits');
-    expect(familyProblem(CATALOG, draftOf(member('Bento', NEUTRAL_TEMPER, ['caprichoso', 'desleixado'])))).toBe('clashingTraits');
+    expect(familyProblem(CATALOG, draftOf(member('Bento', NEUTRAL_TEMPER, [...FIVE, 'atletico'])))).toBe('tooManyTraits');
+    expect(familyProblem(CATALOG, draftOf(member('Bento', NEUTRAL_TEMPER, ['gentil', 'caseiro'])))).toBe('fewTraits');
+    expect(familyProblem(CATALOG, draftOf(member('Bento', NEUTRAL_TEMPER, ['caprichoso', 'desleixado', 'gentil', 'caseiro', 'tagarela'])))).toBe('clashingTraits');
     expect(familyProblem(CATALOG, draftOf(member('Bento', { ...NEUTRAL_TEMPER, order: 6 })))).toBe('temper');
-    expect(familyProblem(CATALOG, draftOf(member('Bento', NEUTRAL_TEMPER, [], 12)))).toBe('month');
-    expect(familyProblem(CATALOG, draftOf({ ...member('Bento', NEUTRAL_TEMPER), look: { ...LOOK, body: 3 } }))).toBe('look');
+    expect(familyProblem(CATALOG, draftOf(member('Bento', NEUTRAL_TEMPER, FIVE, 12)))).toBe('month');
+    expect(familyProblem(CATALOG, draftOf({ ...member('Bento', NEUTRAL_TEMPER), look: { ...LOOK, body: 21 } }))).toBe('look');
     const nine = Array.from({ length: 9 }, (_, i) => member(`F${i}`, NEUTRAL_TEMPER));
     expect(familyProblem(CATALOG, draftOf(...nine))).toBe('tooMany');
-    expect(familyProblem(CATALOG, draftOf(member('Bento', NEUTRAL_TEMPER, ['gentil', 'caseiro'])))).toBeNull();
+    expect(familyProblem(CATALOG, draftOf(member('Bento', NEUTRAL_TEMPER)))).toBeNull();
   });
 
   it('uma família de 3 criada do zero muda para a casa e vive três dias', () => {
     const months = CATALOG.months;
     const draft = draftOf(
-      member('Iara', months[4].temper, ['gentil'], 4),
-      member('Bento', months[7].temper, ['ambicioso', 'caprichoso'], 7),
-      member('Teca', months[9].temper, ['brincalhao'], 9),
+      member('Iara', months[4].temper, ['gentil', 'caseiro', 'tagarela', 'pe_no_chao', 'madrugador'], 4),
+      member('Bento', months[7].temper, ['ambicioso', 'caprichoso', 'cabeca_boa', 'madrugador', 'faz_tudo'], 7),
+      member('Teca', months[9].temper, ['brincalhao', 'agitado', 'festeiro', 'coruja', 'artistico'], 9),
     );
     expect(familyProblem(CATALOG, draft)).toBeNull();
     const sim = new Sim(CATALOG, createWorld(familySeed(draft, 5)));
@@ -144,7 +147,7 @@ describe('criar família (bloco 5)', () => {
     expect(home.map((f) => f.name)).toEqual(['Iara Goiabeira', 'Bento Goiabeira', 'Teca Goiabeira']);
     expect(new Set(home.map((f) => `${f.x},${f.y}`)).size).toBe(3);
     expect(home[1].temper).toEqual(months[7].temper);
-    expect(home[1].look.body).toBe(2);
+    expect(home[1].look.body).toBe(20);
     expect(home[0].month).toBe(4);
     // quem mora junto já é amigo; a vizinhança veio junto, sem Tomé e Lia
     expect(relationOf(sim.world, home[0].id, home[2].id)?.friendship).toBe(35);
@@ -275,17 +278,21 @@ describe('save v10 (bloco 5)', () => {
     expect(SAVE_VERSION).toBeGreaterThanOrEqual(10);
     const world = createWorld(starterHouse(1));
     const raw = JSON.parse(JSON.stringify(world));
+    // no save v9 a aparência tinha os índices antigos e cada um tinha até dois traços
+    const old = (l: Look) => ({ skin: OLD_SKIN_TONES.indexOf(l.skin), hair: OLD_HAIR_TONES.indexOf(l.hair), shirt: l.shirt, pants: l.pants });
     for (const f of raw.folks) {
       delete f.temper;
       delete f.month;
       delete f.outfit;
       delete f.habits;
-      f.look = { skin: f.look.skin, hair: f.look.hair, shirt: f.look.shirt, pants: f.look.pants };
+      f.traits = f.traits.slice(0, 2);
+      f.look = old(f.look);
     }
     for (const n of raw.neighbors) {
       delete n.temper;
       delete n.month;
-      n.look = { skin: n.look.skin, hair: n.look.hair, shirt: n.look.shirt, pants: n.look.pants };
+      n.traits = n.traits.slice(0, 2);
+      n.look = old(n.look);
     }
     const { world: back } = deserialize({ version: 9, savedAt: 1, world: raw }, { neighbors: NEIGHBORS, ties: NEIGHBOR_TIES, catalog: CATALOG });
     const [tome, lia] = back.folks;
@@ -297,8 +304,9 @@ describe('save v10 (bloco 5)', () => {
       expect(validTemper(f.temper)).toBe(true);
       expect(f.outfit).toBe('day');
       expect(f.habits).toEqual({});
-      expect(f.look.body).toBe(1);
-      expect(f.look.style).toBe(f.look.hair % 2);
+      // plano 2, bloco 10: corpo e cabelo nas escalas contínuas (o médio é 10; cabelo antigo n vira n x 10)
+      expect(f.look.body).toBe(10);
+      expect(f.look.style).toBe((f.look.hair / 10) % 2);
       expect(f.month).toBe(monthFor(CATALOG, f.temper));
     }
     for (const n of back.neighbors) expect(validTemper(n.temper)).toBe(true);

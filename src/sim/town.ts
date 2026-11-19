@@ -1,6 +1,7 @@
 import { MINUTES_PER_DAY } from './clock';
 import { BILL_BASE, BILL_RATE, checkPlacement, formatMoney, objectValue, sellValue } from './economy';
-import { cleanName, copyTemper, familyProblem } from './family';
+import { cleanName, copyTemper, familyProblem, memberSeed } from './family';
+import { applyFamilyTies } from './ties';
 import type { FamilyDraft } from './family';
 import { introduce } from './gossip';
 import { buildNav, footprint, levelOfRow, storied } from './grid';
@@ -524,36 +525,12 @@ export function foundFamily(world: World, catalog: Catalog, draft: FamilyDraft, 
   const fam: Family = { id: town.nextFamily++, name: surname, lotId: lot.id, funds: NEW_FAMILY_FUNDS - cost, stash: null, since: world.tick };
   town.families.push(fam);
   enterFamily(world, catalog, fam);
-  const folks = draft.members.map((m) =>
-    makeFolk(world.nextId++, {
-      name: `${cleanName(m.name)} ${surname}`,
-      traits: [...m.traits],
-      x: 0,
-      y: 0,
-      needs: { hunger: 70, energy: 80, bladder: 70, fun: 60, social: 55, hygiene: 80 },
-      look: { ...m.look },
-      ...(m.age ? { age: m.age } : {}),
-      temper: copyTemper(m.temper),
-      month: m.month,
-    }),
-  );
+  const folks = draft.members.map((m) => makeFolk(world.nextId++, memberSeed(m, `${cleanName(m.name)} ${surname}`, 0, 0)));
   for (const f of folks) f.interests = { ...ensureInterests(catalog, f) };
   world.folks = folks;
   placeAtHome(world, catalog, folks);
-  for (let i = 0; i < folks.length; i++) {
-    for (let j = i + 1; j < folks.length; j++) {
-      for (const [a, b] of [
-        [folks[i].id, folks[j].id],
-        [folks[j].id, folks[i].id],
-      ]) {
-        const rel = ensureRelation(world, a, b);
-        rel.friendship = HOUSEMATE_FRIENDSHIP;
-        rel.respect = 10;
-        rel.last = world.tick;
-        rel.memories.push({ tick: world.tick, kind: 'met' });
-      }
-    }
-  }
+  // plano 2, bloco 10: os laços do criador (cônjuges, pais e filhos, irmãos, colegas)
+  applyFamilyTies(world, folks, draft);
   pushFeed(world, 'feed.arrived', { family: fam.name, number: lot.number });
   return null;
 }

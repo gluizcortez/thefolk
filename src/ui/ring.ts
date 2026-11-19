@@ -31,6 +31,8 @@ const HIDE: InteractionState = { show: false, why: null, reluctant: null };
 export function interactionState(world: World, catalog: Catalog, folk: Folk, obj: WorldObject, it: InteractionDef): InteractionState {
   if (it.hidden) return HIDE;
   const grey = (why: Unavailable): InteractionState => ({ show: true, why, reluctant: null });
+  // plano 2, bloco 10: interação de traço some para quem não tem o traço
+  if (it.trait && !folk.traits.includes(it.trait)) return HIDE;
   if (!kidAllows(folk, it)) {
     // coisa de criança (lição, brinquedo) some para o adulto; o que é de adulto fica em cinza para a criança
     if (isAdult(folk) || it.homework || it.kids === 'only' || it.baby) return HIDE;

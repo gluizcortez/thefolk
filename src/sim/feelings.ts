@@ -10,6 +10,27 @@ import { NEED_IDS } from './types';
 import { isInspired } from './will';
 import { DARK_BELOW, roomAt, roomGrade, roomScore, roomsOf } from './rooms';
 import { raining } from './garden';
+import { traitMoods, traitProduct, wearsFavorite } from './persona';
+import type { TraitMoodWhen } from './types';
+
+/** Plano 2, bloco 10: ícone da sensação de cada situação de traço. */
+const TRAIT_FEEL_ICON: Partial<Record<TraitMoodWhen, string>> = {
+  outdoors: 'weather',
+  indoors: 'house',
+  clean: 'hygiene',
+  messy: 'mess',
+  rich: 'money',
+  broke: 'coin',
+  crowd: 'social',
+  alone: 'miss',
+  morning: 'alarm',
+  night: 'sleep',
+  music: 'music',
+  tv: 'stars',
+  kids: 'heart',
+  working: 'work',
+  reading: 'book',
+};
 
 export type FeelingTone = 'good' | 'bad' | 'calm';
 
@@ -54,7 +75,9 @@ export function feelingsOf(world: World, catalog: Catalog, folk: Folk): Feeling[
   if (folk.collapsed > 0) out.push({ id: 'collapsed', icon: 'sleep', tone: 'bad', until: tick + folk.collapsed });
   if ((folk.starving ?? 0) > 0) out.push({ id: 'starving', icon: 'hunger', tone: 'bad' });
   if (folk.mourning !== undefined && folk.mourning > tick) out.push({ id: 'mourning', icon: 'grave', tone: 'bad', until: folk.mourning });
-  if (folk.frightened !== undefined && tick - folk.frightened < SCARE_FEEL) out.push({ id: 'scared', icon: 'ghost', tone: 'bad', until: folk.frightened + SCARE_FEEL });
+  // plano 2, bloco 10: medroso fica assustado mais tempo; peito aberto passa logo
+  const scare = Math.round(SCARE_FEEL * traitProduct(catalog, folk.traits, 'scare'));
+  if (folk.frightened !== undefined && tick - folk.frightened < scare) out.push({ id: 'scared', icon: 'ghost', tone: 'bad', until: folk.frightened + scare });
   if (folk.sooty !== undefined && folk.sooty > tick) out.push({ id: 'sooty', icon: 'fire', tone: 'bad', until: folk.sooty });
   if (folk.kid && folk.kid.neglect >= 30) out.push({ id: 'neglected', icon: 'miss', tone: 'bad', params: { n: Math.round(folk.kid.neglect) } });
   // o cômodo onde está (nota e luz), só em casa
@@ -76,6 +99,15 @@ export function feelingsOf(world: World, catalog: Catalog, folk: Folk): Feeling[
     const dish = `dish.${meal.dish}`;
     if (meal.burnt || meal.quality < 25) out.push({ id: 'awfulMeal', icon: 'hunger', tone: 'bad', until: meal.tick + MEAL_FEEL, params: { dish } });
     else if (meal.quality >= 75) out.push({ id: 'tasty', icon: 'hunger', tone: 'good', until: meal.tick + MEAL_FEEL, params: { dish } });
+  }
+  // plano 2, bloco 10: o que os traços sentem, o prato e a cor favoritos
+  if (!folk.visit && folk.age !== 'baby') {
+    for (const { trait, mood } of traitMoods(world, catalog, folk)) {
+      const sum = (mood.fun ?? 0) + (mood.comfort ?? 0) + (mood.social ?? 0);
+      out.push({ id: `trait.${mood.feel}`, icon: TRAIT_FEEL_ICON[mood.when] ?? 'mood', tone: sum >= 0 ? 'good' : 'bad', params: { trait: catalog.traits[trait]?.name ?? trait } });
+    }
+    if (wearsFavorite(folk)) out.push({ id: 'favColor', icon: 'stars', tone: 'good', params: { color: `color.${folk.tastes!.color}` } });
+    if (meal && folk.tastes?.food === meal.dish && !meal.burnt && tick - meal.tick < MEAL_FEEL) out.push({ id: 'favFood', icon: 'hunger', tone: 'good', until: meal.tick + MEAL_FEEL, params: { dish: `dish.${meal.dish}` } });
   }
   if (isInspired(folk, tick)) out.push({ id: 'inspired', icon: 'spark', tone: 'good', until: folk.inspired });
   if (folk.wishes.length > 0 && folk.wishes.every((w) => w.done)) out.push({ id: 'wishesDone', icon: 'yes', tone: 'good' });
