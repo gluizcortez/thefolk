@@ -470,6 +470,25 @@ Pronto: testes de ocasião (qual conjunto vestir em cada ação), de
 compatibilidade de peças por idade; capturas do guarda-roupa e de 6 folks
 vestidos de formas diferentes.
 
+**Feito em 19/11/2026** (save v29, uma casa a menos que o plano). 47 peças
+em 11 lugares do corpo (parte de cima, de baixo ou inteira, sapatos, meias,
+chapéu, óculos escuros, brincos, relógio, bolsa ou mochila, cachecol), cada
+uma com faixas de idade (criança, jovem, adulto, idoso) e de 1 a 3 áreas
+com material, cor e padrão pelo mesmo painel do editor de estilo dos móveis.
+Sete ocasiões (dia a dia, festa, dormir, nadar, exercício, frio, calor) com
+até 3 conjuntos cada; dormir, nadar e exercício pesado vestem o conjunto da
+ocasião com uma troca de roupa de 3 minutos na entrada (o chuveiro segue com
+o roupão). Guarda-roupa ("Montar roupas…" no móvel de roupa e no espelho)
+com prévia do folk vestido, troca para qualquer ocasião e loja por faixa de
+preço (em conta, médio, fino), entregue na hora. A loja do centro vende uma
+peça nova e monta um conjunto com ela. Quem cresce troca as peças que não
+servem pelas básicas da idade, com a mesma cor. Mangas curtas e longas,
+bermuda, calção, saia no joelho e longa (que sobe quando senta), barra do
+sobretudo, capuz e sapatos por modelo. Vizinhos e visitas seguem vestidos
+pelas cores da aparência antiga. Ficou para depois: troca automática de
+roupa pelo tempo (chuva e frio), cabelo e penteado no espelho (vão para os
+controles deslizantes do bloco 10) e entrega das peças na loja do bloco 13.
+
 ## Bloco 10 — Criar família: traços, sonho de vida, gostos e aparência (save v31)
 
 Criador refeito para ficar perto do criador do terceiro jogo, com o nosso

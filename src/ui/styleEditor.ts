@@ -5,7 +5,7 @@ import { t } from '../i18n';
 import { formatMoney } from '../sim/economy';
 import { cleanLook, priceWith, zonesOf } from '../sim/modular';
 import type { KitParts, PartSlot } from '../sim/parts';
-import { KINDS, assemble, partOf, partsFor, partsOfObject } from '../sim/parts';
+import { KINDS, assemble, partsFor, partsOfObject } from '../sim/parts';
 import type { MatFamily, ObjStyle, PartStyle, PatternId, ZoneDef } from '../sim/style';
 import { MATERIALS, PATTERNS, SWATCHES, adaptStyle, styleFromColor } from '../sim/style';
 import type { ObjectDef, WorldObject } from '../sim/types';
@@ -268,9 +268,7 @@ export class StyleEditor {
 
   /** Material (por família), cor e padrão de uma zona. */
   private zonePanel(zone: ZoneDef): HTMLElement {
-    const box = el('div', 'style-zone');
-    const cur: PartStyle = this.style[zone.id] ?? zone.base;
-    const set = (p: PartStyle | null) => {
+    return zonePicker(zone, this.style[zone.id], (p) => {
       if (p) this.style = { ...this.style, [zone.id]: p };
       else {
         const next = { ...this.style };
@@ -278,72 +276,81 @@ export class StyleEditor {
         this.style = next;
       }
       this.push();
-    };
-    // materiais
-    const mats = el('div', 'style-mats');
-    if (!zone.base.mat) {
-      const orig = el('button', 'chip', t('style.original'));
-      orig.classList.toggle('on', !this.style[zone.id]);
-      orig.addEventListener('click', () => set(null));
-      mats.append(orig);
-    }
-    for (const fam of FAMILY_ORDER) {
-      if (!zone.families.includes(fam)) continue;
-      const list = Object.values(MATERIALS).filter((m) => m.family === fam);
-      const group = el('div', 'mat-group');
-      group.append(el('span', 'style-label', t(`family.${fam}`)));
-      for (const m of list) {
-        const b = el('button', 'chip mat');
-        const dot = el('span', 'zone-dot');
-        dot.style.background = partCss({ mat: m.id, color: m.tint === 'full' ? cur.color : undefined });
-        b.append(dot, el('span', '', t(`mat.${m.id}`)));
-        b.classList.toggle('on', cur.mat === m.id);
-        if (m.price > 0) b.title = `+${formatMoney(m.price)}`;
-        b.addEventListener('click', () => {
-          const keepColor = m.tint !== 'none' ? cur.color : undefined;
-          const keepPattern = m.patterns ? cur.pattern : undefined;
-          set({ mat: m.id, ...(keepColor ? { color: keepColor } : {}), ...(keepPattern ? { pattern: keepPattern } : {}) });
-        });
-        group.append(b);
-      }
-      mats.append(group);
-    }
-    box.append(el('div', 'style-label', t('style.material')), mats);
-    const mat = MATERIALS[cur.mat];
-    if (!mat) return box;
-    // cores
-    if (mat.tint !== 'none') {
-      const row = el('div', 'style-swatches');
-      if (mat.tint === 'stain') {
-        const nat = el('button', 'swatch natural');
-        nat.title = t('style.natural');
-        nat.style.background = partCss({ mat: mat.id });
-        nat.classList.toggle('on', !cur.color);
-        nat.addEventListener('click', () => set({ mat: mat.id, ...(cur.pattern ? { pattern: cur.pattern } : {}) }));
-        row.append(nat);
-      }
-      for (const c of Object.keys(SWATCHES)) {
-        const b = el('button', 'swatch');
-        b.style.background = partCss({ mat: mat.id, color: c });
-        b.title = t(`color.${c}`);
-        b.classList.toggle('on', cur.color === c);
-        b.addEventListener('click', () => set({ mat: mat.id, color: c, ...(cur.pattern ? { pattern: cur.pattern } : {}) }));
-        row.append(b);
-      }
-      box.append(el('div', 'style-label', t('style.color')), row);
-    }
-    // padrões
-    if (mat.patterns) {
-      const row = el('div', 'style-chips');
-      for (const pat of PATTERNS) {
-        const b = el('button', 'chip', t(`pattern.${pat}`));
-        b.classList.toggle('on', (cur.pattern ?? 'plain') === pat);
-        b.addEventListener('click', () => set({ mat: mat.id, ...(cur.color ? { color: cur.color } : {}), ...(pat !== 'plain' ? { pattern: pat as PatternId } : {}) }));
-        row.append(b);
-      }
-      box.append(el('div', 'style-label', t('style.pattern')), row);
-    }
-    void partOf;
-    return box;
+    });
   }
+}
+
+/**
+ * Material (por família), cor e padrão de uma zona. `chosen` é o que está
+ * escolhido (sem nada = de fábrica); `set(null)` volta ao de fábrica.
+ * Plano 2, bloco 9: as roupas usam o mesmo painel.
+ */
+export function zonePicker(zone: ZoneDef, chosen: PartStyle | undefined, set: (p: PartStyle | null) => void): HTMLElement {
+  const box = el('div', 'style-zone');
+  const cur: PartStyle = chosen ?? zone.base;
+  // materiais
+  const mats = el('div', 'style-mats');
+  if (!zone.base.mat) {
+    const orig = el('button', 'chip', t('style.original'));
+    orig.classList.toggle('on', !chosen);
+    orig.addEventListener('click', () => set(null));
+    mats.append(orig);
+  }
+  for (const fam of FAMILY_ORDER) {
+    if (!zone.families.includes(fam)) continue;
+    const list = Object.values(MATERIALS).filter((m) => m.family === fam);
+    const group = el('div', 'mat-group');
+    group.append(el('span', 'style-label', t(`family.${fam}`)));
+    for (const m of list) {
+      const b = el('button', 'chip mat');
+      const dot = el('span', 'zone-dot');
+      dot.style.background = partCss({ mat: m.id, color: m.tint === 'full' ? cur.color : undefined });
+      b.append(dot, el('span', '', t(`mat.${m.id}`)));
+      b.classList.toggle('on', cur.mat === m.id);
+      if (m.price > 0) b.title = `+${formatMoney(m.price)}`;
+      b.addEventListener('click', () => {
+        const keepColor = m.tint !== 'none' ? cur.color : undefined;
+        const keepPattern = m.patterns ? cur.pattern : undefined;
+        set({ mat: m.id, ...(keepColor ? { color: keepColor } : {}), ...(keepPattern ? { pattern: keepPattern } : {}) });
+      });
+      group.append(b);
+    }
+    mats.append(group);
+  }
+  box.append(el('div', 'style-label', t('style.material')), mats);
+  const mat = MATERIALS[cur.mat];
+  if (!mat) return box;
+  // cores
+  if (mat.tint !== 'none') {
+    const row = el('div', 'style-swatches');
+    if (mat.tint === 'stain') {
+      const nat = el('button', 'swatch natural');
+      nat.title = t('style.natural');
+      nat.style.background = partCss({ mat: mat.id });
+      nat.classList.toggle('on', !cur.color);
+      nat.addEventListener('click', () => set({ mat: mat.id, ...(cur.pattern ? { pattern: cur.pattern } : {}) }));
+      row.append(nat);
+    }
+    for (const c of Object.keys(SWATCHES)) {
+      const b = el('button', 'swatch');
+      b.style.background = partCss({ mat: mat.id, color: c });
+      b.title = t(`color.${c}`);
+      b.classList.toggle('on', cur.color === c);
+      b.addEventListener('click', () => set({ mat: mat.id, color: c, ...(cur.pattern ? { pattern: cur.pattern } : {}) }));
+      row.append(b);
+    }
+    box.append(el('div', 'style-label', t('style.color')), row);
+  }
+  // padrões
+  if (mat.patterns) {
+    const row = el('div', 'style-chips');
+    for (const pat of PATTERNS) {
+      const b = el('button', 'chip', t(`pattern.${pat}`));
+      b.classList.toggle('on', (cur.pattern ?? 'plain') === pat);
+      b.addEventListener('click', () => set({ mat: mat.id, ...(cur.color ? { color: cur.color } : {}), ...(pat !== 'plain' ? { pattern: pat as PatternId } : {}) }));
+      row.append(b);
+    }
+    box.append(el('div', 'style-label', t('style.pattern')), row);
+  }
+  return box;
 }

@@ -60,7 +60,10 @@ export const dress = (outfit: Outfit): InteractionDef => ({
   autonomous: false,
   residentOnly: true,
   dress: outfit,
+  anim: 'dress_change',
 });
+/** Plano 2, bloco 9: uma troca por ocasião do guarda-roupa. */
+export const OCCASION_DRESS: InteractionDef[] = (['day', 'formal', 'sleep', 'swim', 'gym', 'cold', 'hot'] as Outfit[]).map((o) => dress(o));
 export const rest = (comfort: number, energy = 0, duration = 60): InteractionDef => ({
   id: 'rest',
   label: 'act.rest',
@@ -602,7 +605,7 @@ export const FURNITURE: ObjectDef[] = [
     useSides: ['S'],
     size: { w: 1, h: 1 },
     ambience: 3,
-    interactions: [dress('day'), dress('formal'), dress('sleep'), dress('swim')],
+    interactions: OCCASION_DRESS,
   },
   // ---------- luz ----------
   {

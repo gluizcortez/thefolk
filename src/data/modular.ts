@@ -1,7 +1,7 @@
 import type { InteractionDef, ObjectDef } from '../sim/types';
 import type { KitDef } from '../sim/parts';
 import { clean, dishes, lightOff, lightOn, repair, service } from './interactions';
-import { dress, rest, sit } from './furniture';
+import { OCCASION_DRESS, rest, sit } from './furniture';
 
 // Plano 2, bloco 8: objetos montados por peças. Os móveis que já existiam
 // ganham o kit com a aparência mais próxima do desenho antigo (o id, o preço
@@ -219,7 +219,7 @@ export const MODULAR_OBJECTS: ObjectDef[] = [
     useSides: ['S'],
     size: { w: 2, h: 1 },
     ambience: 4,
-    interactions: [dress('day'), dress('formal'), dress('sleep'), dress('swim')],
+    interactions: OCCASION_DRESS,
     kit: { kind: 'dresser', parts: { top: 'rect', body: 'case', doors: 'drawers', handles: 'cup', legs: 'bun' } },
   },
   {

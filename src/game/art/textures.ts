@@ -1,6 +1,7 @@
 import { finishSpec } from './finish';
 import * as THREE from 'three';
 import { FORMAL, HAIR, PAJAMA, PAL, PANTS, SHIRT, SKIN, SWIM, css, seeded, shade } from './palette';
+import { garbSpec } from './garb';
 import { ICON_PATHS, STROKED, TOPIC_PATHS } from '../../ui/icons';
 import type { IconId } from '../../ui/icons';
 
@@ -2506,6 +2507,9 @@ function specFor(name: string): Spec | undefined {
         grain: 7,
       };
     }
+    // plano 2, bloco 9: roupa por peças (garb:peça:parte:áreas)
+    case 'garb':
+      return garbSpec(parts);
     case 'suit':
     case 'pj':
     case 'robe':

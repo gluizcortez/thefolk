@@ -4,6 +4,7 @@ import type { VenuePlan } from './downtown';
 import type { FamilyDraft } from './family';
 import type { KitDef, KitParts } from './parts';
 import type { ObjStyle, SavedStyle } from './style';
+import type { Closet, Ensemble, Occasion } from './clothes';
 
 export const NEED_IDS = [
   'hunger',
@@ -309,7 +310,8 @@ export type TemperAxis = 'order' | 'outgoing' | 'pep' | 'wit' | 'warmth';
 export type Temper = Record<TemperAxis, number>;
 
 /** Roupa de sempre, escolhida no guarda-roupa. */
-export type Outfit = 'day' | 'formal' | 'sleep' | 'swim' | 'work';
+/** plano 2, bloco 9: exercício, frio e calor também são ocasiões do guarda-roupa */
+export type Outfit = 'day' | 'formal' | 'sleep' | 'swim' | 'gym' | 'cold' | 'hot' | 'work';
 /** O que o folk pode estar vestindo: a roupa de sempre ou o roupão do banho. */
 export type Wear = Outfit | 'bath';
 /** Coisa que aparece na mão do folk. */
@@ -1612,6 +1614,8 @@ export interface ServedPlate {
 
 export interface Action {
   id: number;
+  /** plano 2, bloco 9: minutos que faltam trocando de roupa antes de começar (0 = já trocou) */
+  changing?: number;
   kind: ActionKind;
   source: 'player' | 'auto';
   objectId?: number;
@@ -1700,6 +1704,8 @@ export interface Folk {
   month: number;
   /** bloco 5: roupa de sempre */
   outfit: Outfit;
+  /** plano 2, bloco 9: guarda-roupa (sem ele, as roupas saem da aparência antiga) */
+  closet?: Closet;
   /** bloco 5: minutos de hábito por eixo desde a última virada (sinal = para que lado puxa) */
   habits: Partial<Temper>;
   /** bloco 6: o que está no balão agora */
@@ -1926,6 +1932,8 @@ export interface Household {
   album?: AlbumEntry[];
   /** plano 2, bloco 8: estilos salvos para usar de novo */
   styles?: SavedStyle[];
+  /** plano 2, bloco 9: peças de roupa compradas (as básicas toda casa tem) */
+  garments?: string[];
 }
 
 export interface LogEntry {
@@ -2267,6 +2275,11 @@ export type Command =
   /** plano 2, bloco 8: guardar ou apagar um estilo */
   | { type: 'saveStyle'; name: string; style: ObjStyle }
   | { type: 'dropStyle'; styleId: number }
+  /** plano 2, bloco 9: guarda-roupa (conjunto novo ou trocado, apagar, escolher, comprar peça) */
+  | { type: 'saveOutfit'; folkId: number; occasion: Occasion; index: number; ensemble: Ensemble }
+  | { type: 'dropOutfit'; folkId: number; occasion: Occasion; index: number }
+  | { type: 'pickOutfit'; folkId: number; occasion: Occasion; index: number }
+  | { type: 'buyGarment'; garmentId: string }
   | { type: 'undoBuy' }
   | { type: 'closeBuy' }
   | { type: 'sell'; objectId: number }

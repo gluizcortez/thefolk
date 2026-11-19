@@ -533,6 +533,13 @@ npm run preview  # serve o dist/ localmente
   mesas e bancadas, girados em 8 direções; objetos de parede sobem e descem
   com PageUp/PageDown. Banheira com banho de espuma, lava-louças e máquina
   de lavar.
+- **Roupas por peças (plano 2, bloco 9)**: cada folk tem guarda-roupa com
+  até 3 conjuntos para cada ocasião (dia a dia, festa, dormir, nadar,
+  exercício, frio, calor), montados peça por peça (parte de cima, de baixo
+  ou inteira, sapatos, meias e acessórios), com material, cor e padrão em
+  cada área. "Montar roupas…" no guarda-roupa ou no espelho abre o painel,
+  com prévia e loja de peças; dormir, nadar e malhar trocam de roupa
+  sozinhos na entrada. Crianças, jovens e idosos têm peças próprias.
 - **Peças novas (bloco 12)**: meia parede (fecha o passo sem dividir o
   cômodo), coluna nos cantos, porta de vidro, porta dupla, arco (passagem sem
   folha), janela alta (+6 de ambiente) e basculante (+2).
@@ -725,6 +732,13 @@ Decisões principais do núcleo:
   texturas de acabamento em `game/art/finish.ts` e o editor em
   `ui/styleEditor.ts`. `WorldObject` guarda `parts`, `style`, `nudge`,
   `turn8` e `lift`.
+- **Roupas** (plano 2, bloco 9): `sim/clothes.ts` tem as peças (`GARMENTS`),
+  ocasiões, conjuntos (`Ensemble`), o guarda-roupa (`Folk.closet`, criado da
+  aparência antiga por `legacyCloset`), `ensembleOf` (o que veste agora) e
+  `fitEnsemble` (acerta para a idade). Peças compradas ficam em
+  `Household.garments`. Pintura em `game/art/garb.ts` (texturas
+  `garb:peça:parte:áreas`), modelo em `game/art/folk.ts`, painel em
+  `ui/wardrobe.ts` (reusa `zonePicker` do editor de estilo).
 - **Jogador de teste** (`tests/helpers/player.ts`): as semanas inteiras dos
   testes rodam com um roteiro que manda como um jogador atento (atende porta
   e telefone, apaga fogo, cuida do bebê, manda dormir às 23h e comer com fome

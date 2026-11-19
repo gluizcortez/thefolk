@@ -239,7 +239,7 @@ describe('save v28 (plano 2, bloco 8)', () => {
     const w = JSON.parse(JSON.stringify(old.world));
     w.objects[0].color = 'plum';
     w.objects[1].color = 'green';
-    expect(SAVE_VERSION).toBe(28);
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(28);
     const loaded = deserialize({ ...old, version: 27, world: w }, { neighbors: [], catalog: CATALOG });
     const [sofa, crib] = loaded.world.objects;
     expect(sofa.color).toBeUndefined();

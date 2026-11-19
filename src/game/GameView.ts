@@ -63,6 +63,8 @@ import { isLineTool, isOpeningTool } from './controller';
 import { texMat } from './art/build';
 import { PAL } from './art/palette';
 import { wearOf } from '../sim/family';
+import { ensembleKey, ensembleOf } from '../sim/clothes';
+import type { Ensemble } from '../sim/clothes';
 import { thoughtOf } from '../sim/will';
 import { reactionTo } from '../sim/topics';
 import { stationDef } from '../sim/music';
@@ -296,8 +298,8 @@ function walkStyle(folk: Folk, action: Action | undefined, mood: number): FolkAn
   return 'walk';
 }
 
-function lookKey(look: Look, wear: Wear, uniform?: UniformDef, age?: Age): string {
-  return `${JSON.stringify(look)}|${wear}|${uniform ? JSON.stringify(uniform) : ''}|${age ?? ''}`;
+function lookKey(look: Look, wear: Wear, uniform?: UniformDef, age?: Age, dress?: Ensemble): string {
+  return `${JSON.stringify(look)}|${wear}|${uniform ? JSON.stringify(uniform) : ''}|${age ?? ''}|${dress ? ensembleKey(dress) : ''}`;
 }
 
 /** Bloco 8: uma carona na rua. */
@@ -577,7 +579,9 @@ export class GameView {
     const world = this.ctrl.world;
     for (const folk of world.folks) {
       if (this.folks.has(folk.id)) continue;
-      const model = new FolkModel(folk.look, wearOf(folk), this.uniformFor(folk), folk.age);
+      const wear0 = wearOf(folk);
+      const dress0 = ensembleOf(folk, wear0);
+      const model = new FolkModel(folk.look, wear0, this.uniformFor(folk), folk.age, dress0);
       model.group.userData.folkId = folk.id;
       const zzz: THREE.Sprite[] = [];
       for (let i = 0; i < 3; i++) {
@@ -596,7 +600,7 @@ export class GameView {
         zzz,
         icon,
         iconKey: 'soc:friendly',
-        lookKey: lookKey(folk.look, wearOf(folk), this.uniformFor(folk), folk.age),
+        lookKey: lookKey(folk.look, wear0, this.uniformFor(folk), folk.age, dress0),
         gestureOf: -1,
         gestureT: 99,
       });
@@ -1918,12 +1922,16 @@ export class GameView {
     const seatId = action?.eatAt !== undefined && action.eatAt >= 0 ? action.eatAt : undefined;
     const entry = it && action?.objectId !== undefined ? this.objects.get(seatId ?? action.objectId) : undefined;
     // bloco 5: trocou de roupa (pijama, roupão, guarda-roupa): monta o modelo de novo
-    const wear = wearOf(folk, it);
+    // plano 2, bloco 9: trocando de roupa na entrada: a roupa nova aparece no último minuto
+    const changing = !!action?.changing && action.phase !== 'using';
+    const nextIt = changing && action ? sim.interactionOf(action) : undefined;
+    const wear = changing ? (action!.changing! > 1 ? wearOf(folk) : wearOf(folk, nextIt)) : wearOf(folk, it);
     const uniform = wear === 'work' ? this.uniformFor(folk) : undefined;
-    const key = lookKey(folk.look, wear, uniform, folk.age);
+    const dress = ensembleOf(folk, wear);
+    const key = lookKey(folk.look, wear, uniform, folk.age, dress);
     if (key !== view.lookKey) {
       const old = view.model;
-      const fresh = new FolkModel(folk.look, wear, uniform, folk.age);
+      const fresh = new FolkModel(folk.look, wear, uniform, folk.age, dress);
       fresh.group.userData.folkId = folk.id;
       fresh.group.position.copy(old.group.position);
       fresh.group.rotation.copy(old.group.rotation);
@@ -1975,6 +1983,8 @@ export class GameView {
         onObject = true;
         expr = 'scared';
       }
+    } else if (changing) {
+      anim = 'dress_change';
     } else if (action?.kind === 'douse' && action.phase === 'using') {
       anim = 'spray';
       expr = 'focused';
@@ -2874,15 +2884,16 @@ export class GameView {
    * Bloco 5: retrato de corpo inteiro (tela de criar família), em pé e de
    * frente, com a roupa pedida. Devolve uma imagem em data URL.
    */
-  portrait(look: Look, wear: Wear, w = 120, h = 200): string {
+  portrait(look: Look, wear: Wear, w = 120, h = 200, opts: { age?: Age; dress?: Ensemble; heading?: number } = {}): string {
     const scene = new THREE.Scene();
     scene.add(new THREE.HemisphereLight(0xffffff, 0xc4b295, 1.7));
     const sun = new THREE.DirectionalLight(PAL.sun, 2.0);
     sun.position.set(-2, 5, 6);
     scene.add(sun);
-    const model = new FolkModel(look, wear);
-    model.update({ anim: 'idle', x: 0, y: 0, z: 0, heading: 0.35, mood: 75, time: 0, dt: 1 });
-    model.update({ anim: 'idle', x: 0, y: 0, z: 0, heading: 0.35, mood: 75, time: 0, dt: 1 });
+    const model = new FolkModel(look, wear, undefined, opts.age, opts.dress);
+    const heading = opts.heading ?? 0.35;
+    model.update({ anim: 'idle', x: 0, y: 0, z: 0, heading, mood: 75, time: 0, dt: 1 });
+    model.update({ anim: 'idle', x: 0, y: 0, z: 0, heading, mood: 75, time: 0, dt: 1 });
     scene.add(model.group);
     const half = 1.05;
     const cam = new THREE.OrthographicCamera(-half * (w / h), half * (w / h), half, -half, 0.1, 50);

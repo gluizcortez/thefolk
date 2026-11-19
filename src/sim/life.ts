@@ -1,4 +1,6 @@
 import { MINUTES_PER_DAY } from './clock';
+import { refitCloset } from './clothes';
+import type { Closet } from './clothes';
 import { levelOfJob, payFor } from './career';
 import { freshKid } from './kids';
 import { spouseOf } from './marriage';
@@ -84,9 +86,11 @@ export function nextStage(stage: LifeStage): LifeStage | null {
 }
 
 /** Põe a pessoa na fase (adulto = sem campo). */
-export function setStage(p: { age?: Age }, stage: LifeStage): void {
+export function setStage(p: { age?: Age; closet?: Closet }, stage: LifeStage): void {
   if (stage === 'adult') delete p.age;
   else p.age = stage;
+  // plano 2, bloco 9: quem cresce troca as peças que não servem mais pelas da idade nova
+  if (p.closet) p.closet = refitCloset(p.closet, p.age);
 }
 
 /**

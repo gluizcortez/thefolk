@@ -21,6 +21,7 @@ async function boot(): Promise<void> {
   const hud = new Hud(document.getElementById('ui')!, ctrl);
   const view = new GameView(document.getElementById('game')!, ctrl, hud);
   hud.setThumbnailer((art) => view.thumbnail(art));
+  hud.setPortraiter((look, wear, opts) => view.portrait(look, wear, 130, 210, opts));
   hud.setSwatcher((tex, tall) => view.swatch(tex, tall));
   view.start();
   // bloco 7: miniatura da casa para os jogos salvos

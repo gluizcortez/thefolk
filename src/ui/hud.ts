@@ -4,6 +4,8 @@ import type { BuildTool, FocusTarget, GameController } from '../game/controller'
 import { OPENING_TOOLS, isOpeningTool } from '../game/controller';
 import { WALL_MODES, isWallMode } from '../game/viewMode';
 import { StyleEditor } from './styleEditor';
+import { WardrobePanel } from './wardrobe';
+import type { Portraiter } from './wardrobe';
 import type { WallMode } from '../game/viewMode';
 import { ROOF_COLORS } from '../data/build';
 import { hasText, t } from '../i18n';
@@ -514,6 +516,8 @@ export class Hud {
   private catalogEl = el('div', 'card catalog');
   /** plano 2, bloco 8: editor de peças e estilo */
   readonly styleEditor: StyleEditor;
+  /** plano 2, bloco 9: guarda-roupa */
+  readonly wardrobe: WardrobePanel;
   private catalogTabs = el('div', 'catalog-tabs');
   private catalogItems = el('div', 'catalog-items');
   private catalogHint = el('div', 'catalog-hint');
@@ -553,6 +557,7 @@ export class Hud {
     this.system = new SystemCards(ctrl);
     this.system.onChange = () => this.renderPop();
     this.styleEditor = new StyleEditor(ctrl);
+    this.wardrobe = new WardrobePanel(ctrl);
     this.styleEditor.onClose = () => {
       this.catalogSig = '';
       this.renderCatalog();
@@ -1304,6 +1309,7 @@ export class Hud {
     if (this.levelLabel.textContent !== levelText) this.levelLabel.textContent = levelText;
     this.renderWallModes();
     this.styleEditor.update();
+    this.wardrobe.update();
 
     // bloco 13: o dia mostra quando está chovendo
     const dayText = t('hud.dayShortWeek', { day: clock.day, weekday: t(`weekday.${(clock.day - 1) % 7}`) }) + (raining(world) ? ' ☂' : '');
@@ -1591,6 +1597,13 @@ export class Hud {
           this.order({ type: 'queueUse', folkId: folk.id, objectId: obj.id, interactionId: it.id });
         },
       });
+    }
+    // plano 2, bloco 9: no móvel de roupa e no espelho, montar os conjuntos
+    if ((def.interactions.some((i) => i.dress) || def.art === 'mirror') && folk.age !== 'baby' && !folk.visit) {
+      items.push({ label: t('wardrobe.open'), icon: 'mood', run: () => {
+        this.closeMenu();
+        this.wardrobe.show(folk.id, def.interactions.some((i) => i.dress) ? obj.id : undefined);
+      } });
     }
     this.showRing(x, y, this.ringHead(t(def.name), notes), items);
   }
@@ -3467,6 +3480,11 @@ export class Hud {
 
   // ---------- modo compra ----------
 
+  /** Plano 2, bloco 9: retrato do folk vestido (prévia do guarda-roupa). */
+  setPortraiter(fn: Portraiter): void {
+    this.wardrobe.portraiter = fn;
+  }
+
   setThumbnailer(fn: (art: string) => string): void {
     this.thumbnail = fn;
   }
@@ -3706,7 +3724,7 @@ export class Hud {
     foot.append(this.catalogHint, this.colorRow);
     this.catalogEl.append(head, this.catalogItems, foot);
     this.catalogEl.hidden = true;
-    this.root.append(this.catalogEl, this.styleEditor.el);
+    this.root.append(this.catalogEl, this.styleEditor.el, this.wardrobe.el);
   }
 
   private renderCatalog(): void {

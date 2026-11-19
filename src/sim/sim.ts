@@ -397,6 +397,9 @@ import {
 import type { BabyCare, Expecting } from './types';
 import type { KitParts } from './parts';
 import type { ObjStyle, ZoneDef } from './style';
+import type { Closet, Ensemble, Occasion } from './clothes';
+import { wearOf } from './family';
+import { CLOTH_SLOTS, GARMENTS, MAX_SETS, OCCASIONS, bandOf, cleanPiece, ensembleProblems, legacyCloset, ownedGarments, pickNewGarment } from './clothes';
 import { MAX_SAVED_STYLES, ROLE_ZONES, cleanStyle, styleFromColor } from './style';
 import { DISHWASHER_LOAD } from './upkeep';
 import { cleanLook, itemsOn, placementExtras, priceWith, setExtras, zonesOf } from './modular';
@@ -423,6 +426,9 @@ const NO_BELL: Partial<Record<ServiceKind, boolean>> = { bailiff: true, social: 
 const UNIFORMED: Partial<Record<ServiceKind, boolean>> = { firefighter: true, police: true, burglar: true, reaper: true, waiter: true };
 
 /** Por que o último comando foi recusado (para a interface explicar). */
+/** plano 2, bloco 9: minutos trocando de roupa antes da ação que pede outra roupa */
+export const CHANGE_MINUTES = 3;
+
 export type CommandProblem =
   | PlaceProblem
   | BuildProblem
@@ -720,6 +726,41 @@ export class Sim {
     return ok;
   }
 
+  /** Morador da casa (visita não mexe no guarda-roupa). */
+  private resident(folkId: number): Folk | undefined {
+    const folk = this.world.folks.find((f) => f.id === folkId);
+    return folk && !folk.visit ? folk : undefined;
+  }
+
+  /** Plano 2, bloco 9: o guarda-roupa do folk (criado da aparência antiga na primeira vez). */
+  closetFor(folk: Folk): Closet {
+    if (!folk.closet) folk.closet = legacyCloset(folk.look, folk.age);
+    return folk.closet;
+  }
+
+  /** Guarda um conjunto (index = quantos já tem → conjunto novo). Só peças da casa e da idade. */
+  private saveOutfit(folkId: number, occasion: Occasion, index: number, ensemble: Ensemble): boolean {
+    const folk = this.resident(folkId);
+    if (!folk || !OCCASIONS.includes(occasion)) return this.fail('invalid');
+    const band = bandOf(folk.age);
+    if (ensembleProblems(ensemble, band, occasion).length) return this.fail('invalid');
+    const owned = ownedGarments(this.world.household.garments);
+    const pieces: Ensemble = {};
+    for (const slot of CLOTH_SLOTS) {
+      const p = ensemble[slot];
+      if (!p) continue;
+      if (!owned.has(p.g)) return this.fail('invalid');
+      const clean = cleanPiece(p);
+      if (clean) pieces[slot] = clean;
+    }
+    const closet = this.closetFor(folk);
+    const list = (closet.sets[occasion] ??= []);
+    if (index < 0 || index > list.length || index >= MAX_SETS) return this.fail('invalid');
+    list[index] = pieces;
+    closet.pick[occasion] = index;
+    return true;
+  }
+
   private fail(problem: CommandProblem): false {
     this.lastProblem = problem;
     return false;
@@ -1004,6 +1045,37 @@ export class Sim {
         const i = list.findIndex((s) => s.id === cmd.styleId);
         if (i < 0) return false;
         list.splice(i, 1);
+        return true;
+      }
+      case 'saveOutfit':
+        return this.saveOutfit(cmd.folkId, cmd.occasion, cmd.index, cmd.ensemble);
+      case 'dropOutfit': {
+        const folk = this.resident(cmd.folkId);
+        const list = folk?.closet?.sets[cmd.occasion];
+        if (!folk?.closet || !list || cmd.index < 0 || cmd.index >= list.length || list.length <= 1) return this.fail('invalid');
+        list.splice(cmd.index, 1);
+        const pick = folk.closet.pick[cmd.occasion] ?? 0;
+        if (pick >= list.length || pick > cmd.index) folk.closet.pick[cmd.occasion] = Math.max(0, pick - 1);
+        return true;
+      }
+      case 'pickOutfit': {
+        const folk = this.resident(cmd.folkId);
+        if (!folk || !OCCASIONS.includes(cmd.occasion)) return this.fail('invalid');
+        const closet = this.closetFor(folk);
+        const list = closet.sets[cmd.occasion] ?? [];
+        if (cmd.index < 0 || cmd.index >= list.length) return this.fail('invalid');
+        closet.pick[cmd.occasion] = cmd.index;
+        return true;
+      }
+      case 'buyGarment': {
+        const g = GARMENTS[cmd.garmentId];
+        if (!g || g.hidden || g.price <= 0) return this.fail('invalid');
+        const hh = this.world.household;
+        if ((hh.garments ?? []).includes(g.id)) return this.fail('already');
+        if (hh.funds < g.price) return this.fail('funds');
+        hh.funds -= g.price;
+        (hh.garments ??= []).push(g.id);
+        this.log('log.boughtGarment', { garment: `garment.${g.id}` });
         return true;
       }
       case 'undoBuy':
@@ -2491,6 +2563,15 @@ export class Sim {
         this.finish(folk);
         return;
       }
+      // plano 2, bloco 9: troca de roupa na entrada (pijama, traje de banho, ginástica)
+      if (it && !action.picked && action.changing === undefined && wearOf(folk, it) !== wearOf(folk) && wearOf(folk, it) !== 'bath') {
+        action.changing = CHANGE_MINUTES;
+        return;
+      }
+      if (action.changing) {
+        action.changing--;
+        if (action.changing > 0) return;
+      }
       if (it && !it.light && !action.lightChecked) {
         // bloco 3: cômodo escuro? acende a luz primeiro (dormir dispensa)
         // plano 2, bloco 4: TV no escuro é gostoso, e quem já está sentado não levanta para isso
@@ -3711,14 +3792,43 @@ export class Sim {
       folk.gifts = [...(folk.gifts ?? []), it.gift];
       this.log('log.boughtGift', { name: folk.name, gift: this.catalog.gifts?.[it.gift]?.name ?? '' });
     } else if (it.special === 'buyClothes') {
-      if (it.id === 'formal') {
-        folk.look.formal = (folk.look.formal + 1 + nextInt(world, 3)) % 4;
-        this.log('log.newFormal', { name: folk.name });
-      } else {
-        folk.look.shirt = (folk.look.shirt + 1 + nextInt(world, 5)) % 6;
-        folk.look.pants = (folk.look.pants + 1 + nextInt(world, 3)) % 4;
-        this.log('log.newClothes', { name: folk.name });
+      // plano 2, bloco 9: a loja do centro vende uma peça nova (para a casa) e o
+      // folk já monta um conjunto com ela na ocasião em que ela cai melhor
+      const band = bandOf(folk.age);
+      const hh = world.household;
+      const owned = ownedGarments(hh.garments);
+      const want = it.id === 'formal' ? 'formal' : 'day';
+      let g = band ? pickNewGarment(band, owned, (n) => nextInt(world, n)) : null;
+      if (it.id === 'formal' && band) {
+        const fancy = Object.values(GARMENTS).filter((x) => x.fit.includes('formal') && !x.hidden && x.price > 0 && x.bands.includes(band) && (x.slot === 'top' || x.slot === 'full'));
+        const fresh = fancy.filter((x) => !owned.has(x.id));
+        const pool = fresh.length ? fresh : fancy;
+        if (pool.length) g = pool[nextInt(world, pool.length)];
       }
+      if (g && !folk.visit) {
+        if (!(hh.garments ?? []).includes(g.id)) (hh.garments ??= []).push(g.id);
+        const occasion = g.fit.includes(want) ? want : (g.fit[0] ?? 'day');
+        const closet = this.closetFor(folk);
+        const list = (closet.sets[occasion] ??= []);
+        const base = list[closet.pick[occasion] ?? 0] ?? legacyCloset(folk.look, folk.age).sets[occasion]?.[0] ?? {};
+        const SW = ['red', 'blue', 'green', 'mustard', 'plum', 'teal', 'navy', 'rose', 'orange', 'cream'];
+        const color = SW[nextInt(world, SW.length)];
+        const main = g.zones[0];
+        const style = main.base.color !== undefined ? { [main.id]: { ...main.base, color } } : undefined;
+        const next: Ensemble = { ...base, [g.slot]: style ? { g: g.id, style } : { g: g.id } };
+        if (g.slot === 'full') {
+          delete next.top;
+          delete next.bottom;
+        } else delete next.full;
+        if (list.length < MAX_SETS) {
+          list.push(next);
+          closet.pick[occasion] = list.length - 1;
+        } else {
+          const i = closet.pick[occasion] ?? 0;
+          list[i] = next;
+        }
+      }
+      this.log(it.id === 'formal' ? 'log.newFormal' : 'log.newClothes', { name: folk.name });
     } else if (it.special === 'buyParcel' && it.parcel && world.outing) {
       world.outing.parcels.push(it.parcel);
       this.log('log.parcelOrdered', { name: folk.name, object: this.catalog.objects[it.parcel]?.name ?? '' });

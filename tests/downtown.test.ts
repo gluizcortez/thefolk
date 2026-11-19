@@ -262,14 +262,16 @@ describe('bloco 16: compras do centro', () => {
     const shelf = objectOf(w, 'giftshelf');
     const bazaar = objectOf(w, 'bazaar');
     const rack = objectOf(w, 'clothesrack');
-    const shirt = a.look.shirt;
+    const before = w.household.garments?.length ?? 0;
     sim.dispatch({ type: 'queueUse', folkId: a.id, objectId: shelf.id, interactionId: 'gift_ramalhete' });
     sim.dispatch({ type: 'queueUse', folkId: a.id, objectId: bazaar.id, interactionId: 'order_globe', append: true });
     sim.dispatch({ type: 'queueUse', folkId: a.id, objectId: rack.id, interactionId: 'clothes', append: true });
     play(sim, 120);
     expect(a.gifts).toEqual(['ramalhete']);
     expect(w.outing!.parcels).toEqual(['globe']);
-    expect(a.look.shirt).not.toBe(shirt);
+    // plano 2, bloco 9: a loja vende uma peça para o guarda-roupa e monta um conjunto com ela
+    expect(w.household.garments!.length).toBe(before + 1);
+    expect(Object.values(a.closet!.sets).flat().some((e) => Object.values(e!).some((p) => p?.g === w.household.garments![before]))).toBe(true);
     const friend = relationOf(w, b.id, a.id)?.friendship ?? 0;
     expect(sim.dispatch({ type: 'queueSocial', folkId: a.id, otherId: b.id, socialId: 'giveGift' })).toBe(true);
     // plano 2, bloco 4: quem estava sentado no bistrô levanta antes de ir

@@ -40,6 +40,21 @@ export const GESTURES = {
       hipsY: { b: 0.9075, a: 0.0075, f: 1.4 },
     },
   },
+  /** plano 2, bloco 9: trocando de roupa — puxa a blusa pela cabeça, ajeita a barra, gira um pouco */
+  dress_change: {
+    tracks: {
+      armsX: { b: -1.5, a: 1.1, f: 1.6 },
+      armsOut: { b: 0.15, a: 0.1, f: 1.6, ph: 0.5 },
+      elbows: { b: -1.2, a: 0.6, f: 1.6, ph: 0.8 },
+      grips: 0.8,
+      torsoX: { b: 0.05, a: 0.06, f: 1.6 },
+      torsoY: { a: 0.18, f: 0.8 },
+      headX: { b: 0.1, a: 0.12, f: 1.6, ph: 1.2 },
+      hipsSway: { a: 0.02, f: 0.8 },
+      kneeL: { b: 0.04, a: 0.1, f: 0.8, sh: 'pos' },
+      kneeR: { b: 0.04, a: 0.1, f: 0.8, sh: 'neg' },
+    },
+  },
   /** braços cruzados, o peso passando de uma perna para a outra */
   g_arms: {
     tracks: {

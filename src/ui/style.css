@@ -3883,3 +3883,56 @@ body.town-open #ui > *:not(.town):not(.creator):not(.toasts):not(.notices-col) {
   color: var(--terracotta);
   font-weight: 700;
 }
+
+/* ---------- plano 2, bloco 9: guarda-roupa ---------- */
+.wardrobe {
+  position: absolute;
+  right: 14px;
+  top: 64px;
+  width: min(560px, calc(100vw - 28px));
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+  padding: 8px 10px 10px;
+  display: grid;
+  gap: 5px;
+  pointer-events: auto;
+  font-size: 12.5px;
+  z-index: 6;
+}
+.wardrobe[hidden] {
+  display: none;
+}
+.wardrobe-body {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+.wardrobe-left {
+  display: grid;
+  gap: 5px;
+  justify-items: center;
+  position: sticky;
+  top: 0;
+}
+.wardrobe-shot {
+  width: 130px;
+  height: 210px;
+  image-rendering: pixelated;
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  background: linear-gradient(#f4ecd8, #e3d3b0);
+}
+.wardrobe-right {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.wardrobe .style-row {
+  grid-template-columns: 64px 1fr;
+}
+@media (max-width: 520px) {
+  .wardrobe-body {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,4 +1,5 @@
 import { relKey } from './relations';
+import { legacyCloset } from './clothes';
 import { zonesOf } from './modular';
 import { ROLE_ZONES, styleFromColor } from './style';
 import type { Catalog, Folk, Grid, Look, Neighbor, Vec, World, WorldObject } from './types';
@@ -18,7 +19,7 @@ import type { TownPlan } from './town';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 28;
+export const SAVE_VERSION = 29;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -445,6 +446,17 @@ const migrations: Record<number, Migration> = {
       return out;
     };
     return { ...save, world: fix(save.world) as Obj };
+  },
+  /**
+   * Plano 2, bloco 9: roupas por peças. Cada morador ganha um guarda-roupa
+   * com um conjunto por ocasião tirado das cores que já usava (camisa,
+   * calça, festa, pijama, banho). Vizinhos e visitas seguem pela aparência.
+   */
+  28: (save) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    world.folks = (world.folks ?? []).map((f) => (f.visit || f.age === 'baby' || f.closet || !f.look ? f : { ...f, closet: legacyCloset(f.look, f.age) }));
+    world.household = { ...world.household, garments: world.household?.garments ?? [] };
+    return { ...save, world: world as unknown as Obj };
   },
 };
 

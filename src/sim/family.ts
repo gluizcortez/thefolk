@@ -1,3 +1,4 @@
+import { isWorkout } from './clothes';
 import { LOOK_LIMITS, TEMPER_AXES, validTemper } from './temper';
 import type { Catalog, Folk, InteractionDef, Look, Outfit, Temper, Wear } from './types';
 
@@ -93,8 +94,9 @@ export function copyTemper(t: Temper): Temper {
  * O que o folk está vestindo agora: a roupa que a interação pede enquanto
  * dura (pijama na cama, roupão no chuveiro) ou a roupa de sempre.
  */
-export function wearOf(folk: Pick<Folk, 'outfit'>, using?: Pick<InteractionDef, 'wear'>): Wear {
-  return using?.wear ?? folk.outfit ?? 'day';
+export function wearOf(folk: Pick<Folk, 'outfit'>, using?: Pick<InteractionDef, 'wear' | 'skill' | 'book' | 'jog'>): Wear {
+  // plano 2, bloco 9: exercício pesado veste a roupa de ginástica
+  return using?.wear ?? (isWorkout(using) ? 'gym' : undefined) ?? folk.outfit ?? 'day';
 }
 
 /** Roupa com que o folk sai de casa para o trabalho. */

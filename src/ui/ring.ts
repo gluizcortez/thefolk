@@ -63,6 +63,8 @@ export function interactionState(world: World, catalog: Catalog, folk: Folk, obj
 /** Grupo de uma interação de objeto no anel (quando passa de RING_MAX). */
 export function objectGroup(it: InteractionDef): string {
   if (it.care) return 'care';
+  // plano 2, bloco 9: as trocas de roupa ficam juntas numa fatia
+  if (it.dress) return 'dress';
   // plano 2, bloco 6: os pratos do fogão ficam juntos numa fatia
   if (it.cook) return 'cook';
   if (it.special === 'call' || it.special === 'services' || it.special === 'invite' || it.special === 'party' || it.special === 'answer') return 'phone';
