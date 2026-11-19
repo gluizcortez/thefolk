@@ -592,6 +592,23 @@ npm run preview  # serve o dist/ localmente
   compram no cartão do lote da família, em "Na garagem". As casas dos outros
   lotes são montadas de verdade quando a câmera chega perto e viram caixas
   simples de longe; o relógio segue no mapa.
+- **Lugares da cidade (plano 2, bloco 13)**: no mapa, clique no nome de um
+  lugar para o cartão dele: horário, se está aberto, quanta gente tem, preço
+  da entrada. Escolha quem vai, o que fazer ao chegar e o jeito de ir. Lugares
+  abertos (praça, biblioteca, academia com piscina, mercado, loja de roupas e
+  móveis, cinema, bar com palco, parque com lago de pesca e o centro) abrem
+  como lote; o passeio do menu também deixa escolher o lugar, e um encontro
+  pode ser em qualquer um deles. No mercado se compra comida em pessoa (mais
+  barato que pelo telefone; as sacolas vão para a despensa na volta, e
+  estragam se a volta demorar). No parque se pesca, no bar se toca por
+  gorjeta. Prédios fechados (trabalho, escola, prefeitura, hospital,
+  delegacia) mostram quem está lá e até quando; no trabalho escolha o jeito
+  (normal, trabalhar duro, puxar o saco do chefe, ir com calma: muda a nota
+  do turno, o cansaço e o chefe) e na escola (estudar ou fazer amigos). Na
+  prefeitura se pagam contas e procura emprego, no hospital se faz consulta,
+  na delegacia se dá queixa do que o ladrão levou. Com a cidade ligada, a
+  roupa comprada no guarda-roupa chega em casa no dia seguinte às 9h (frete
+  ⟡ 6) ou fica esperando na loja.
 - **Peças novas (bloco 12)**: meia parede (fecha o passo sem dividir o
   cômodo), coluna nos cantos, porta de vidro, porta dupla, arco (passagem sem
   folha), janela alta (+6 de ambiente) e basculante (+2).
@@ -1000,6 +1017,14 @@ Decisões principais do núcleo:
   volta do lote mostrado, malhas juntadas por material e em pedaços de 64
   tiles, casa detalhada só perto da câmera, etiquetas e ícones) e a escolha
   do jeito de ir em `ui/travel.ts`.
+- **Lugares (plano 2, bloco 13)**: regras puras em `sim/places.ts`
+  (`placeOpen`, `crowdOf`, `placeProblem`, `insideOf`, `styledShift`,
+  `styledGrade`, `deliverGarments`); a planta de cada lugar (`PlaceDef`, com
+  `rect` na cidade, horário, lotação, preço, planos e recados) e as plantas
+  dos lotes em `data/places.ts`; objetos novos com arte em
+  `game/art/places.ts`. `goDowntown` leva `place` e `plan`; comandos
+  `runErrand` e `setStyle`. Os prédios e o cartão do lugar em `game/city.ts`
+  e `ui/town.ts`.
 - **Quadros por segundo (plano 2, bloco 12)**: medidos no Chromium sem placa
   de vídeo (SwiftShader, desenho todo no processador, 1280x800), que só serve
   para comparar: antes da cidade, 3,3 quadros por segundo na vista da casa;
@@ -1303,6 +1328,12 @@ traços e cidade aberta com o bairro dentro dela).
   família para a gaveta, dividir e juntar famílias, chamar alguém para morar,
   casa com ou sem móveis, inventário da família, fundos e bens, criador
   aberto num folk em jogo e o benefício "Página virada" (save v31).
+- **Bloco 12 (feito)**: cidade aberta de Arribada, três bairros, zoom
+  contínuo, viagens a pé, de bicicleta, de carro e de táxi (save v32).
+- **Bloco 13 (feito)**: lugares da cidade com horário, lotação e preço,
+  mercado, pesca, cinema, bar, academia, prédios fechados com jeito no
+  trabalho e na escola, recados na prefeitura, hospital e delegacia, roupas
+  pela loja (save v33).
 
 ## Limitações conhecidas do bloco 7 (plano 2)
 

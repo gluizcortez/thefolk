@@ -242,16 +242,18 @@ export class House {
           continue;
         }
         if (!wet(x, y)) continue;
+        // plano 2, bloco 13: o lago do parque tem fundo e barranco de pedra
+        const bed = f === 'lake' ? 'stone' : 'poolTile';
         // fundo
-        push('poolTile', [[x, -D, y], [x, -D, y + 1], [x + 1, -D, y + 1], [x + 1, -D, y]], [[x, -y], [x, -(y + 1)], [x + 1, -(y + 1)], [x + 1, -y]]);
+        push(bed, [[x, -D, y], [x, -D, y + 1], [x + 1, -D, y + 1], [x + 1, -D, y]], [[x, -y], [x, -(y + 1)], [x + 1, -(y + 1)], [x + 1, -y]]);
         // água
         push('water', [[x, -S, y], [x, -S, y + 1], [x + 1, -S, y + 1], [x + 1, -S, y]], [[x, -y], [x, -(y + 1)], [x + 1, -(y + 1)], [x + 1, -y]]);
         // paredes de dentro, viradas para a água
         const vu = (a: number, b: number) => [[a, 0], [a, -D], [b, -D], [b, 0]];
-        if (!wet(x, y - 1)) push('poolTile', [[x, 0, y], [x, -D, y], [x + 1, -D, y], [x + 1, 0, y]], vu(x, x + 1));
-        if (!wet(x, y + 1)) push('poolTile', [[x + 1, 0, y + 1], [x + 1, -D, y + 1], [x, -D, y + 1], [x, 0, y + 1]], vu(x + 1, x));
-        if (!wet(x - 1, y)) push('poolTile', [[x, 0, y + 1], [x, -D, y + 1], [x, -D, y], [x, 0, y]], vu(y + 1, y));
-        if (!wet(x + 1, y)) push('poolTile', [[x + 1, 0, y], [x + 1, -D, y], [x + 1, -D, y + 1], [x + 1, 0, y + 1]], vu(y, y + 1));
+        if (!wet(x, y - 1)) push(bed, [[x, 0, y], [x, -D, y], [x + 1, -D, y], [x + 1, 0, y]], vu(x, x + 1));
+        if (!wet(x, y + 1)) push(bed, [[x + 1, 0, y + 1], [x + 1, -D, y + 1], [x, -D, y + 1], [x, 0, y + 1]], vu(x + 1, x));
+        if (!wet(x - 1, y)) push(bed, [[x, 0, y + 1], [x, -D, y + 1], [x, -D, y], [x, 0, y]], vu(y + 1, y));
+        if (!wet(x + 1, y)) push(bed, [[x + 1, 0, y], [x + 1, -D, y], [x + 1, -D, y + 1], [x + 1, 0, y + 1]], vu(y, y + 1));
       }
     }
     for (const tex of Object.keys(quads)) {

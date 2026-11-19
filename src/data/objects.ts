@@ -1,6 +1,7 @@
 import { MODULAR_OBJECTS, SURFACE_IDS, withKit } from './modular';
 import { PERIL_OBJECTS } from './peril';
 import { DOWNTOWN_OBJECTS } from './downtown';
+import { PLACE_OBJECTS } from './places';
 import type { ObjectDef } from '../sim/types';
 
 import { admire, clean, dishes, lightOff, lightOn, repair, service, tuning } from './interactions';
@@ -947,5 +948,5 @@ const modular = (o: ObjectDef): ObjectDef => {
 };
 
 export const OBJECTS: Record<string, ObjectDef> = Object.fromEntries(
-  [...list, ...FURNITURE, ...REWARDS, ...KID_OBJECTS, ...YARD_OBJECTS, ...PERIL_OBJECTS, ...DOWNTOWN_OBJECTS, ...HOBBY_OBJECTS, ...MODULAR_OBJECTS].map((o) => [o.id, withTraitUses(withHobbies(withChores(withActivities(modular(o)))))]),
+  [...list, ...FURNITURE, ...REWARDS, ...KID_OBJECTS, ...YARD_OBJECTS, ...PERIL_OBJECTS, ...DOWNTOWN_OBJECTS, ...PLACE_OBJECTS, ...HOBBY_OBJECTS, ...MODULAR_OBJECTS].map((o) => [o.id, withTraitUses(withHobbies(withChores(withActivities(modular(o)))))]),
 );

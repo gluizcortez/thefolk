@@ -81,7 +81,13 @@ export interface InteractionDef {
     | 'buyGift'
     | 'buyClothes'
     | 'buyParcel'
-    | 'wishCoin';
+    | 'wishCoin'
+    // plano 2, bloco 13: mercado (sacolas para casa), pescaria no lago, palco do bar
+    | 'buyGroceries'
+    | 'fish'
+    | 'busk';
+  /** plano 2, bloco 13: porções que a compra no mercado põe nas sacolas */
+  groceries?: number;
   /** bloco 16: prato do cardápio (id em DISHES) */
   dish?: string;
   /** bloco 16: presente que a loja vende (id em GIFTS) */
@@ -417,6 +423,8 @@ export interface Kid {
   warned: number;
   /** a visitadora já foi chamada e está a caminho */
   worker?: boolean;
+  /** plano 2, bloco 13: como se porta na escola */
+  style?: SchoolStyle;
 }
 
 /** Bebê a caminho: nasce (ou chega da adoção) no tick `due`. */
@@ -1330,6 +1338,8 @@ export interface FloorDef {
   water?: boolean;
   /** bloco 13: piso do quintal (piscina, caminho, deck): só no térreo, fica na aba Quintal */
   yard?: boolean;
+  /** plano 2, bloco 13: só dos lugares da cidade (não aparece no modo construção) */
+  public?: boolean;
 }
 
 /** Revestimento de uma face de parede (papel, azulejo, tijolo...). */
@@ -1387,6 +1397,8 @@ export interface Catalog {
   dishes?: Record<string, DishDef>;
   gifts?: Record<string, GiftDef>;
   venues?: Record<string, VenuePlan>;
+  /** plano 2, bloco 13: os lugares da cidade (abertos e prédios fechados) */
+  places?: Record<string, PlaceDef>;
   /** plano 2, bloco 10 */
   dreams?: Record<string, DreamDef>;
   perks?: Record<string, PerkDef>;
@@ -1963,6 +1975,8 @@ export interface Job {
   honkDay?: number;
   /** bloco 17: meio período de jovem (depois da aula, sem promoção) */
   partTime?: boolean;
+  /** plano 2, bloco 13: como se porta no trabalho (sem campo: normal) */
+  style?: WorkStyle;
 }
 
 /** Acontecimento do expediente esperando uma escolha. */
@@ -2030,6 +2044,71 @@ export interface Away {
   school?: boolean;
   /** plano 2, bloco 12: andando pela cidade (World.trip diz para onde) */
   trip?: boolean;
+  /** plano 2, bloco 13: como se porta neste turno (vale o do emprego ou da escola) */
+  style?: WorkStyle | SchoolStyle;
+}
+
+// ---------- Plano 2, bloco 13: lugares da cidade ----------
+
+/** Como o folk se porta no trabalho. */
+export type WorkStyle = 'steady' | 'hard' | 'flatter' | 'easy';
+/** Como o estudante se porta na escola. */
+export type SchoolStyle = 'steady' | 'study' | 'friends';
+
+/** Lugar aberto (lote com prédio, móveis e gente) ou prédio fechado (entra e some lá dentro). */
+export type PlaceKind = 'venue' | 'building';
+export type BuildingKind = 'work' | 'school' | 'cityhall' | 'hospital' | 'police';
+
+/** O que fazer ao chegar num lugar aberto: usar tal interação no objeto mais perto. */
+export interface PlaceActivity {
+  id: string;
+  /** chave de texto */
+  label: string;
+  /** id do objeto (catálogo) */
+  obj: string;
+  /** id da interação nele */
+  act: string;
+}
+
+/** Recado num prédio fechado (pagar contas na prefeitura, consulta no hospital...). */
+export interface ErrandDef {
+  id: string;
+  /** chave de texto */
+  label: string;
+  /** minutos lá dentro */
+  minutes: number;
+  /** preço por pessoa */
+  cost: number;
+  /** só adulto */
+  adult?: boolean;
+}
+
+export interface PlaceDef {
+  id: string;
+  /** chave de texto */
+  name: string;
+  kind: PlaceKind;
+  building?: BuildingKind;
+  /** retângulo na cidade (tiles) e se o lote fica girado (frente para o norte) */
+  rect: { x: number; z: number; w: number; h: number };
+  flip?: boolean;
+  /** abre e fecha (horas; fechar antes de abrir = passa da meia-noite; iguais = o dia todo) */
+  hours: [number, number];
+  /** dias da semana em que abre (0 = segunda); sem campo, todos */
+  days?: number[];
+  /** gente lá dentro, no máximo (contando a cidade) */
+  capacity: number;
+  /** entrada por pessoa (0 = de graça) */
+  fee: number;
+  /** quanto a cidade frequenta (0 a 1) e a hora de pico */
+  busy: number;
+  peak: number;
+  /** o que dá para fazer ao chegar (lugares abertos) */
+  plans?: PlaceActivity[];
+  /** recados (prédios fechados) */
+  errands?: ErrandDef[];
+  /** cor da fachada no mapa */
+  color?: number;
 }
 
 export interface Household {
@@ -2071,6 +2150,11 @@ export interface Household {
   stored?: WorldObject[];
   /** plano 2, bloco 12: bicicletas e carro da família */
   vehicles?: OwnVehicle[];
+  /** plano 2, bloco 13: roupas compradas esperando na loja e as que chegam em casa */
+  pickup?: string[];
+  shipping?: { garment: string; due: number }[];
+  /** plano 2, bloco 13: o que o gatuno levou (para a queixa na delegacia) */
+  stolen?: { defId: string; value: number; tick: number }[];
 }
 
 export interface LogEntry {
@@ -2221,6 +2305,11 @@ export interface Outing {
   nextExtra: number;
   /** plano 2, bloco 12: como foram (a volta usa o mesmo, se der) */
   mode?: TravelMode;
+  /** plano 2, bloco 13: o que foram fazer e as sacolas do mercado (porções) */
+  plan?: string;
+  bags?: number;
+  /** plano 2, bloco 13: peixes pescados (viram porções em casa) */
+  fish?: number;
 }
 
 // ---------- Bloco 15: bairro com vários lotes e famílias ----------
@@ -2313,7 +2402,11 @@ export type OwnVehicle = 'bike' | 'car';
 
 /** Gente da família andando pela cidade: ida ao centro, volta para casa ou visita a um vizinho. */
 export interface Trip {
-  kind: 'downtown' | 'home' | 'visit';
+  kind: 'downtown' | 'home' | 'visit' | 'errand';
+  /** plano 2, bloco 13: lugar (ida ou volta de um lugar aberto; recado num prédio) */
+  place?: string;
+  /** plano 2, bloco 13: o que fazer ao chegar (lugar aberto) ou o recado (prédio) */
+  plan?: string;
   goers: number[];
   mode: TravelMode;
   /** caminho pela rua, em pontos da cidade (x, z, x, z, ...) */
@@ -2466,7 +2559,7 @@ export type Command =
   | { type: 'saveOutfit'; folkId: number; occasion: Occasion; index: number; ensemble: Ensemble }
   | { type: 'dropOutfit'; folkId: number; occasion: Occasion; index: number }
   | { type: 'pickOutfit'; folkId: number; occasion: Occasion; index: number }
-  | { type: 'buyGarment'; garmentId: string }
+  | { type: 'buyGarment'; garmentId: string; where?: 'home' | 'store' }
   /** plano 2, bloco 10: compra um benefício com pontos de satisfação */
   | { type: 'buyPerk'; folkId: number; perkId: string }
   /** plano 2, bloco 10: troca o sonho de vida (só enquanto não realizou) */
@@ -2516,7 +2609,11 @@ export type Command =
   | { type: 'sellStored'; objectId: number }
   | { type: 'editFolk'; folkId: number; look?: Look; closet?: Closet; traits?: string[] }
   // bloco 16: centro da cidade (de táxi) e encontros
-  | { type: 'goDowntown'; folkIds: number[]; dateId?: number; mode?: TravelMode }
+  | { type: 'goDowntown'; folkIds: number[]; dateId?: number; mode?: TravelMode; place?: string; plan?: string }
+  /** plano 2, bloco 13: recado num prédio fechado (prefeitura, hospital, delegacia) */
+  | { type: 'runErrand'; folkIds: number[]; place: string; errand: string; mode: TravelMode }
+  /** plano 2, bloco 13: como se porta no trabalho ou na escola */
+  | { type: 'setStyle'; folkId: number; work?: WorkStyle; school?: SchoolStyle }
   | { type: 'goHome'; mode?: TravelMode }
   | { type: 'visitLot'; folkIds: number[]; lotId: number; mode: TravelMode }
   | { type: 'buyVehicle'; kind: OwnVehicle }

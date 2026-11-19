@@ -427,6 +427,8 @@ export class GameView {
     private readonly hud: Hud,
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+    // plano 2, bloco 13: o chão da cidade tem um buraco no lote mostrado (para a água aparecer)
+    this.renderer.localClippingEnabled = true;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     container.append(this.renderer.domElement);
@@ -572,7 +574,7 @@ export class GameView {
     const free = (x: number, y: number) =>
       x >= 0 && y >= 0 && x < grid.w && y < grid.h && floors[grid.floor[y * grid.w + x]]?.outdoor === true && !floors[grid.floor[y * grid.w + x]]?.yard && !occupied.has(`${x},${y}`);
     const hole = (x: number, y: number) => !!floors[grid.floor[y * grid.w + x]]?.water;
-    this.scenery = buildScenery(grid, free, hole, !!world.outing, cityOn(world));
+    this.scenery = buildScenery(grid, free, hole, !!world.outing && world.outing.venue === 'centro', cityOn(world));
     this.worldRoot.add(this.scenery, this.house.group);
     this.builtGrid = this.ctrl.gridVersion;
     this.wallState = '';
@@ -759,8 +761,12 @@ export class GameView {
       if (this.ctrl.screen === 'town') {
         if (p.down && Math.hypot(e.clientX - p.startX, e.clientY - p.startY) > CLICK_SLOP) p.dragged = true;
         if (p.down && p.dragged) this.pan(e.clientX - p.x, e.clientY - p.y);
-        else this.city.hover = this.mapLotAt(e.clientX, e.clientY);
-        el.style.cursor = this.city.hover ? 'pointer' : 'default';
+        else {
+          // plano 2, bloco 13: lugares da cidade também se escolhem no mapa
+          this.city.hoverPlace = this.mapPlaceAt(e.clientX, e.clientY);
+          this.city.hover = this.city.hoverPlace ? 0 : this.mapLotAt(e.clientX, e.clientY);
+        }
+        el.style.cursor = this.city.hover || this.city.hoverPlace ? 'pointer' : 'default';
         this.hud.setTooltip(0, 0, null);
         p.x = e.clientX;
         p.y = e.clientY;
@@ -812,8 +818,13 @@ export class GameView {
         this.pointer.down = false;
         this.pointer.building = false;
         if (!dragged) {
-          const lot = this.mapLotAt(e.clientX, e.clientY);
-          if (lot) this.ctrl.townLot = lot;
+          const place = this.mapPlaceAt(e.clientX, e.clientY);
+          const lot = place ? 0 : this.mapLotAt(e.clientX, e.clientY);
+          if (place) this.ctrl.townPlace = place;
+          else if (lot) {
+            this.ctrl.townLot = lot;
+            this.ctrl.townPlace = '';
+          }
         }
         return;
       }
@@ -1021,6 +1032,16 @@ export class GameView {
     const p = new THREE.Vector3();
     if (!this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p)) return 0;
     return this.city.lotAt(p);
+  }
+
+  /** Plano 2, bloco 13: lugar da cidade debaixo do mouse (no mapa). */
+  private mapPlaceAt(clientX: number, clientY: number): string {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const p = new THREE.Vector3();
+    if (!this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p)) return '';
+    return this.city.placeAt(p);
   }
 
   /** Plano 2, bloco 12: etiquetas do mapa e ícones da família, já na tela. */

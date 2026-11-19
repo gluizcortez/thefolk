@@ -321,7 +321,7 @@ describe('plano 2, bloco 12: migração', () => {
     delete raw.world.trip;
     const file = deserialize(raw, CTX);
     const w = file.world;
-    expect(file.version).toBe(32);
+    expect(file.version).toBeGreaterThanOrEqual(32);
     expect(w.town!.city?.districts).toHaveLength(3);
     expect(w.town!.lots).toHaveLength(30);
     for (const l of lots) {

@@ -645,6 +645,23 @@ andando. Ficou para o bloco 13: abrir lotes de outros lugares em detalhe.
 Pronto: testes de horários, de comportamento no trabalho mudando
 desempenho e de compras no mercado; capturas de 4 lugares.
 
+**Feito em 19/11/2026** (save v33, uma casa a menos que o plano). Nove
+lugares abertos na área pública e na praça, cada um com planta, móveis e
+planos do que fazer ao chegar: Praça do Coreto (coreto, churrasqueiras),
+biblioteca, academia com piscina pública (entrada ⟡ 12), mercado (cestas de
+6, 12 e 30 porções que vão para a despensa na volta), Casa & Cabide (roupas
+e móveis de mostruário), cinema (três filmes, encontro de casal), bar com
+palco (tocar por gorjeta), parque com lago e trapiches de pesca, além do
+centro do bloco 16. Prédios fechados: trabalho (jeito no turno: normal,
+duro, puxar o saco, com calma), escola (normal, estudar, fazer amigos),
+prefeitura (pagar contas, procurar emprego), hospital (consulta, doar
+sangue), delegacia (dar queixa de roubo, visita). Cada lugar tem horário,
+dias, lotação que muda com a hora e preço; o cartão no mapa mostra quem
+está dentro e quanto falta. Encontros em qualquer lugar aberto. Roupas do
+guarda-roupa chegam em casa no dia seguinte (frete ⟡ 6) ou se buscam na
+loja. Simplificações: a gente dos lugares é contada (lotação), não aparece
+andando; os prédios fechados não abrem lote.
+
 ## Bloco 14 — Cidade viva: rotina dos outros e história que anda sozinha (save v35)
 
 - **Rotina dos outros**: vizinhos e figurantes da cidade saem para trabalhar,

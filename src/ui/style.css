@@ -4470,3 +4470,46 @@ body.town-open .dock > *:not(.timewrap) {
 .family-line.bad b {
   color: #a0402c;
 }
+
+/* ---------- plano 2, bloco 13: lugares da cidade ---------- */
+
+/* plaquinha de lugar: clicável, com fundo (as de rio e bairro seguem só texto) */
+.town-tag.map-place.map-placed {
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: rgba(31, 27, 25, 0.62);
+  font-style: normal;
+  font-size: 11px;
+}
+
+.town-tag.map-place.map-placed.on,
+.town-tag.map-place.map-placed.hover {
+  background: var(--mustard);
+  color: var(--ink);
+  text-shadow: none;
+}
+
+.place-open {
+  color: #3f7a52;
+}
+
+.place-closed {
+  color: #b8342c;
+}
+
+.place-plans {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.place-plans .tab {
+  text-align: left;
+  border-radius: 6px;
+}
+
+.place-styles .tab {
+  font-size: 11px;
+}

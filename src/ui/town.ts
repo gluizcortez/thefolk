@@ -24,8 +24,18 @@ import {
   lotDoor,
   streetRoute,
   vehiclesOf,
+  crowdOf,
+  formatClock,
+  insideOf,
+  isAdult,
+  minutesToOpen,
+  minutesToShut,
+  placeDoor,
+  placeOpen,
+  SCHOOL_STYLES,
+  WORK_STYLES,
 } from '../sim';
-import type { Lot, TravelMode } from '../sim';
+import type { Folk, Lot, PlaceDef, SchoolStyle, TravelMode, WorkStyle } from '../sim';
 import { travelPicker, usableMode } from './travel';
 
 // Bloco 15: o painel da tela do bairro. Plaquinha em cima de cada lote, um
@@ -63,6 +73,10 @@ export class TownPanel {
   private bare = false;
   /** plano 2, bloco 11: na mudança, levar os móveis para o inventário */
   private pack = false;
+  /** plano 2, bloco 13: o que fazer no lugar e o recado escolhido */
+  private placePlan = '';
+  private errand = '';
+  private shownPlace = '';
 
   constructor(
     host: HTMLElement,
@@ -92,7 +106,13 @@ export class TownPanel {
       return;
     }
     const trip = this.ctrl.world.trip;
-    const key = `${this.ctrl.townVersion}|${this.ctrl.townLot}|${this.ctrl.world.household.funds}|${this.tab}|${this.bare}|${this.pack}|${trip?.from ?? 0}|${(this.ctrl.world.household.vehicles ?? []).join()}|${[...(this.visitors ?? [])].join()}|${this.visitMode}|${Math.floor(this.ctrl.world.tick / 30)}`;
+    if (this.ctrl.townPlace !== this.shownPlace) {
+      this.shownPlace = this.ctrl.townPlace;
+      this.placePlan = '';
+      this.errand = '';
+      this.visitors = null;
+    }
+    const key = `${this.ctrl.townVersion}|${this.ctrl.townLot}|${this.ctrl.townPlace}|${this.placePlan}|${this.errand}|${world_jobs(this.ctrl.world)}|${this.ctrl.world.household.funds}|${this.tab}|${this.bare}|${this.pack}|${trip?.from ?? 0}|${(this.ctrl.world.household.vehicles ?? []).join()}|${[...(this.visitors ?? [])].join()}|${this.visitMode}|${Math.floor(this.ctrl.world.tick / 30)}`;
     if (key !== this.shownKey) {
       this.shownKey = key;
       this.render();
@@ -116,6 +136,14 @@ export class TownPanel {
           });
         } else if (m.kind === 'folk' && id) {
           b.addEventListener('click', () => this.goToFolk(id));
+        } else if (m.kind === 'place' && m.place) {
+          // plano 2, bloco 13: a plaquinha do lugar abre o cartão dele
+          const place = m.place;
+          b.classList.add('map-placed');
+          b.addEventListener('click', () => {
+            this.ctrl.townPlace = place;
+            this.tab = 'lot';
+          });
         } else b.tabIndex = -1;
         this.tagsEl.append(b);
         this.tags.set(m.key, b);
@@ -133,7 +161,7 @@ export class TownPanel {
       b.style.left = `${(m.x * 100).toFixed(2)}%`;
       b.style.top = `${(m.y * 100).toFixed(2)}%`;
       b.classList.toggle('on', !!m.on);
-      b.classList.toggle('hover', m.kind === 'lot' && m.id === this.city.hover);
+      b.classList.toggle('hover', (m.kind === 'lot' && m.id === this.city.hover) || (m.kind === 'place' && !!m.place && m.place === this.city.hoverPlace));
     }
     for (const [key, b] of this.tags) {
       if (seen.has(key)) continue;
@@ -168,7 +196,9 @@ export class TownPanel {
       tabs.append(b);
     }
     this.head.append(tabs, back);
+    const place = this.ctrl.townPlace ? this.ctrl.sim.catalog.places?.[this.ctrl.townPlace] : undefined;
     if (this.tab === 'families') this.renderFamilies();
+    else if (place) this.renderPlace(place);
     else this.renderDetail(town.lots.find((l) => l.id === this.ctrl.townLot));
     // mural
     this.feed.replaceChildren(el('div', 'town-sub', t('town.feed')));
@@ -310,6 +340,207 @@ export class TownPanel {
     d.append(actions);
   }
 
+  /**
+   * Plano 2, bloco 13: o cartão de um lugar da cidade. Horário, lotação e
+   * preço; nos lugares abertos, quem vai, o que fazer lá e o jeito de ir; nos
+   * prédios fechados, quem está lá dentro (e até quando), como cada um se
+   * porta no trabalho ou na escola e os recados que dá para fazer.
+   */
+  private renderPlace(def: PlaceDef): void {
+    const d = this.detail;
+    d.replaceChildren();
+    const world = this.ctrl.world;
+    const tick = world.tick;
+    d.append(el('div', 'town-title', t(def.name)));
+    const open = placeOpen(def, tick);
+    const allDay = def.hours[0] === def.hours[1];
+    const days = !def.days ? '' : def.days.length === 5 ? ` · ${t('place.days.weekdays')}` : ` · ${t('place.days.notSunday')}`;
+    d.append(el('div', 'panel-note', `${allDay ? t('place.hoursAllDay') : t('place.hours', { open: def.hours[0], close: def.hours[1] })}${days}`));
+    const span = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, '0') : ''}` : `${m} min`);
+    const shut = minutesToShut(def, tick);
+    d.append(
+      el(
+        'div',
+        `town-line ${open ? 'place-open' : 'place-closed'}`,
+        open ? (allDay && shut >= 1440 ? t('place.openAllDay') : t('place.open', { time: span(shut) })) : t('place.closed', { time: span(minutesToOpen(def, tick)) }),
+      ),
+    );
+    if (def.kind === 'venue') {
+      d.append(el('div', 'panel-note', t('place.crowd', { n: crowdOf(def, tick), max: def.capacity })));
+      d.append(el('div', 'panel-note', def.fee ? t('place.fee', { fee: formatMoney(def.fee) }) : t('place.free')));
+      if (def.id === 'loja' && (world.household.pickup ?? []).length) d.append(el('div', 'town-line', t('place.pickup', { n: world.household.pickup!.length })));
+      this.renderGoPlace(d, def);
+      return;
+    }
+    // prédio fechado: quem está lá dentro
+    d.append(el('div', 'town-sub', t('place.inside')));
+    const inside = insideOf(world, this.ctrl.sim.catalog, def);
+    const list = el('ul', 'town-people');
+    for (const x of inside) {
+      const li = el('li');
+      li.append(el('b', '', x.folk.name), el('span', '', ` · ${t('place.leftTime', { time: formatClock(x.until) })}`));
+      list.append(li);
+    }
+    if (!inside.length) list.append(el('li', 'panel-note', t('place.nobodyInside')));
+    d.append(list);
+    if (def.building === 'work' || def.building === 'school') {
+      this.renderStyles(d, def.building);
+      return;
+    }
+    this.renderErrands(d, def);
+  }
+
+  /** Plano 2, bloco 13: como cada um se porta no trabalho (ou na escola); vale até mudar. */
+  private renderStyles(d: HTMLElement, kind: 'work' | 'school'): void {
+    const people = this.ctrl.sim.household().filter((f) => (kind === 'work' ? !!f.job : !!f.kid && (f.age === 'child' || f.age === 'teen')));
+    d.append(el('div', 'panel-note', t(kind === 'work' ? 'place.workHint' : 'place.schoolHint')));
+    if (!people.length) {
+      d.append(el('div', 'panel-note', t(kind === 'work' ? 'place.noWorkers' : 'place.noStudents')));
+      return;
+    }
+    for (const f of people) {
+      d.append(el('div', 'town-sub', f.name));
+      const row = el('div', 'town-tabs place-styles');
+      const styles: string[] = kind === 'work' ? WORK_STYLES : SCHOOL_STYLES;
+      const now = (kind === 'work' ? f.job?.style : f.kid?.style) ?? 'steady';
+      for (const st of styles) {
+        const b = el('button', 'tab', t(`style.${kind}.${st}`));
+        b.title = t(`style.${kind}.${st}.tip`);
+        b.classList.toggle('on', st === now);
+        b.addEventListener('click', () => {
+          const cmd = kind === 'work' ? { type: 'setStyle' as const, folkId: f.id, work: st as WorkStyle } : { type: 'setStyle' as const, folkId: f.id, school: st as SchoolStyle };
+          if (this.ctrl.cityCommand(cmd)) this.shownKey = '';
+        });
+        row.append(b);
+      }
+      d.append(row);
+    }
+  }
+
+  /** Plano 2, bloco 13: quem vai e o jeito de ir (lugar aberto ou recado). */
+  private pickGoers(d: HTMLElement): Folk[] {
+    const people = this.ctrl.sim.household().filter((f) => f.age !== 'baby');
+    const free = people.filter((f) => canGo(f));
+    const chosen = (this.visitors ??= new Set(free.filter((f) => f.id === this.ctrl.selectedFolkId).map((f) => f.id)));
+    for (const id of [...chosen]) if (!free.some((f) => f.id === id)) chosen.delete(id);
+    d.append(el('div', 'town-sub', t('place.who')));
+    const list = el('ul', 'town-people');
+    for (const f of people) {
+      const li = el('li');
+      const label = el('label', 'town-check');
+      const box = el('input');
+      box.type = 'checkbox';
+      box.checked = chosen.has(f.id);
+      box.disabled = !canGo(f);
+      box.addEventListener('change', () => {
+        if (box.checked) chosen.add(f.id);
+        else chosen.delete(f.id);
+        this.shownKey = '';
+      });
+      label.append(box, el('span', '', f.name + (f.away ? ` · ${t(f.away.trip ? 'visit.onStreet' : 'outing.away')}` : '')));
+      li.append(label);
+      list.append(li);
+    }
+    d.append(list);
+    return people.filter((f) => chosen.has(f.id));
+  }
+
+  private renderGoPlace(d: HTMLElement, def: PlaceDef): void {
+    const world = this.ctrl.world;
+    if (world.outing?.venue === def.id) {
+      d.append(el('div', 'panel-note', t('place.hereNow')));
+      return;
+    }
+    const home = activeLot(world);
+    if (!home || this.ctrl.houseEmpty) return;
+    if (world.trip || world.outing) {
+      d.append(el('div', 'panel-note', t('place.busy')));
+      return;
+    }
+    const goers = this.pickGoers(d);
+    // o que fazer ao chegar
+    d.append(el('div', 'town-sub', t('place.what')));
+    const plans = el('div', 'place-plans');
+    for (const p of [{ id: '', label: 'place.nothing' }, ...(def.plans ?? [])]) {
+      const b = el('button', `tab${this.placePlan === p.id ? ' on' : ''}`, t(p.label));
+      b.addEventListener('click', () => {
+        this.placePlan = p.id;
+        this.shownKey = '';
+      });
+      plans.append(b);
+    }
+    d.append(plans);
+    const plan = this.ctrl.sim.catalog.venues?.[def.id];
+    const length = plan ? streetRoute(world.town!, lotDoor(home, world.exit), placeDoor(def, plan.exit)).length : 0;
+    this.visitMode = usableMode(world, goers, length, this.visitMode);
+    d.append(
+      travelPicker(world, goers, length, this.visitMode, (m) => {
+        this.visitMode = m;
+        this.shownKey = '';
+      }),
+    );
+    const go = el('button', 'btn btn-go', t('place.go'));
+    go.disabled = goers.length === 0;
+    go.addEventListener('click', () => {
+      const ids = goers.map((f) => f.id);
+      if (this.ctrl.outingCommand({ type: 'goDowntown', folkIds: ids, mode: this.visitMode, place: def.id, ...(this.placePlan ? { plan: this.placePlan } : {}) })) {
+        this.ctrl.toast(t('place.went', { place: t(def.name) }));
+        this.visitors = null;
+      }
+    });
+    d.append(go, el('div', 'panel-note', t('place.dateHint')));
+  }
+
+  private renderErrands(d: HTMLElement, def: PlaceDef): void {
+    const world = this.ctrl.world;
+    const home = activeLot(world);
+    const errands = def.errands ?? [];
+    if (!errands.length || !home || this.ctrl.houseEmpty) return;
+    d.append(el('div', 'town-sub', t('place.errands')));
+    if (!this.errand || !errands.some((e) => e.id === this.errand)) this.errand = errands[0].id;
+    const list = el('div', 'place-plans');
+    for (const e of errands) {
+      const b = el('button', `tab${this.errand === e.id ? ' on' : ''}`);
+      b.append(el('b', '', t(e.label)), el('span', '', ` · ${e.cost ? t('place.errandCost', { minutes: e.minutes, cost: formatMoney(e.cost) }) : t('place.errandFree', { minutes: e.minutes })}`));
+      b.addEventListener('click', () => {
+        this.errand = e.id;
+        this.shownKey = '';
+      });
+      list.append(b);
+    }
+    d.append(list);
+    if (world.trip || world.outing) {
+      d.append(el('div', 'panel-note', t('place.busy')));
+      return;
+    }
+    const goers = this.pickGoers(d);
+    const length = streetRoute(world.town!, lotDoor(home, world.exit), placeDoor(def)).length;
+    this.visitMode = usableMode(world, goers, length, this.visitMode, true);
+    d.append(
+      travelPicker(
+        world,
+        goers,
+        length,
+        this.visitMode,
+        (m) => {
+          this.visitMode = m;
+          this.shownKey = '';
+        },
+        true,
+      ),
+    );
+    const errand = errands.find((e) => e.id === this.errand)!;
+    const go = el('button', 'btn btn-go', t('place.errandGo'));
+    go.disabled = goers.length === 0 || (!!errand.adult && !goers.some((f) => isAdult(f)));
+    go.addEventListener('click', () => {
+      if (this.ctrl.cityCommand({ type: 'runErrand', folkIds: goers.map((f) => f.id), place: def.id, errand: errand.id, mode: this.visitMode })) {
+        this.ctrl.toast(t('place.errandLeft', { errand: t(errand.label) }));
+        this.visitors = null;
+      }
+    });
+    d.append(go);
+  }
+
   /** Plano 2, bloco 12: clicar no ícone de alguém da família leva a câmera até ele (ou segue a viagem). */
   private goToFolk(id: number): void {
     const f = this.ctrl.sim.findFolk(id);
@@ -448,4 +679,9 @@ export class TownPanel {
     d.lastElementChild!.append(add);
     d.append(el('div', 'panel-note', t('bin.hint')));
   }
+}
+
+/** Plano 2, bloco 13: muda quando alguém troca de emprego, de jeito ou entra no prédio (o cartão refaz). */
+function world_jobs(world: { folks: Folk[] }): string {
+  return world.folks.map((f) => `${f.job?.style ?? ''}${f.kid?.style ?? ''}${f.away ? 'a' : ''}`).join('');
 }

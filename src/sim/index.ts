@@ -47,3 +47,4 @@ export * from './hobbies';
 export * from './persona';
 export * from './ties';
 export * from './clan';
+export * from './places';

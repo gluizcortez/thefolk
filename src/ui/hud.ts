@@ -28,6 +28,8 @@ import {
   TAXI_FARE,
   activeLot,
   centroDoor,
+  placeDoor,
+  placeOpen,
   cityOn,
   lotDoor,
   streetRoute,
@@ -703,7 +705,7 @@ export class Hud {
       const d = out.date;
       text = d
         ? t('outing.dating', { name: first(this.nameOf(d.host)), other: first(this.nameOf(d.guest)), score: world.tick - d.since < DATE_MIN_MINUTES ? '…' : '★'.repeat(dateGrade(dateScore(d))) })
-        : t('outing.here', { time: formatClock(out.since) });
+        : t('outing.here', { place: t(this.ctrl.sim.catalog.places?.[out.venue]?.name ?? 'place.downtown'), time: formatClock(out.since) });
       title = t('outing.dateHint');
     } else if (lastDate && world.tick - lastDate.tick < 6 * 60 && !party) {
       text = `${t('outing.lastDate')} ${'★'.repeat(lastDate.grade)}${'☆'.repeat(5 - lastDate.grade)}`;
@@ -1935,6 +1937,8 @@ export class Hud {
   /** Bloco 16: quem vai ao centro e com quem sair (encontro). */
   /** Plano 2, bloco 12: último jeito de ir escolhido no menu do passeio. */
   private outingMode: TravelMode = 'walk';
+  /** Plano 2, bloco 13: aonde ir (lugar aberto da cidade) */
+  private outingPlace = 'centro';
 
   openOutingMenu(x: number, y: number, picked?: Set<number>, dateId?: number): void {
     const world = this.ctrl.world;
@@ -1944,9 +1948,29 @@ export class Hud {
     this.menuEl.replaceChildren(el('div', 'menu-title', t('outing.title')));
     // plano 2, bloco 12: na cidade aberta, escolher como ir (o caminho é pela rua)
     const lot = activeLot(world);
-    const venue = this.ctrl.sim.catalog.venues?.centro;
-    const length = cityOn(world) && lot && venue ? streetRoute(world.town!, lotDoor(lot, world.exit), centroDoor(venue.exit)).length : 0;
+    // plano 2, bloco 13: na cidade, escolher o lugar (o encontro vale em qualquer um)
+    const catalog = this.ctrl.sim.catalog;
+    const places = cityOn(world) ? Object.values(catalog.places ?? {}).filter((p) => p.kind === 'venue') : [];
+    if (!places.some((p) => p.id === this.outingPlace)) this.outingPlace = 'centro';
+    const place = catalog.places?.[this.outingPlace];
+    const venue = catalog.venues?.[this.outingPlace];
+    const length = cityOn(world) && lot && venue ? streetRoute(world.town!, lotDoor(lot, world.exit), place ? placeDoor(place, venue.exit) : centroDoor(venue.exit)).length : 0;
     if (!length) this.menuEl.append(el('div', 'menu-note party-hint', t('outing.hint', { fare: formatMoney(TAXI_FARE) })));
+    if (places.length) {
+      this.menuEl.append(el('div', 'menu-group', t('outing.where')));
+      const where = el('select', 'outing-where');
+      for (const p of places) {
+        const o = el('option', '', `${t(p.name)}${placeOpen(p, world.tick) ? '' : ` · ${t('place.closedShort')}`}`);
+        o.value = p.id;
+        o.selected = p.id === this.outingPlace;
+        where.append(o);
+      }
+      where.addEventListener('change', () => {
+        this.outingPlace = where.value;
+        this.openOutingMenu(x, y, chosen, dateId);
+      });
+      this.menuEl.append(where);
+    }
     this.menuEl.append(el('div', 'menu-group', t('outing.who')));
     const box = el('div', 'party-list');
     for (const f of household) {
@@ -2020,7 +2044,7 @@ export class Hud {
     go.disabled = chosen.size === 0;
     go.addEventListener('click', () => {
       const date = dateId !== undefined && (household.some((f) => f.id === dateId) ? chosen.has(dateId) : true) ? dateId : undefined;
-      if (this.ctrl.outingCommand({ type: 'goDowntown', folkIds: ids, dateId: date, mode })) this.closeMenu();
+      if (this.ctrl.outingCommand({ type: 'goDowntown', folkIds: ids, dateId: date, mode, ...(length && this.outingPlace !== 'centro' ? { place: this.outingPlace } : {}) })) this.closeMenu();
       else this.openOutingMenu(x, y, chosen, dateId);
     });
     this.menuEl.append(go);
@@ -2294,7 +2318,7 @@ export class Hud {
     const placeOf = (f: Folk): string => {
       if (f.away?.trip) return t('hud.onStreet');
       if (f.away) return f.away.school ? t('place.school') : f.job ? t(careerOf(sim.catalog, f.job)?.name ?? 'place.work') : t('place.work');
-      if (world.outing) return t('place.downtown');
+      if (world.outing) return t(sim.catalog.places?.[world.outing.venue]?.name ?? 'place.downtown');
       if (f.collapsed > 0 || f.queue[0]?.interactionId === 'sleep') return t('place.asleep');
       return '';
     };
@@ -3827,7 +3851,7 @@ export class Hud {
       for (const f of Object.values(catalog.floors).sort((a, b) => a.price - b.price)) {
         // bloco 12: o vão não aparece; no andar de cima, a grama vira "sem piso"
         // bloco 13: piscina, caminho e deck ficam na aba Quintal
-        if (f.void || f.yard) continue;
+        if (f.void || f.yard || f.public) continue;
         const bare = f.outdoor && c.viewLevel > 0;
         const tex = f.outdoor ? 'grass' : FLOOR_ART.includes(f.id) ? f.id : 'wood';
         const price = f.price > 0 ? t('build.perTile', { price: formatMoney(f.price) }) : t('build.free');

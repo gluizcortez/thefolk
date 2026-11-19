@@ -14,6 +14,7 @@ import { TRAITS } from './traits';
 import { WISHES } from './wishes';
 import { TOPICS } from './topics';
 import { DISHES, GIFTS, VENUES } from './downtown';
+import { PLACES, PLACE_PLANS } from './places';
 import { DREAMS, PERKS } from './dreams';
 
 export const CATALOG: Catalog = {
@@ -38,5 +39,6 @@ export const CATALOG: Catalog = {
   topics: TOPICS,
   dishes: DISHES,
   gifts: GIFTS,
-  venues: VENUES,
+  venues: { ...VENUES, ...PLACE_PLANS },
+  places: PLACES,
 };

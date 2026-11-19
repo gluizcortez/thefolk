@@ -4,6 +4,7 @@ import { t } from '../i18n';
 import { GARMENTS, MAX_SETS, OCCASIONS, OPTIONAL_SLOTS, bandOf, chosenSet, ensembleProblems, legacyCloset, ownedGarments, pieceStyle, priceTier, shopFor, wearPiece } from '../sim/clothes';
 import type { Closet, ClothSlot, Ensemble, Occasion, Piece, PriceTier } from '../sim/clothes';
 import { formatMoney } from '../sim/economy';
+import { SHIPPING_FEE } from '../sim/places';
 import type { Age, Folk, Look, Wear } from '../sim/types';
 import { zonePicker } from './styleEditor';
 
@@ -36,6 +37,8 @@ export class WardrobePanel {
   private slot: ClothSlot = 'top';
   private zone = 'main';
   private sig = '';
+  /** plano 2, bloco 13: na cidade, a peça chega em casa amanhã ou espera na loja */
+  private where: 'home' | 'store' = 'home';
   private shots = new Map<string, string>();
   portraiter: Portraiter | null = null;
 
@@ -272,9 +275,27 @@ export class WardrobePanel {
     this.el.append(body);
 
     // ---------- loja ----------
-    const shop = shopFor(band).filter((x) => !owned.has(x.id));
+    const waiting = new Set([...(hh.pickup ?? []), ...(hh.shipping ?? []).map((x) => x.garment)]);
+    const shop = shopFor(band).filter((x) => !owned.has(x.id) && !waiting.has(x.id));
+    const city = !!this.ctrl.world.town?.city;
     if (shop.length) {
       this.el.append(el('div', 'style-section', t('wardrobe.shop')));
+      if (city) {
+        const row = el('div', 'style-row');
+        row.append(el('span', 'style-label', t('wardrobe.where')));
+        const chips = el('div', 'style-chips');
+        for (const w of ['home', 'store'] as const) {
+          const b = el('button', `chip${this.where === w ? ' on' : ''}`, t(`wardrobe.where.${w}`, { fee: formatMoney(SHIPPING_FEE) }));
+          b.addEventListener('click', () => {
+            this.where = w;
+            this.sig = '';
+            this.render();
+          });
+          chips.append(b);
+        }
+        row.append(chips);
+        this.el.append(row);
+      }
       for (const tier of TIERS) {
         const items = shop.filter((x) => priceTier(x.price) === tier);
         if (!items.length) continue;
@@ -283,9 +304,9 @@ export class WardrobePanel {
         const chips = el('div', 'style-chips');
         for (const item of items) {
           const b = el('button', 'chip', `${t(`garment.${item.id}`)} · ${formatMoney(item.price)}`);
-          b.disabled = item.price > hh.funds;
+          b.disabled = item.price + (city && this.where === 'home' ? SHIPPING_FEE : 0) > hh.funds;
           b.addEventListener('click', () => {
-            if (this.ctrl.commandOrExplain({ type: 'buyGarment', garmentId: item.id })) this.ctrl.toast(t('wardrobe.bought', { garment: t(`garment.${item.id}`) }));
+            if (this.ctrl.commandOrExplain({ type: 'buyGarment', garmentId: item.id, ...(city ? { where: this.where } : {}) })) this.ctrl.toast(t(city ? `log.garment${this.where === 'home' ? 'Shipped' : 'Pickup'}` : 'wardrobe.bought', { garment: t(`garment.${item.id}`) }));
             this.sig = '';
             this.render();
           });

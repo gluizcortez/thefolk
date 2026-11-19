@@ -20,7 +20,7 @@ import type { TownPlan } from './town';
 import { firstBillAfter, freshHousehold, seedNeighbors, seedRelations, seedWorkplaceTies } from './world';
 
 /** Aumente ao mudar o formato do World e registre a migração abaixo. */
-export const SAVE_VERSION = 32;
+export const SAVE_VERSION = 33;
 
 /** Dados de fora do núcleo que uma migração pode precisar (vêm de data/). */
 export interface MigrationContext {
@@ -511,6 +511,18 @@ const migrations: Record<number, Migration> = {
     h.vehicles ??= [];
     if (world.outing) world.outing.mode ??= 'taxi';
     if (ctx.town?.city && ctx.catalog) growCity(world, ctx.catalog, ctx.town);
+    return { ...save, world: world as unknown as Obj };
+  },
+  // plano 2, bloco 13: lugares da cidade. Nada some: o trabalho e a escola
+  // seguem no jeito normal, sem roupa esperando na loja nem queixa a fazer.
+  // Uma viagem pela metade (de um lugar que ainda não existia) acaba em casa.
+  32: (save) => {
+    const world = { ...(save.world as Obj) } as unknown as World;
+    const h = world.household as World['household'];
+    h.pickup ??= [];
+    h.shipping ??= [];
+    h.stolen ??= [];
+    if (world.outing) world.outing.bags ??= 0;
     return { ...save, world: world as unknown as Obj };
   },
 };

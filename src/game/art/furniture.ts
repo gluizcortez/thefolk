@@ -13,6 +13,7 @@ import { PAINT, PAL, mix, seeded, shade } from './palette';
 import { FURNITURE4 } from './furniture4';
 import { REWARD_ART } from './rewards';
 import { DOWNTOWN_ART } from './downtown';
+import { PLACE_ART } from './places';
 import { KID_ART } from './kids';
 import { YARD_ART, livingPot } from './yard';
 import { PERIL_ART } from './peril';
@@ -1390,7 +1391,7 @@ export function furnitureSpec(art: string): FurnitureSpec {
     if (!spec) KIT_SPECS.set(art, (spec = buildKit(kitDef.kit!, kitDef.size).spec));
     return spec;
   }
-  return SPECS[art] ?? MODULAR_ART[art] ?? HOBBY_ART[art] ?? FURNITURE4[art] ?? REWARD_ART[art] ?? KID_ART[art] ?? YARD_ART[art] ?? PERIL_ART[art] ?? DOWNTOWN_ART[art] ?? fallback;
+  return SPECS[art] ?? MODULAR_ART[art] ?? HOBBY_ART[art] ?? FURNITURE4[art] ?? REWARD_ART[art] ?? KID_ART[art] ?? YARD_ART[art] ?? PERIL_ART[art] ?? DOWNTOWN_ART[art] ?? PLACE_ART[art] ?? fallback;
 }
 
 /** Plano 2, bloco 8: o que muda a cara de um objeto (peças, estilo). */

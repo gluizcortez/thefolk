@@ -39,9 +39,19 @@ export const CENTRO_SIZE = { w: 24, h: 17 };
 export const CENTRO_DOOR = { x: 155.5, z: 82.9 };
 /** A avenida da ponte segue até aqui (depois dela, o fim da cidade). */
 export const AVENUE_END = 204;
-/** Área dos lugares públicos (o bloco 13 preenche) e a praça do coreto. */
-export const PUBLIC_AREA = { x0: 134, z0: 96, x1: 200, z1: 150 };
-export const SQUARE = { x0: -58, z0: 70, x1: -24, z1: 96 };
+/**
+ * Área dos lugares públicos e a praça do coreto. Plano 2, bloco 13: a área
+ * tem três ruas próprias (a Rua das Portas desce da avenida da ponte e cruza
+ * a Rua da Biblioteca e a Rua do Lago) e a praça ganhou a Rua da Praça, que
+ * sai da avenida do oeste. Os lotes de cada lugar ficam em data/places.ts.
+ */
+export const PUBLIC_AREA = { x0: 132, z0: 87, x1: 208, z1: 184 };
+export const SQUARE = { x0: -56, z0: 74, x1: -26, z1: 96 };
+export const DOORS_X = 136;
+export const LIBRARY_Z = 112;
+export const LAKE_Z = 158;
+export const PLAZA_Z = 100.9;
+export const PLACES_END = AVENUE_END;
 /** Até onde vai o chão da cidade. */
 export const CITY_BOUNDS = { x0: -110, z0: -60, x1: 250, z1: 220 };
 
@@ -118,6 +128,14 @@ export function cityStreets(town: Pick<Town, 'city' | 'street'>): Street[] {
   const last = streetZ(n - 1);
   out.push({ name: 'city.street.west', a: { x: WEST_X, z: streetZ(0) }, b: { x: WEST_X, z: last } });
   out.push({ name: 'city.street.east', a: { x: EAST_X, z: streetZ(0) }, b: { x: EAST_X, z: last } });
+  // plano 2, bloco 13: ruas dos lugares públicos e da praça (só na cidade)
+  if (town.city) {
+    out.push({ name: 'city.street.plaza', a: { x: SQUARE.x0 - 2, z: PLAZA_Z }, b: { x: WEST_X, z: PLAZA_Z } });
+    out.push({ name: 'city.street.doors', a: { x: DOORS_X, z: CENTRO_DOOR.z }, b: { x: DOORS_X, z: LAKE_Z } });
+    out.push({ name: 'city.street.library', a: { x: DOORS_X, z: LIBRARY_Z }, b: { x: PLACES_END, z: LIBRARY_Z } });
+    out.push({ name: 'city.street.lake', a: { x: DOORS_X, z: LAKE_Z }, b: { x: PLACES_END, z: LAKE_Z } });
+  }
+  // a avenida da ponte fica por último (o ponto do centro entra nela)
   out.push({ name: 'city.street.bridge', a: { x: EAST_X, z: CENTRO_DOOR.z }, b: { x: AVENUE_END, z: CENTRO_DOOR.z } });
   return out;
 }
@@ -342,7 +360,7 @@ export function bestMode(world: World, goers: Folk[], length: number): TravelMod
 export function tripState(trip: Trip, tick: number): { x: number; z: number; dx: number; dz: number; phase: 'going' | 'there' | 'back' } {
   const travel = Math.max(1, trip.arrive - trip.from);
   if (tick < trip.arrive) return { ...pointAlong(trip.points, (trip.length * (tick - trip.from)) / travel), phase: 'going' };
-  if (trip.kind !== 'visit' || trip.leave === undefined || trip.back === undefined) return { ...pointAlong(trip.points, trip.length), phase: 'there' };
+  if ((trip.kind !== 'visit' && trip.kind !== 'errand') || trip.leave === undefined || trip.back === undefined) return { ...pointAlong(trip.points, trip.length), phase: 'there' };
   if (tick < trip.leave) {
     const p = pointAlong(trip.points, trip.length);
     return { ...p, phase: 'there' };

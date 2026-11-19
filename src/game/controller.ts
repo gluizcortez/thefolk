@@ -270,6 +270,8 @@ export class GameController {
   screen: Screen = 'lot';
   /** bloco 15: lote escolhido na tela do bairro */
   townLot = 0;
+  /** plano 2, bloco 13: lugar escolhido no mapa ('' = nenhum; o cartão do lugar tem a vez sobre o do lote) */
+  townPlace = '';
   /** bloco 15: muda quando lotes ou famílias mudam (a tela do bairro refaz as casas) */
   townVersion = 0;
   /** plano 2, bloco 12: a câmera acompanha quem anda pela rua */
@@ -698,9 +700,9 @@ export class GameController {
   }
 
   /** Plano 2, bloco 12: visita a um vizinho, bicicleta e carro. */
-  cityCommand(cmd: Extract<Command, { type: 'visitLot' | 'buyVehicle' | 'sellVehicle' }>): boolean {
+  cityCommand(cmd: Extract<Command, { type: 'visitLot' | 'buyVehicle' | 'sellVehicle' | 'runErrand' | 'setStyle' }>): boolean {
     if (!this.commandOrExplain(cmd)) return false;
-    if (cmd.type === 'visitLot') this.startFollow();
+    if (cmd.type === 'visitLot' || cmd.type === 'runErrand') this.startFollow();
     return true;
   }
 

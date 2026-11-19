@@ -23,6 +23,8 @@ const floors: FloorDef[] = [
   { id: 'stonepath', name: 'floor.stonepath', price: 6, outdoor: true, yard: true, ambience: 2 },
   { id: 'deck', name: 'floor.deck', price: 12, outdoor: true, yard: true, ambience: 3 },
   { id: 'pool', name: 'floor.pool', price: 35, outdoor: true, yard: true, water: true, ambience: 4 },
+  // plano 2, bloco 13: o lago do parque (só nos lugares da cidade, não se compra)
+  { id: 'lake', name: 'floor.lake', price: 0, outdoor: true, water: true, ambience: 5, public: true },
 ];
 
 const coverings: CoveringDef[] = [

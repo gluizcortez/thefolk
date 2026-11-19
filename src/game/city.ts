@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { CENTRO } from '../data/downtown';
 import {
   CENTRO_AT,
   CENTRO_SIZE,
@@ -12,6 +11,9 @@ import {
   PUBLIC_AREA,
   RIVER,
   SQUARE,
+  buildingOf,
+  placeCenter,
+  placeSpot,
   STREET_WIDTH,
   activeLot,
   buildHome,
@@ -29,9 +31,9 @@ import {
   toLocal,
   tripState,
 } from '../sim';
-import type { Folk, Lot, LotHome, Place, Pt, World } from '../sim';
+import type { Folk, Lot, LotHome, Place, PlaceDef, Pt, World } from '../sim';
 import { t } from '../i18n';
-import { box, colorMat, cyl, setShadows, texMat, tileUV } from './art/build';
+import { box, colorMat, cyl, rod, setShadows, texMat, tileUV } from './art/build';
 import { objectArt } from './art/furniture';
 import { House, sceneZ } from './art/house';
 import { PAL, SKIN, seeded } from './art/palette';
@@ -74,6 +76,8 @@ export interface MapMark {
   y: number;
   /** ícone de folk: id do folk; etiqueta de lote: id do lote */
   id?: number;
+  /** plano 2, bloco 13: etiqueta de lugar (id do lugar) */
+  place?: string;
   on?: boolean;
   /** viagem: como vai (a pé, bicicleta...) */
   how?: string;
@@ -88,18 +92,23 @@ export class CityLayer {
   private pick = new THREE.Group();
   private hoverMark: THREE.Group;
   private selectMark: THREE.Group;
+  private hoverPlaceMark: THREE.Group;
+  private selectPlaceMark: THREE.Group;
   private arts = new Map<number, LotArt>();
-  private centro: { simple: THREE.Group; detail: THREE.Group | null } | null = null;
+  /** plano 2, bloco 13: os lugares da cidade (o centro é um deles), simples e detalhados */
+  private placeArts = new Map<string, { def: PlaceDef; simple: THREE.Group; detail: THREE.Group | null; center: Pt }>();
+  private venueHomes = new Map<string, LotHome>();
   private builtKey = '';
   private staticKey = '';
-  /** lote mostrado em detalhe pelo jogo ('centro' no passeio) */
-  private shown: number | 'centro' = 0;
+  /** lote mostrado em detalhe pelo jogo (id do lugar no passeio) */
+  private shown: number | string = 0;
   private place: Place = { x: 0, z: 0, flip: false };
   private moverKey = '';
   private moverModels: THREE.Group[] = [];
-  private venueHome: LotHome | null = null;
   /** lote sob o mouse no mapa (0 = nenhum) */
   hover = 0;
+  /** plano 2, bloco 13: lugar sob o mouse no mapa ('' = nenhum) */
+  hoverPlace = '';
   /** altura da vista no último quadro */
   viewHeight = 11;
 
@@ -107,7 +116,9 @@ export class CityLayer {
     this.root.add(this.stat, this.lotsRoot, this.movers, this.pick);
     this.hoverMark = frame(0xffffff, 0.5);
     this.selectMark = frame(PAL.mustard, 0.95);
-    this.pick.add(this.hoverMark, this.selectMark);
+    this.hoverPlaceMark = frame(0xffffff, 0.5);
+    this.selectPlaceMark = frame(PAL.mustard, 0.95);
+    this.pick.add(this.hoverMark, this.selectMark, this.hoverPlaceMark, this.selectPlaceMark);
     this.root.visible = false;
   }
 
@@ -142,8 +153,9 @@ export class CityLayer {
     if (!this.on) return;
     const town = world.town!;
     const lot = activeLot(world);
-    this.shown = world.outing ? 'centro' : (lot?.id ?? 0);
-    this.place = world.outing ? centroPlace() : lot ? lotPlace(lot) : { x: 0, z: 0, flip: false };
+    const venue = world.outing ? this.places().find((p) => p.id === world.outing!.venue) : undefined;
+    this.shown = world.outing ? world.outing.venue : (lot?.id ?? 0);
+    this.place = world.outing ? (venue ? placeSpot(venue) : centroPlace()) : lot ? lotPlace(lot) : { x: 0, z: 0, flip: false };
     // a cidade gira e anda para o lote mostrado ficar na origem
     if (this.place.flip) {
       this.root.rotation.y = Math.PI;
@@ -164,8 +176,47 @@ export class CityLayer {
     }
     this.updateDetail(target, viewHeight);
     this.updateMovers(world, tick);
+    punchGround(world.grid.w, world.grid.h);
     this.placeMark(this.hoverMark, this.ctrl.screen === 'town' && this.hover !== this.ctrl.townLot ? this.hover : 0);
-    this.placeMark(this.selectMark, this.ctrl.screen === 'town' ? this.ctrl.townLot : 0);
+    this.placeMark(this.selectMark, this.ctrl.screen === 'town' && !this.ctrl.townPlace ? this.ctrl.townLot : 0);
+    const onMap = this.ctrl.screen === 'town';
+    this.markPlace(this.hoverPlaceMark, onMap && this.hoverPlace !== this.ctrl.townPlace ? this.hoverPlace : '');
+    this.markPlace(this.selectPlaceMark, onMap ? this.ctrl.townPlace : '');
+  }
+
+  /** Plano 2, bloco 13: os lugares da cidade (do catálogo). */
+  places(): PlaceDef[] {
+    return Object.values(this.ctrl.sim.catalog.places ?? {});
+  }
+
+  private markPlace(mark: THREE.Group, id: string): void {
+    const p = id ? this.places().find((x) => x.id === id) : undefined;
+    mark.visible = !!p;
+    if (!p) return;
+    mark.position.set(p.rect.x + p.rect.w / 2, 0.08, p.rect.z + p.rect.h / 2);
+    mark.scale.set(p.rect.w + 1, 1, p.rect.h + 1);
+  }
+
+  /** Plano 2, bloco 13: lugar debaixo de um ponto local do chão ('' = nenhum). */
+  placeAt(local: THREE.Vector3): string {
+    if (!this.on) return '';
+    const c = this.toCity(local.x, local.z);
+    const p = this.places().find((x) => c.x >= x.rect.x - 0.5 && c.x <= x.rect.x + x.rect.w + 0.5 && c.z >= x.rect.z - 0.5 && c.z <= x.rect.z + x.rect.h + 0.5);
+    return p?.id ?? '';
+  }
+
+  /** Plano 2, bloco 13: o lote montado de um lugar aberto (cópia só para desenhar). */
+  private venueHome(id: string): LotHome | null {
+    const plan = this.ctrl.sim.catalog.venues?.[id];
+    if (!plan) return null;
+    let home = this.venueHomes.get(id);
+    if (!home) {
+      // monta numa cópia do mundo: os ids dos objetos não gastam os do jogo
+      const world = { ...this.ctrl.world, nextId: 1_000_000 } as World;
+      home = buildHome(world, this.ctrl.sim.catalog, plan).home;
+      this.venueHomes.set(id, home);
+    }
+    return home;
   }
 
   private clear(g: THREE.Group): void {
@@ -200,10 +251,7 @@ export class CityLayer {
       for (let x = RIVER.x0 - 2; x <= RIVER.x1 + 2; x += 1.6) parts.add(box(0.18, 0.85, 0.18, colorMat(0xd8d0bd), x, 0, z));
     }
     parts.add(box(RIVER.x1 - RIVER.x0 + 4, 0.6, STREET_WIDTH + 0.6, colorMat(0xa49c8a), (RIVER.x0 + RIVER.x1) / 2, -0.6, bz));
-    // praça do coreto
-    parts.add(square());
-    // área dos lugares públicos (o bloco 13 ocupa): cerca e placa
-    parts.add(publicArea());
+    // plano 2, bloco 13: a praça e a área pública viraram lugares (lotes com planta)
     // árvores, arbustos, postes e carros parados
     const rnd = seeded(1212);
     const merged = mergeByMaterial(parts);
@@ -259,8 +307,11 @@ export class CityLayer {
     }
     this.clear(this.lotsRoot);
     this.arts.clear();
-    if (this.centro?.detail) this.clear(this.centro.detail);
-    this.centro = null;
+    for (const art of this.placeArts.values()) {
+      this.clear(art.simple);
+      if (art.detail) this.clear(art.detail);
+    }
+    this.placeArts.clear();
     const town = world.town!;
     for (const lot of town.lots) {
       if (lot.id === this.shown) continue;
@@ -275,14 +326,30 @@ export class CityLayer {
       const [x0, z0, x1, z1] = lotRect(lot);
       this.arts.set(lot.id, { lot, simple: merged, detail: null, center: { x: (x0 + x1) / 2, z: (z0 + z1) / 2 } });
     }
-    if (this.shown !== 'centro') {
-      const simple = placed(centroPlace());
-      simple.add(downtownBlock(), centroSimple());
+    // plano 2, bloco 13: os lugares (o que está aberto no passeio é o lote do jogo)
+    for (const def of this.places()) {
+      if (def.id === this.shown) {
+        // em volta do centro aberto ficam os sobrados e a torre
+        if (def.id === 'centro') {
+          const block = placed(centroPlace());
+          block.add(downtownBlock());
+          const m = mergeByMaterial(block);
+          m.position.copy(block.position);
+          setShadows(m, true, true);
+          this.lotsRoot.add(m);
+        }
+        continue;
+      }
+      const simple = placed(placeSpot(def));
+      if (def.id === 'centro') simple.add(downtownBlock(), centroSimple());
+      else if (def.kind === 'venue') simple.add(venueSimple(this.venueHome(def.id), def, this.ctrl));
+      else simple.add(civicBuilding(def));
       const merged = mergeByMaterial(simple);
       merged.position.copy(simple.position);
+      merged.rotation.copy(simple.rotation);
       setShadows(merged, true, true);
       this.lotsRoot.add(merged);
-      this.centro = { simple: merged, detail: null };
+      this.placeArts.set(def.id, { def, simple: merged, detail: null, center: placeCenter(def) });
     }
   }
 
@@ -304,14 +371,15 @@ export class CityLayer {
       }
       art.simple.visible = !art.detail;
     }
-    const c = this.centro;
-    if (c) {
-      const center = { x: CENTRO_AT.x + CENTRO_SIZE.w / 2, z: CENTRO_AT.z + CENTRO_SIZE.h / 2 };
-      const want = near(center, DETAIL_RADIUS + 10);
+    for (const c of this.placeArts.values()) {
+      // prédio fechado não tem versão detalhada (a simples já tem fachada)
+      if (c.def.kind !== 'venue') continue;
+      const want = near(c.center, DETAIL_RADIUS + 10);
       if (want && !c.detail && budget > 0) {
-        c.detail = this.detailCentro();
+        budget--;
+        c.detail = this.detailVenue(c.def);
         this.lotsRoot.add(c.detail);
-      } else if (c.detail && !near(center, (DETAIL_RADIUS + 10) * 1.3)) {
+      } else if (c.detail && !near(c.center, (DETAIL_RADIUS + 10) * 1.3)) {
         this.lotsRoot.remove(c.detail);
         this.clear(c.detail);
         c.detail = null;
@@ -333,16 +401,13 @@ export class CityLayer {
     return g;
   }
 
-  /** O largo do centro, montado da planta (fora do passeio ninguém está lá). */
-  private detailCentro(): THREE.Group {
-    const g = placed(centroPlace());
-    if (!this.venueHome) {
-      // monta numa cópia do mundo: os ids dos objetos não gastam os do jogo
-      const world = { ...this.ctrl.world, nextId: 1_000_000 } as World;
-      this.venueHome = buildHome(world, this.ctrl.sim.catalog, CENTRO).home;
-    }
-    const home = this.venueHome;
-    g.add(lotGround(home.grid.w, home.grid.h, home, this.ctrl), downtownBlock());
+  /** Um lugar aberto montado da planta (fora do passeio ninguém está lá). */
+  private detailVenue(def: PlaceDef): THREE.Group {
+    const g = placed(placeSpot(def));
+    const home = this.venueHome(def.id);
+    if (!home) return g;
+    g.add(lotGround(home.grid.w, home.grid.h, home, this.ctrl));
+    if (def.id === 'centro') g.add(downtownBlock());
     this.addHouse(g, home);
     setShadows(g, true, true);
     return g;
@@ -459,10 +524,14 @@ export class CityLayer {
       add({ key: `d${i}`, kind: 'district', text: d.name }, { x: o.x + (far ? 1 : 2.5) * LOT_PITCH, z: streetZ(i) + (far ? 0 : 1) }, far ? 6 : 1);
       if (!far) add({ key: `s${i}`, kind: 'street', text: d.street }, { x: o.x - 4, z: streetZ(i) }, 0.2);
     });
-    add({ key: 'centro', kind: 'district', text: t('city.place.centro') }, { x: CENTRO_AT.x + CENTRO_SIZE.w / 2, z: CENTRO_AT.z - 4 }, 8);
     add({ key: 'rio', kind: 'place', text: t('city.place.river') }, { x: (RIVER.x0 + RIVER.x1) / 2, z: far ? 20 : 30 }, 0.2);
-    add({ key: 'praca', kind: 'place', text: t('city.place.square') }, { x: (SQUARE.x0 + SQUARE.x1) / 2, z: SQUARE.z0 - 2 }, 3);
-    add({ key: 'publico', kind: 'place', text: t('city.place.public') }, { x: (PUBLIC_AREA.x0 + PUBLIC_AREA.x1) / 2, z: (PUBLIC_AREA.z0 + PUBLIC_AREA.z1) / 2 }, 1);
+    // plano 2, bloco 13: cada lugar tem a sua plaquinha (clicar abre o cartão do lugar)
+    if (far) add({ key: 'publico', kind: 'district', text: t('city.place.public') }, { x: (PUBLIC_AREA.x0 + PUBLIC_AREA.x1) / 2, z: (PUBLIC_AREA.z0 + PUBLIC_AREA.z1) / 2 }, 6);
+    for (const def of this.places()) {
+      if (far && def.id !== 'centro' && def.id !== 'praca') continue;
+      const c = placeCenter(def);
+      add({ key: `p${def.id}`, kind: 'place', text: t(def.name), place: def.id, on: def.id === this.ctrl.townPlace }, def.id === 'centro' ? { x: c.x, z: def.rect.z - 4 } : c, def.kind === 'building' ? 9 : 5);
+    }
     if (!far) add({ key: 'avenida', kind: 'street', text: t('city.street.bridge') }, { x: 180, z: streetZ(1) }, 0.2);
     // número e família de cada lote (no mapa de perto)
     if (this.ctrl.screen === 'town' && this.viewHeight < 140) {
@@ -490,7 +559,12 @@ export class CityLayer {
       const st = tripState(world.trip, world.tick);
       return { x: st.x, z: st.z };
     }
-    if (f.away) return null;
+    // plano 2, bloco 13: no trabalho ou na escola, o ícone fica no prédio
+    if (f.away) {
+      const id = buildingOf(world, this.ctrl.sim.catalog, f);
+      const def = id ? this.places().find((p) => p.id === id) : undefined;
+      return def ? placeCenter(def) : null;
+    }
     const onShown = world.folks.includes(f);
     if (onShown) return this.toCity(f.x + 0.5, f.y + 0.5);
     const lot = activeLot(world);
@@ -635,10 +709,8 @@ function downtownBlock(): THREE.Group {
     sobrado(w + 4.5, 11, 7, 3, -Math.PI / 2),
     sobrado(4, -4, 8, 4, 0),
     sobrado(w - 4, -4, 8, 5, 0),
-    sobrado(2, front + 12, 9, 2, Math.PI),
-    sobrado(w / 2 + 2, front + 12, 7, 4, Math.PI),
-    sobrado(w - 1, front + 12, 8, 1, Math.PI),
   );
+  void front;
   return g;
 }
 
@@ -665,9 +737,33 @@ function ground(): THREE.Mesh {
   geo.computeVertexNormals();
   const uv = geo.getAttribute('uv');
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (W / 2), uv.getY(i) * (D / 2));
-  const m = new THREE.Mesh(geo, texMat('grass'));
+  // plano 2, bloco 13: material só do chão da cidade (ganha o buraco do lote mostrado)
+  const m = new THREE.Mesh(geo, GROUND_MAT());
   m.position.set(cx, 0, cz);
   return m;
+}
+
+let groundMat: THREE.MeshPhongMaterial | null = null;
+const GROUND_MAT = () => (groundMat ??= texMat('grass', { unique: true }));
+const holePlanes = [new THREE.Plane(), new THREE.Plane(), new THREE.Plane(), new THREE.Plane()];
+
+/**
+ * Plano 2, bloco 13: o chão da cidade fica um pouco abaixo do lote e, por
+ * cima de água (piscina, lago do parque), cobria a água. Um buraco do tamanho
+ * do lote mostrado (planos de corte, só onde todos cortam) deixa a água
+ * aparecer; o chão do próprio lote cobre o resto.
+ */
+export function punchGround(w: number, h: number): void {
+  const mat = GROUND_MAT();
+  holePlanes[0].set(new THREE.Vector3(-1, 0, 0), 0);
+  holePlanes[1].set(new THREE.Vector3(1, 0, 0), -w);
+  holePlanes[2].set(new THREE.Vector3(0, 0, -1), 0);
+  holePlanes[3].set(new THREE.Vector3(0, 0, 1), -h);
+  if (mat.clippingPlanes !== holePlanes) {
+    mat.clippingPlanes = holePlanes;
+    mat.clipIntersection = true;
+    mat.needsUpdate = true;
+  }
 }
 
 /** Pista, calçadas dos dois lados (com o vão dos cruzamentos) e faixa do meio. */
@@ -725,87 +821,108 @@ function streetArt(a: Pt, b: Pt, all: { a: Pt; b: Pt }[], index: number): THREE.
   return g;
 }
 
-/** Praça do coreto: piso de pedra, coreto, bancos e árvores. */
-function square(): THREE.Group {
+/**
+ * Plano 2, bloco 13: um lugar aberto de longe. Água, caminhos e deck pintados
+ * no chão, o prédio como caixa com telhado e uma faixa colorida na fachada.
+ */
+function venueSimple(home: LotHome | null, def: PlaceDef, ctrl: GameController): THREE.Group {
   const g = new THREE.Group();
-  const { x0, z0, x1, z1 } = SQUARE;
-  const w = x1 - x0;
-  const d = z1 - z0;
-  const paving = new THREE.Mesh(new THREE.PlaneGeometry(w, d), texMat('stone', { color: 0xe6dcc6 }));
-  tileUV(paving, w / 2, d / 2);
-  paving.rotation.x = -Math.PI / 2;
-  paving.position.set(x0 + w / 2, 0.01, z0 + d / 2);
-  g.add(paving);
-  const cx = x0 + w / 2;
-  const cz = z0 + d / 2;
-  g.add(cyl(3.6, 3.8, 0.6, 8, colorMat(0xf0e8d6), cx, 0, cz));
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2;
-    g.add(cyl(0.12, 0.12, 2.6, 6, colorMat(0xf3efe2), cx + Math.cos(a) * 3.2, 0.6, cz + Math.sin(a) * 3.2));
+  if (!home) return g;
+  const floors = ctrl.sim.catalog.floors;
+  const { grid } = home;
+  const flat: Record<string, number> = { stonepath: 0xe2d8c4, deck: 0xb98a5a, pool: 0x6fb6d8, lake: 0x5d9fbf };
+  for (let y = 0; y < grid.h; y++) {
+    for (let x = 0; x < grid.w; x++) {
+      const f = grid.floor[y * grid.w + x];
+      const tone = flat[f] ?? (floors[f]?.outdoor ? undefined : 0xcfc6b4);
+      if (tone === undefined) continue;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), colorMat(tone));
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(x + 0.5, 0.012, y + 0.5);
+      g.add(m);
+    }
   }
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(4.2, 2, 8), texMat('roof'));
-  roof.position.set(cx, 3.2 + 1, cz);
-  g.add(roof);
-  const rnd = seeded(77);
-  for (const [x, z] of [
-    [x0 + 3, z0 + 3],
-    [x1 - 3, z0 + 3],
-    [x0 + 3, z1 - 3],
-    [x1 - 3, z1 - 3],
-    [x0 + 3, cz],
-    [x1 - 3, cz],
-  ]) g.add(tree(x, z, 1.2, rnd));
-  for (const [x, z] of [
-    [cx - 8, cz],
-    [cx + 8, cz],
-    [cx, cz - 7],
-    [cx, cz + 7],
-  ]) g.add(box(2, 0.45, 0.6, texMat('pine', { color: 0xc89a6a }), x, 0, z));
-  // caminho até a avenida
-  const path = new THREE.Mesh(new THREE.PlaneGeometry(-14 - STREET_WIDTH / 2 - x1, 3), texMat('stone', { color: 0xe6dcc6 }));
-  tileUV(path, 4, 1);
-  path.rotation.x = -Math.PI / 2;
-  path.position.set((x1 + (-14 - STREET_WIDTH / 2)) / 2, 0.01, cz);
-  g.add(path);
+  const house = simpleHouse(home, { id: def.id.length * 7, district: 0 } as Lot, 'family');
+  g.add(house);
+  // faixa colorida em cima da porta (cor do lugar)
+  const tones: Record<string, number> = { praca: 0x3f7a52, biblioteca: 0x7d55ad, academia: 0x2f8a86, mercado: 0xc9382f, loja: 0xe8b830, cinema: 0x8e1f1f, bar: 0xd27a2a, parque: 0x3f9455 };
+  const box3 = new THREE.Box3().setFromObject(house);
+  if (!box3.isEmpty()) g.add(box(Math.min(6, box3.max.x - box3.min.x), 0.5, 0.2, colorMat(tones[def.id] ?? 0x2f4f86), (box3.min.x + box3.max.x) / 2, 2.2, box3.max.z + 0.1));
+  // praça e parque: árvores e o coreto de longe
+  if (def.id === 'praca') {
+    g.add(cyl(1.8, 1.9, 0.55, 8, colorMat(0xc9b896), 15, 0, 7), cyl(0.05, 2.0, 1.0, 8, colorMat(0x3f7a52), 15, 2.8, 7));
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      g.add(cyl(0.08, 0.08, 2.3, 6, colorMat(0xf3efe2), 15 + Math.cos(a) * 1.6, 0.55, 7 + Math.sin(a) * 1.6));
+    }
+  }
+  if (def.id === 'praca' || def.id === 'parque') {
+    const rnd = seeded(def.rect.w * 13);
+    for (const o of home.objects) if (o.defId === 'ipe') g.add(tree(o.x + 0.5, o.y + 0.5, 1.1, rnd));
+  }
   return g;
 }
 
-/** Área cercada que o bloco 13 vai ocupar com os lugares públicos. */
-function publicArea(): THREE.Group {
+/**
+ * Plano 2, bloco 13: prédio fechado (trabalho, escola, prefeitura, hospital,
+ * delegacia). Caixa com andares, janelas em grade na fachada, porta e um
+ * enfeite de cada um (a cruz do hospital, a cúpula da prefeitura, o relógio
+ * da escola, o giroflex da delegacia). A frente fica em +z (o lote gira).
+ */
+function civicBuilding(def: PlaceDef): THREE.Group {
   const g = new THREE.Group();
-  const { x0, z0, x1, z1 } = PUBLIC_AREA;
-  const wood = colorMat(0xd7c39f);
-  const rail = (ax: number, az: number, bx: number, bz: number) => {
-    const len = Math.hypot(bx - ax, bz - az);
-    const r = box(len, 0.08, 0.08, wood, (ax + bx) / 2, 0.6, (az + bz) / 2);
-    r.rotation.y = -Math.atan2(bz - az, bx - ax);
-    g.add(r);
-    for (let i = 0; i <= len; i += 3) {
-      const k = i / len;
-      g.add(box(0.12, 0.9, 0.12, wood, ax + (bx - ax) * k, 0, az + (bz - az) * k));
-    }
-  };
-  rail(x0, z0, x1, z0);
-  rail(x0, z1, x1, z1);
-  rail(x0, z0, x0, z1);
-  rail(x1, z0, x1, z1);
-  // placa de "em breve"
-  const cx = (x0 + x1) / 2;
-  g.add(box(0.15, 2, 0.15, colorMat(0x8a6a48), cx - 1.8, 0, z0 + 1), box(0.15, 2, 0.15, colorMat(0x8a6a48), cx + 1.8, 0, z0 + 1), box(4.4, 1.4, 0.1, colorMat(0xf2b632), cx, 1.4, z0 + 1));
-  // montes de terra e cones de obra
-  for (const [x, z, r] of [
-    [x0 + 12, z0 + 14, 2.4],
-    [x1 - 16, z1 - 12, 3],
-  ]) {
-    const mound = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), colorMat(0x9a7350));
-    mound.scale.y = 0.45;
-    mound.position.set(x, 0, z);
-    g.add(mound);
+  const { w, h } = def.rect;
+  const floorsBy: Record<string, number> = { work: 6, school: 2, cityhall: 2, hospital: 4, police: 2 };
+  const n = floorsBy[def.building ?? 'work'] ?? 2;
+  const bw = w - 2;
+  const bd = h - 4;
+  const hgt = n * 3;
+  const wall = colorMat(def.color ?? 0xe8dcc0);
+  const cx = w / 2;
+  const cz = 1 + bd / 2;
+  // pátio de pedra na frente e um gramado em volta
+  const paving = new THREE.Mesh(new THREE.PlaneGeometry(w, 3), texMat('stone', { color: 0xe2d8c4 }));
+  tileUV(paving, w / 2, 1.5);
+  paving.rotation.x = -Math.PI / 2;
+  paving.position.set(cx, 0.012, h - 1.5);
+  g.add(paving, box(bw, hgt, bd, wall, cx, 0, cz), box(bw + 0.4, 0.3, bd + 0.4, colorMat(0xd8d0bd), cx, hgt, cz));
+  const glass = colorMat(0x2c3b4a, { gloss: 0.8 });
+  const front = 1 + bd + 0.03;
+  for (let f = 0; f < n; f++) {
+    for (let x = 1.2; x < bw - 0.6; x += 1.8) g.add(box(1.0, 1.2, 0.06, glass, cx - bw / 2 + x + 0.2, f * 3 + 1.0, front));
   }
-  for (let i = 0; i < 5; i++) {
-    const c = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.7, 8), colorMat(0xe8762f));
-    c.position.set(cx - 4 + i * 2, 0.35, z0 + 3.5);
-    g.add(c);
+  g.add(box(2.0, 2.3, 0.08, colorMat(0x6b3a22), cx, 0, front + 0.02), box(3.2, 0.25, 1.2, colorMat(0xd8d0bd), cx, 2.4, front + 0.6));
+  switch (def.building) {
+    case 'hospital': {
+      const red = colorMat(0xc9382f, { emissive: 0x6a1410, emissiveIntensity: 0.3 });
+      g.add(box(0.6, 2.0, 0.1, red, cx, hgt - 2.6, front + 0.05), box(2.0, 0.6, 0.1, red, cx, hgt - 1.9, front + 0.05));
+      break;
+    }
+    case 'cityhall': {
+      for (let x = -2; x <= 2; x += 1.33) g.add(cyl(0.22, 0.25, 3.0, 10, colorMat(0xf3efe2), cx + x, 0, front + 1.0));
+      g.add(box(5.4, 0.35, 1.6, colorMat(0xf3efe2), cx, 3.0, front + 0.6));
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(2.0, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), colorMat(0x3f7a52, { gloss: 0.5 }));
+      dome.position.set(cx, hgt + 0.3, cz);
+      g.add(dome, rod([cx, hgt + 2.3, cz], [cx, hgt + 3.5, cz], 0.04, colorMat(0x26282b)), box(0.7, 0.45, 0.02, colorMat(0x2f8a86), cx + 0.35, hgt + 3.2, cz));
+      break;
+    }
+    case 'school': {
+      g.add(cyl(0.7, 0.7, 0.1, 16, colorMat(0xf3efe2), cx, hgt - 1.2, front + 0.05).rotateX(Math.PI / 2));
+      g.add(box(0.06, 0.5, 0.04, colorMat(0x26282b), cx, hgt - 1.25, front + 0.12), box(0.4, 0.06, 0.04, colorMat(0x26282b), cx + 0.18, hgt - 1.25, front + 0.12));
+      // quadra no fundo
+      g.add(box(bw * 0.6, 0.02, 2.2, colorMat(0x5d8f6e), cx, 0, 0.2));
+      break;
+    }
+    case 'police': {
+      g.add(box(1.6, 0.4, 0.1, colorMat(0x2f4f86), cx, 2.75, front + 0.7), cyl(0.18, 0.18, 0.3, 10, colorMat(0x4a8fe0, { emissive: 0x2050c0, emissiveIntensity: 0.8 }), cx + 1.5, hgt + 0.3, cz));
+      g.add(box(4, 1.3, 2, colorMat(0x26282b), cx - bw / 2 + 2.5, 0, h - 1.4), box(4.1, 0.5, 2.05, colorMat(0xf3efe2), cx - bw / 2 + 2.5, 0.6, h - 1.4));
+      break;
+    }
+    case 'work': {
+      // torre de vidro: faixas de janela contínuas e a placa no alto
+      g.add(box(bw * 0.6, 0.8, 0.1, colorMat(0x26282b), cx, hgt - 1.0, front + 0.06), box(bw * 0.55, 0.4, 0.12, colorMat(0xf2b632, { emissive: 0x7a5a10, emissiveIntensity: 0.4 }), cx, hgt - 0.8, front + 0.08));
+      break;
+    }
   }
   return g;
 }
