@@ -10,9 +10,9 @@ import type { Catalog, ObjectDef, Rotation, Vec, World, WorldObject } from './ty
 /** símbolo da moeda (tostões) */
 export const CURRENCY = '⟡';
 /** parte fixa das contas */
-export const BILL_BASE = 25;
+export const BILL_BASE = 20;
 /** parte das contas que depende do valor dos móveis da casa */
-export const BILL_RATE = 0.012;
+export const BILL_RATE = 0.008;
 
 export function formatMoney(value: number): string {
   const n = Math.round(value);

@@ -335,6 +335,7 @@ import {
 } from './downtown';
 import { spotNear } from './marriage';
 import {
+  AID,
   BAILIFF_HOUR,
   GROCERIES,
   MAID,
@@ -342,6 +343,8 @@ import {
   TAKEOUT,
   besideTiles,
   buyAtFair,
+  needsAid,
+  sendAid,
   consumeFor,
   creditSeizure,
   deliverPaper,
@@ -610,7 +613,7 @@ const COOL_HOUR = 4;
 export const MAX_QUEUE = 8;
 
 /** Bloco 3: tostões por minuto de lâmpada acesa (entra na conta de luz). */
-export const LIGHT_RATE = 0.012;
+export const LIGHT_RATE = 0.006;
 /** Chance de apagar a luz ao sair de um cômodo vazio, sem traço que diga outra coisa. */
 export const SAVER_DEFAULT = 0.4;
 
@@ -1907,6 +1910,11 @@ export class Sim {
     // bloco 13: jardineiro de manhã cedo, se houver planta para cuidar
     if (minute === GARDENER.hour * 60 && house.gardener && anyone && hasPlants(world, this.catalog)) {
       this.spawnService('gardener', null, GARDENER.fee);
+    }
+    // plano 2, bloco 15: casa sem comida e sem dinheiro ganha a cesta da prefeitura
+    if (minute % 60 === 0 && minute >= AID.from * 60 && minute <= AID.to * 60 && anyone && !world.outing && needsAid(world, this.catalog)) {
+      sendAid(world);
+      this.log('log.aidSent');
     }
     if (minute === BAILIFF_HOUR * 60 && anyone && seizableBills(world).length > 0) {
       if (this.spawnService('bailiff', null, 0)) this.log('log.bailiffComing');

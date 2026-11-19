@@ -64,6 +64,8 @@ const DETAIL_ZOOM = 70;
 const CROWD_ZOOM = 120;
 const CROWD_PER_PLACE = 10;
 const DETAIL_RADIUS = 48;
+/** Plano 2, bloco 15: na imagem leve, só os vizinhos de porta ficam detalhados. */
+const LITE_RADIUS = 24;
 /** Chão além dos limites da cidade (para a borda não aparecer de longe). */
 const GROUND_PAD = 160;
 
@@ -157,6 +159,9 @@ export class CityLayer {
   // ---------- montagem ----------
 
   /** Chamado a cada quadro: refaz o que mudou, troca o detalhe por perto e move quem anda na rua. */
+  /** Plano 2, bloco 15: imagem leve (menos lotes detalhados em volta) */
+  lite = false;
+
   sync(target: THREE.Vector3, viewHeight: number, tick: number): void {
     this.viewHeight = viewHeight;
     const world = this.ctrl.world;
@@ -370,13 +375,14 @@ export class CityLayer {
     const at = this.toCity(target.x, target.z);
     let budget = 1;
     const near = (c: Pt, r: number) => viewHeight < DETAIL_ZOOM && Math.hypot(c.x - at.x, c.z - at.z) < r;
+    const radius = this.lite ? LITE_RADIUS : DETAIL_RADIUS;
     for (const art of this.arts.values()) {
-      const want = near(art.center, DETAIL_RADIUS);
+      const want = near(art.center, radius);
       if (want && !art.detail && budget > 0) {
         budget--;
         art.detail = this.detailLot(art.lot);
         this.lotsRoot.add(art.detail);
-      } else if (art.detail && !near(art.center, DETAIL_RADIUS * 1.3)) {
+      } else if (art.detail && !near(art.center, radius * 1.3)) {
         this.lotsRoot.remove(art.detail);
         this.clear(art.detail);
         art.detail = null;
@@ -386,12 +392,12 @@ export class CityLayer {
     for (const c of this.placeArts.values()) {
       // prédio fechado não tem versão detalhada (a simples já tem fachada)
       if (c.def.kind !== 'venue') continue;
-      const want = near(c.center, DETAIL_RADIUS + 10);
+      const want = near(c.center, radius + 10);
       if (want && !c.detail && budget > 0) {
         budget--;
         c.detail = this.detailVenue(c.def);
         this.lotsRoot.add(c.detail);
-      } else if (c.detail && !near(c.center, (DETAIL_RADIUS + 10) * 1.3)) {
+      } else if (c.detail && !near(c.center, (radius + 10) * 1.3)) {
         this.lotsRoot.remove(c.detail);
         this.clear(c.detail);
         c.detail = null;
@@ -409,8 +415,21 @@ export class CityLayer {
     const h = home?.grid.h ?? LOT_H;
     g.add(lotGround(w, h, home, this.ctrl), lotEdge(w, h, lot.col * 7 + lot.side));
     if (home) this.addHouse(g, home);
-    setShadows(g, true, true);
-    return g;
+    return this.flatten(g);
+  }
+
+  /**
+   * Plano 2, bloco 15: o lote detalhado vira poucas malhas (uma por material).
+   * Antes cada parede, telha e móvel de fora era uma chamada de desenho, e a
+   * vista do bairro passava de seis mil chamadas por quadro.
+   */
+  private flatten(g: THREE.Group): THREE.Group {
+    const merged = mergeByMaterial(g, true);
+    merged.position.copy(g.position);
+    merged.rotation.copy(g.rotation);
+    this.clear(g);
+    setShadows(merged, true, true);
+    return merged;
   }
 
   /** Um lugar aberto montado da planta (fora do passeio ninguém está lá). */
@@ -421,8 +440,7 @@ export class CityLayer {
     g.add(lotGround(home.grid.w, home.grid.h, home, this.ctrl));
     if (def.id === 'centro') g.add(downtownBlock());
     this.addHouse(g, home);
-    setShadows(g, true, true);
-    return g;
+    return this.flatten(g);
   }
 
   private addHouse(g: THREE.Group, home: LotHome): void {
@@ -1191,15 +1209,43 @@ function frame(color: number, opacity: number): THREE.Group {
  * material). Malhas com vários materiais (caixas com faces diferentes)
  * ficam como estão.
  */
-function mergeByMaterial(root: THREE.Group): THREE.Group {
+function mergeByMaterial(root: THREE.Group, visibleOnly = false): THREE.Group {
   root.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
   const buckets = new Map<THREE.Material, THREE.BufferGeometry[]>();
   const keep: THREE.Mesh[] = [];
-  root.traverse((o) => {
+  // bloco 15: no lote detalhado, o que a casa escondeu (paredes do recorte) fica de fora
+  const walk = visibleOnly ? root.traverseVisible.bind(root) : root.traverse.bind(root);
+  const push = (mat: THREE.Material, geo: THREE.BufferGeometry) => {
+    const list = buckets.get(mat) ?? [];
+    list.push(geo);
+    buckets.set(mat, list);
+  };
+  walk((o) => {
     if (!(o instanceof THREE.Mesh)) return;
     if (Array.isArray(o.material)) {
-      keep.push(o);
+      // bloco 15: caixa com uma cor por face vira um pedaço por material
+      if (!visibleOnly || o.geometry.groups.length === 0) {
+        keep.push(o);
+        return;
+      }
+      const whole = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+      whole.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+      for (const group of o.geometry.groups) {
+        const mat = o.material[group.materialIndex ?? 0];
+        if (!mat) continue;
+        const piece = new THREE.BufferGeometry();
+        for (const name of ['position', 'normal', 'uv']) {
+          const attr = whole.getAttribute(name) as THREE.BufferAttribute | undefined;
+          if (!attr) continue;
+          const n = attr.itemSize;
+          piece.setAttribute(name, new THREE.Float32BufferAttribute(Array.from(attr.array as Float32Array).slice(group.start * n, (group.start + group.count) * n), n));
+        }
+        if (!piece.getAttribute('uv')) piece.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(group.count * 2), 2));
+        if (!piece.getAttribute('normal')) piece.computeVertexNormals();
+        push(mat, piece);
+      }
+      whole.dispose();
       return;
     }
     let geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
@@ -1210,9 +1256,7 @@ function mergeByMaterial(root: THREE.Group): THREE.Group {
     if (!geo.getAttribute('normal')) geo.computeVertexNormals();
     geo.morphAttributes = {};
     geo.clearGroups();
-    const list = buckets.get(o.material) ?? [];
-    list.push(geo);
-    buckets.set(o.material, list);
+    push(o.material, geo);
     geo = null as unknown as THREE.BufferGeometry;
   });
   const out = new THREE.Group();

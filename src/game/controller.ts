@@ -156,6 +156,7 @@ const NOTICES: [string, string][] = [
   ['log.stolen', 'burglar'],
   ['log.burglarCaught', 'coin'],
   ['log.burglarEscaped', 'burglar'],
+  ['log.aidSent', 'hunger'],
   ['log.starving', 'hunger'],
   ['log.starvingLast', 'hunger'],
   ['log.adrift', 'swim'],

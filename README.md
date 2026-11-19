@@ -13,20 +13,17 @@ paredes cheios de textura, móveis arredondados com esmalte e cromados, e gente
 de proporção adulta realista. Tudo é modelado em 3D e pintado por código, sem
 assets externos e sem copiar nenhum jogo.
 
-**Estado atual: fatia 5** (as cinco fatias do plano: casa, necessidades e IA;
-emprego, dinheiro e modo compra; vizinhos e relações; modo construção; e agora
-carreiras e relações aprofundadas: chefe e colegas de verdade, eventos no
-expediente, aumento, frilas, negócio próprio, fofoca, reputação, ciúme e
-término). A moeda do jogo é o **tostão** (⟡).
+**Estado atual: os dois planos de evolução estão completos.** O primeiro
+([docs/plano-evolucao.md](docs/plano-evolucao.md)) trouxe a casa, as
+necessidades, o trabalho, as relações, a obra, o bairro e as gerações; o
+segundo ([docs/plano-evolucao-2.md](docs/plano-evolucao-2.md)) pôs o jogador
+no comando de tudo, deixou o tempo mais lento, trocou a HUD, aprofundou as
+atividades, fez folks, roupas e objetos por peças, refez o criador com traços
+e abriu a cidade de Arribada com o bairro dentro dela. A moeda do jogo é o
+**tostão** (⟡).
 
-> Saves antigos são convertidos sozinhos ao abrir. Da fatia 1: a casa ganha
-> ⟡ 1.500, o folk começa sem emprego e com as habilidades no zero. Da fatia 2:
-> a casa continua com quem morava nela, a vizinhança passa a existir e
-> ninguém conhece ninguém ainda. Da fatia 3: as janelas que eram só desenho
-> viram janelas de verdade, nos mesmos lugares, e a casa fica com a mesma cara.
-> Da fatia 4: chegam os três chefes e mais uma colega na vizinhança, os colegas
-> de trabalho já se conhecem entre si, e quem tinha emprego segue no mesmo
-> cargo, sem aumento. Ninguém começa com fama nem fofoca.
+> Saves antigos são convertidos sozinhos ao abrir, de qualquer versão (o save
+> atual é o v34).
 
 ## Rodando
 
@@ -42,678 +39,210 @@ npm run preview  # serve o dist/ localmente
 
 ## Como jogar
 
-- **Clique em um objeto** para abrir o menu de interações; a escolha vira a
-  ação atual do folk (ele larga o que fazia com uma saída limpa: levanta,
-  deixa o prato onde está, encerra a conversa). Com **`Shift`** apertado, a
-  escolha vai para o fim da fila (até 8 ações).
-- **Clique no chão** para mandar o folk até ali (o `Shift` vale igual).
-- A **fila** fica embaixo, no centro. O ✕ cancela qualquer item, inclusive o atual.
-  Itens tracejados são reflexos (ouvir quem puxou conversa, acender a luz,
-  correr do fogo).
-- **Ninguém da família age sozinho** (plano 2, bloco 1). Sem ordem, o folk fica
-  no lugar com gestos de espera: olha em volta, se espreguiça, cruza os braços,
-  coça a cabeça, põe a mão na barriga com fome, boceja com sono, se remexe
-  apertado. Os balões avisam o que ele quer. Visitas, prestadores, figurantes,
-  bebês e as outras famílias do bairro continuam com vida própria; a carona do
-  trabalho e o ônibus da escola ainda chamam sozinhos.
-- **Relógio** no topo: pausa, normal (1 minuto de jogo por segundo), rápido (3),
-  muito rápido (10) e **pular** (60), que só acende com todos da casa dormindo,
-  fora ou no meio de algo longo e volta ao normal sozinho quando alguém fica
-  livre. Atalhos: `Espaço` ou `0` (pausa), `1`, `2`, `3`, `4`.
-- **Arraste** para mover a câmera, **role** para aproximar. `Esc` fecha o menu.
-- **Gire a câmera** em passos de 90° com `Q` e `E` ou com os botões ⟲ ⟳ no canto
-  superior esquerdo.
-- O botão **Paredes** alterna entre em corte (some só o que fica na frente da
-  câmera), baixas e inteiras.
-- Passar o mouse num objeto só desenha um contorno no chão (nada cresce).
-- **Dinheiro**: o saldo fica no relógio, ao lado do dia da semana. Passe o mouse
-  para ver as contas na caixa de correio e quando chega a próxima; um selinho
-  ✉ no saldo avisa que tem conta esperando. Lanche e ligações custam alguns
-  tostões.
-- **Trabalho**: botão no cartão do folk (ou clique no saldo). Os classificados
-  mostram três carreiras; aceite uma vaga e, uma hora antes do turno, o folk vai
-  sozinho até a calçada pegar a condução. Ele some de casa durante o turno e
-  volta com o pagamento. Se você cancelar a ida, ou ele estiver desmaiado, ele
-  falta. O painel mostra horário, desempenho, próximo cargo e as habilidades que
-  faltam para a promoção. Dá para trocar de área ou pedir demissão.
-- **Habilidades**: botão no cartão do folk. Culinária, raciocínio, criatividade,
-  lábia e fôlego sobem usando objetos (o menu de cada objeto mostra qual
-  habilidade ele treina). De mau humor o treino rende metade.
-- **Modo compra**: botão **Comprar** ou tecla `B`. O tempo para. Escolha um item
-  no catálogo e clique no chão; o chão fica verde onde cabe e vermelho onde não
-  cabe. `R` gira, clique direito ou `Esc` desiste. Clicar em um objeto da casa
-  abre Mover, Girar e Vender (a venda devolve 70% do valor).
-- **Modo construção**: botão **Construir** ou tecla `C`. O tempo para. Quatro
-  abas:
-  - **Paredes**: arraste de um canto do chão a outro para levantar uma linha
-    de parede (⟡ 14 o metro; trecho que já existe não é cobrado). "Derrubar"
-    apaga paredes, portas e janelas pelo mesmo arraste, de graça e sem
-    reembolso.
-  - **Portas e janelas**: clique numa parede (⟡ 90 a porta, ⟡ 70 a janela).
-    Porta deixa passar; janela não, mas clareia o **ambiente** de quem está
-    a até três tiles (até três janelas contam).
-  - **Pisos**: clique num tile ou arraste um retângulo; oito pisos, de ⟡ 8 a
-    ⟡ 15 o tile. Grama tira o piso (de graça) e o tile volta a ser quintal.
-  - **Revestimentos**: clique numa face de parede para revestir só aquele
-    lado; com `Shift`, o cômodo inteiro. Oito acabamentos, de ⟡ 3 a ⟡ 9.
-  Antes de soltar, a prévia mostra a obra em verde (dá) ou vermelho (não dá),
-  com o custo e o motivo ao lado do mouse. No modo construção o **botão
-  direito** arrasta a câmera. **Desfazer** (`Ctrl+Z`) volta a última obra e
-  devolve o que ela custou, até 40 passos.
-  O jogo recusa obra que prenda alguém sem saída para a rua, que deixe um
-  objeto sem lado para usar ou que passe parede no meio de um móvel. Cômodo
-  vazio pode ficar fechado (a porta vem depois). Paredes podem ir até a divisa
-  do lote.
-- **Moradores**: o jogo novo começa com dois, Tomé Varanda e Lia Sacada, que
-  dividem a casa há pouco tempo. Troque quem você controla pelas fichas acima
-  do cartão do folk, com `Tab` ou clicando no outro e escolhendo "Controlar".
-- **Conversas**: clique em outra pessoa para abrir o menu de conversa, separado
-  em amizade, trabalho, romance e provocação. O que aparece depende de como o
-  seu folk vê o outro: quem não se conhece só se cumprimenta; abraço pede
-  amizade; beijo e pedido de namoro pedem romance. O outro pode não topar, e a
-  chance depende de como *ele* vê o seu folk, dos traços dos dois, das
-  lembranças e do humor. Depois de cada conversa, sobe uma etiqueta com o que
-  mudou ("Amizade +4") ou "não topou".
-- **Relações**: botão no cartão do folk. Mostra todo mundo que ele conhece, com
-  três barras separadas (amizade, romance e respeito, de -100 a 100), o que o
-  outro sente de volta e as lembranças marcantes (primeiro beijo, briga feia,
-  desabafo...). Sem contato, amizade e romance esfriam devagar.
-- **Vizinhança**: dez vizinhos aparecem para dar um oi de dia, de vez em
-  quando, e vão embora sozinhos. Para chamar alguém que já conhece, use o
-  telefone ("Convidar alguém para vir") ou o botão Convidar no painel de
-  relações. Visitas agem por conta própria: não usam cama nem chuveiro e não
-  gastam o dinheiro da casa. Dá para pedir que vão embora, e quem tem amizade
-  60 ou mais pode ser chamado para morar junto (até quatro moradores; traz o
-  emprego junto).
-- **Chefe e colegas**: cada carreira tem um chefe e colegas que moram na
-  vizinhança (podem até aparecer para visitar). No primeiro dia o folk conhece
-  todo mundo. O painel Trabalho mostra a equipe e como cada um vê o seu folk.
-  Cada turno rende um pouco de amizade com os colegas, e chefe e colegas
-  ganham ou perdem respeito conforme o turno foi. O desempenho passa a contar
-  também o respeito do chefe e o clima com os colegas.
-- **Promoção e demissão**: além do desempenho e das habilidades, o chefe
-  precisa respeitar o folk (o painel diz quanto falta). Chefe que não suporta
-  o folk demite mesmo com desempenho razoável.
-- **Eventos no expediente**: quase todo turno acontece algo (prazo apertado,
-  colega que rouba o crédito, almoço, fiscalização, crítico de jornal,
-  apresentação para a diretoria...). O jogo pausa e mostra um cartão com as
-  escolhas; as que dependem de sorte mostram a chance. Cada escolha mexe em
-  desempenho, necessidades, relações, habilidades ou dinheiro, e algumas viram
-  fofoca. Sem resposta em uma hora de jogo, o folk decide sozinho pelos traços.
-  São 16 eventos, alguns só de uma carreira.
-- **Pedir aumento**: no painel Trabalho. O pedido é feito ao chefe no fim do
-  próximo turno; a chance (mostrada) depende de desempenho, respeito do chefe,
-  lábia e fama. Cada aumento dá +10% (até +50%, zera na promoção). Negado, o
-  chefe fica com o pé atrás. Um pedido a cada três dias.
-- **Troca de área**: quem já subiu na carreira entra na nova num cargo acima
-  do primeiro, se as habilidades permitirem (até um abaixo do cargo atual).
-- **Frilas**: aba Frilas do painel Trabalho. Toda manhã, às 6h, o mural traz
-  três ofertas (planilha, cartaz, marmitas, bolo de casamento, discurso...),
-  cada uma com habilidade mínima, prazo e o objeto onde se faz. Pegue uma e
-  clique no objeto ("Fazer o frila"). Quem sabe mais termina antes e ganha um
-  extra; estourar o prazo suja o nome.
-- **Negócio próprio**: aba Negócio. Três opções (padaria no fogão, letreiros
-  no cavalete ou escrivaninha, escritório de contas na escrivaninha). Abrir
-  custa e larga o emprego. "Cuidar do negócio" sobe o capricho; o caixa fecha
-  todo dia às 21h com fregueses conforme capricho, habilidade e fama, menos a
-  despesa do dia. Fechar devolve 25% do investimento.
-- **Fofoca e reputação**: brigas, traições, namoros, términos, promoções,
-  demissões e feitos no trabalho viram notícia. Quem viu sabe; depois a
-  notícia anda sozinha, uma vez por dia, de amigo em amigo pela vizinhança, e
-  também no papo dentro de casa (há a conversa "Fofocar"). Cada pessoa que fica
-  sabendo mexe na fama de quem é o assunto e na opinião de quem ouviu. A fama
-  aparece no painel Relações, com o que o folk anda ouvindo, e muda a chance
-  de os outros toparem conversa, os fregueses do negócio e o aumento.
-  Fofoqueiros espalham mais; ninguém espalha podre de si mesmo nem de quem é
-  muito amigo.
-- **Ciúme, exclusividade e término**: gesto romântico com alguém que não é o
-  namorado é traição. Quem namora e vê de perto (ou fica sabendo pela fofoca)
-  sente ciúme: o romance despenca, nascem lembranças amargas sobre os dois e,
-  se não sobrar muito, termina. Quem namora firme resiste a flerte e não sai
-  flertando por conta própria. Dá para terminar pela conversa, e namoro que
-  esfria demais acaba sozinho.
-- **Lembranças guiam a IA**: com mágoa acumulada o folk evita papo amigável
-  com aquela pessoa e pode partir para a briga; com boas lembranças procura
-  mais. "Pedir desculpas" aparece para quem guarda mágoa e, aceito, deixa uma
-  lembrança boa. Vizinho magoado não aparece sem avisar e topa menos convite.
-- **Casa viva (bloco 1)**: chuveiro, privada, pia e fogão sujam com o uso;
-  TV, som, fogão, chuveiro, privada, gravador e bicicleta gastam e quebram
-  (fumacinha e faísca). Quem come deixa prato na mesa, banho e acidente deixam
-  poça, e a lixeira da cozinha enche: cheia, fede e o lixo vai para o chão.
-  Clique no objeto para **Limpar**, **Consertar** ou **Fazer revisão** (só
-  aparece quando há o que fazer) e na bagunça para recolher. O prato vai para
-  a pia; o saco de lixo vai para o latão da calçada. Objeto quebrado não deixa
-  usar o resto. A IA limpa e conserta sozinha, com mais vontade se o traço
-  pede (caseiro, caprichoso) e menos se não (agitado, desleixado), e nada de
-  faxina de mau humor.
-- **Jeito e Capricho**: habilidades novas. Jeito sobe consertando, fazendo
-  revisão, lendo o manual de consertos na estante ou mexendo na bancada de
-  ferramentas; com Jeito abaixo de 3 o conserto sai **na gambiarra**
-  (remendado com fita: quebra de novo mais cedo) e às vezes dá choque leve.
-  Capricho sobe limpando e recolhendo: limpa mais rápido e suja menos.
-- **Manias de casa**: bagunça e sujeira derrubam o Ambiente de quem está por
-  perto, muito mais para quem é caprichoso ou caseiro. Quem se incomoda e
-  recolhe o prato de outro morador reclama e guarda a lembrança "deixou
-  bagunça para eu limpar".
-- **Cômodos (bloco 3)**: o Ambiente agora sai do cômodo inteiro onde o folk
-  está (a região fechada por paredes, portas e janelas): enfeites e móveis,
-  sujeira e bagunça, tamanho (apertado pesa), janelas, luz, piso e
-  revestimento e cantos vazios. O mesmo sofá vale muito mais numa sala bonita
-  do que num corredor. O quadro de necessidades mostra o nome do cômodo,
-  sugerido pelo uso ("Cozinha e sala", "Quarto", "Ateliê"), a nota e a luz;
-  passe o mouse para ver a conta. Cada traço tem um gosto: o caseiro ama
-  cômodo cheio, o reservado prefere quarto pequeno, o agitado e o tagarela
-  gostam de espaço, o romântico gosta da meia-luz de abajur à noite.
-- **Dia e noite (bloco 3)**: o sol nasce entre 5h e 7h e se põe entre 17h30
-  e 21h. De dia a luz entra pelas janelas (cômodo sem janela fica na
-  penumbra); à noite a casa escurece, e cômodo escuro derruba o Ambiente.
-  Abajur e **luminária de teto** têm **Acender a luz** e **Apagar a luz**;
-  com a IA ligada, quem vai usar algo num cômodo escuro acende a luz antes,
-  quem vai dormir apaga a do quarto e quem sai de um cômodo vazio apaga ou
-  não conforme o traço (o caprichoso quase sempre, o desleixado quase
-  nunca). Lâmpada acesa entra na conta de luz.
-- **Quadros, tapetes e luz de teto (bloco 3)** são objetos de compra: quadro
-  e relógio penduram na parede atrás do tile (o fantasma gira sozinho para a
-  parede), tapete vai rente ao chão e não fecha passagem, luminária de teto
-  só dentro de cômodo. Parede com quadro pendurado não pode ser derrubada.
-- **Catálogo em faixas (bloco 4)**: cada função (cama, sofá, poltrona,
-  cadeira, mesa, chuveiro, privada, geladeira, fogão, TV, som, abajur,
-  estante) tem versão **barata**, **média** e **cara** (⟡, ⟡⟡, ⟡⟡⟡ no
-  catálogo, com filtro por faixa). A cara enche mais rápido, dá conforto
-  junto, melhora o cômodo e gasta menos; a barata quebra mais e enfeia. A IA
-  prefere a melhor quando pode escolher. São 70 objetos em 10 categorias.
-- **Criar família (bloco 5)**: jogo novo (ou o primeiro, sem save) abre a
-  tela de criar família: sobrenome da casa e de 1 a 8 moradores com nome,
-  pele, cor e corte de cabelo, rosto (liso, sardas, óculos), corpo (magro,
-  médio, forte), roupa do dia, de festa, pijama e traje de banho, até 2
-  traços e o **mês de nascimento**. O atalho **Família pronta** traz Tomé e
-  Lia de sempre. Quem mora junto já começa amigo.
-- **Temperamento em cinco eixos (bloco 5)**: **Ordem**, **Expansão**,
-  **Pique**, **Graça** e **Afeto**, de 0 a 10, com 25 pontos para distribuir.
-  Ordem arruma e sente a bagunça; Expansão perde Social mais rápido e puxa
-  conversa; Pique liga menos para conforto e treina Forma e Jeito mais
-  rápido; Graça enjoa mais rápido e cria, e quem tem pouca Graça é sério e
-  aprende Lógica; Afeto alto é gentil e Afeto baixo provoca e briga. O eixo
-  alto também puxa a IA para o que combina (malhar, pintar, ler). Tudo em 5 é
-  neutro. A cada duas semanas de jogo, o hábito mexe um ponto: quem limpa
-  muito ganha Ordem, quem conversa muito ganha Expansão. O painel de
-  habilidades mostra o temperamento e o mês.
-- **Mês de nascimento (bloco 5)**: doze meses com nome de coisa de casa
-  (Chaleira, Pião, Lampião, Pipa, Novelo, Bússola, Sino, Martelo, Concha,
-  Balão, Ninho, Faísca). Cada um sugere um temperamento e combina ou dá
-  atrito com alguns outros, o que soma na afinidade como um traço a mais.
-- **Roupas e mãos (bloco 5)**: o **guarda-roupa** troca a roupa de sempre
-  (dia, festa, pijama, banho); na cama o folk está de pijama, no chuveiro de
-  roupão, na banheira de hidromassagem de traje de banho, e ninguém vai
-  trabalhar de pijama. Prato, livro, telefone e pano de limpeza aparecem na
-  mão de quem come, lê, liga e limpa.
-- **Humor que manda (bloco 6)**: de mau humor, ou com fome, sono, banheiro,
-  banho ou conforto no fim, o folk **recusa** ordens de esforço (estudar,
-  treinar, frila, negócio): cruza os braços, balança a cabeça e o balão
-  mostra o motivo; o menu já marca "sem vontade". Comer, dormir e limpar ele
-  sempre topa. Pique alto aguenta mais antes de recusar. A IA também não pega
-  no pesado de mau humor.
-- **Balões (bloco 6)**: cartõezinhos sobre a cabeça mostram o que o folk quer
-  (necessidade baixa), se está gostando da conversa (verde ou vermelho),
-  reclamação de bagunça por perto (mais em quem tem Ordem), saudade de alguém
-  querido que não aparece há dois dias, desejo cumprido e despertador. Passe
-  o mouse no folk para ler o balão em palavras. Cansado, o rosto fica de
-  pálpebra caída e a cabeça pesa.
-- **Sono com horário (bloco 6)**: quem trabalha calcula a hora de deitar
-  para acordar descansado e larga a diversão quando passa da hora; o
-  **despertador** (no painel de trabalho, ligado por padrão) toca duas horas
-  antes do turno. Ninguém pega no sono apertado para o banheiro ou com fome.
-- **Desejos do dia e ânimo (bloco 6)**: às 6h cada morador sorteia até três
-  desejos pequenos pelo temperamento e pelos traços (papo ou carinho com
-  alguém, cozinhar, ler, jogar, suar a camisa, aprender uma habilidade, banho
-  demorado, telefonar, receber visita, arrumar a casa, comprar algo novo).
-  Aparecem no cartão do folk; a IA procura cumpri-los. Cumprir dá diversão,
-  conforto e um ponto de **ânimo** (losangos, até 9; os três do dia dão um a
-  mais). Com 3 de ânimo, **Inspirar** dá quatro horas de treino em dobro sem
-  recusa.
-- **Cartões de aviso (bloco 6)**: algo quebrou, conta chegou, campainha,
-  promoção, demissão, desmaio e falta ao trabalho viram cartões no canto
-  direito, que ficam até fechar (ou uns 25 segundos).
-- **Cores**: sofás, poltronas, cadeiras e camas têm cores para escolher no
-  rodapé do catálogo antes de pôr no chão.
-- **Depreciação e desfazer**: no dia da compra o objeto vale o que custou (e
-  vender devolve tudo); na virada do dia perde 15% e depois vai perdendo com
-  o uso, até 30% do preço. O menu do objeto mostra quanto vale hoje. O botão
-  **Desfazer** (ou Ctrl+Z) no modo compra desfaz compras (devolve tudo),
-  vendas e mudanças de lugar até você sair do modo.
-- **Mesa e cadeiras separadas**: cadeira virada para uma mesa vira lugar à
-  mesa. Quem pega refeição, lanche ou comida pronta leva o prato até o lugar
-  livre mais perto e come sentado, com conforto a mais; comendo junto com
-  alguém, ganha social e amizade. Sem mesa, come de pé como antes.
-- **Atividades a dois**: mesa de xadrez, mesa de carteado, videogame, ofurô,
-  piano (a quatro mãos), luneta (só de noite), saco de pancada, vitrola e
-  TV de projeção. Sozinho dá para usar; com outro folk na mesma atividade,
-  os dois ganham diversão e social a mais, a amizade sobe e fica a lembrança
-  "nos divertimos juntos". Quem está à toa tem vontade de entrar no jogo que
-  alguém começou.
-- **Objeto querido**: depois de umas 20 horas de uso, o objeto vira o
-  querido de quem mais usou: usar dá um pouco mais de diversão e conforto, e
-  vender (ou perder para a penhora) deixa a pessoa triste.
-- **Na parede**: prateleira com enfeites e espelho de corpo inteiro (ensaiar
-  discurso treina Lábia).
-- **Despensa (bloco 2)**: a geladeira guarda porções (até 24 por geladeira;
-  o menu mostra quantas sobram). Refeição e cozinhar no fogão gastam uma
-  porção; sem estoque só sobra o lanche ou pedir comida. A casa começa com 16.
-- **Telefone → Pedir um serviço**: **mercado** (12 porções, pago na hora,
-  chega em uma ou duas horas, entre 8h e 21h), **comida pronta** (3 porções,
-  das 10h às 23h, prometida para uma hora: se atrasa, sai pela metade; paga na
-  porta, com gorjeta), **faxineira** (vem todo dia às 9h, cobra a diária ao
-  terminar; o mesmo item dispensa) e **técnico** (conserta tudo o que quebrou
-  sem gambiarra e revisa o que está gasto; cobra visita mais hora). Com a
-  geladeira vazia e fome, a IA pede sozinha.
-- **Campainha**: visitas, entregador, faxineira e técnico tocam e esperam do
-  lado de fora da porta da frente. Clique em quem está na porta para
-  **convidar para entrar**, **dispensar** ou **receber a entrega**; com a IA
-  ligada alguém da casa larga o que faz e atende. Ninguém atendeu: a visita
-  vai embora chateada ("me deixou plantado na porta"), o mercado e a comida
-  ficam na porta, faxineira e técnico entram com a chave.
-- **Caixa de correio** na calçada: as contas chegam como cartas (luz, água e
-  móveis, com vencimento em três dias) e são pagas ali. Conta vencida há mais
-  de três dias traz o **oficial de penhora** às 10h: ele entra sem tocar,
-  carimba e leva os móveis de mais valor até cobrir a dívida (e o bairro fica
-  sabendo). A IA paga as contas sozinha quando tem dinheiro.
-- **Jornal**: chega às 6h na calçada. Quem pega lê uma notícia do bairro (a
-  fofoca também sai no jornal) e abre os **classificados do dia**: as vagas de
-  emprego só aparecem no painel de trabalho depois disso. Jornal não
-  recolhido vira papel velho acumulando (até 4).
-- **Feira de sábado**: de 6h às 10h, a caixa de correio oferece "Comprar na
-  feira da rua": 12 porções mais baratas que o mercado, para quem vai a pé.
-- **Prestadores são vizinhos**: Zeca (entregador), Marta (faxineira), Ivo
-  (técnico) e Plácido (oficial de penhora) têm traços, relações e lembranças
-  como qualquer um. Marta é fofoqueira: se a casa estava uma bagunça, conta
-  por aí sobre quem mais sujou.
-- **Som (bloco 7)**: tudo é sintetizado na hora, sem arquivo de som. Passos
-  mudam com o piso; cada ação tem o seu som (descarga, chuveiro, fogão,
-  geladeira, TV, videogame, teclado, pano, conserto, telefone); campainha,
-  carta, caixa registradora na compra, moedas na venda, martelo e pincel na
-  obra. Piano, teclado e flauta tocam notas de verdade (e erram com pouca
-  Criatividade). Cada modo tem a sua música, composta enquanto você joga.
-- **Folquês (bloco 7)**: os folks falam uma língua inventada, cada um com a
-  sua voz (o Pique acelera, o corpo forte engrossa). Conversa alegre sobe no
-  fim, briga acelera e desce, carinho sai devagar e baixinho; quem ouve
-  responde de vez em quando, e a recusa vira resmungo.
-- **Rádio de verdade (bloco 7)**: rádio, caixa de som e jukebox têm Ligar o
-  som, Trocar de estação e Desligar. As estações **Brisa** (calma),
-  **Chiclete** (pop alegre) e **Trovão** (batida forte) tocam de verdade, com
-  notinhas da cor da estação subindo do aparelho. Cada folk tem a sua
-  preferida (o menu do som diz qual): dançar com ela diverte mais, com a que
-  não gosta, menos; dançar com o som desligado liga na preferida. Som ligado
-  gasta luz e atrapalha quem dorme no mesmo cômodo; quem vai dormir desliga.
-- **Volume (bloco 7)**: o botão ♪ abre volumes de geral, música, efeitos e
-  vozes, e silenciar; a tecla M silencia. Fica guardado no navegador.
-- **Jogos salvos (bloco 7)**: **Salvar** grava na vaga em uso; **Jogos** abre
-  as três vagas com nome (clique para mudar), dia, dinheiro, quem mora e uma
-  miniatura da casa, para salvar em outra vaga, abrir ou apagar. **Exportar
-  arquivo** baixa o jogo num `.folk.json` e **Importar arquivo** abre um
-  arquivo exportado numa vaga livre (saves de versões antigas são
-  convertidos). O jogo salva sozinho a cada 30 segundos na vaga em uso e
-  continua de onde parou ao reabrir; o save de antes do bloco 7 vira a vaga 1.
+Este guia é do jogo como ele está agora, no fim do segundo plano. A história
+de como cada parte chegou fica no [Roteiro](#roteiro).
 
-- **Dez carreiras (bloco 8)**: Repartição, Cozinha de restaurante, Ateliê
-  gráfico, Posto de saúde, Oficina de reparos, Trupe da Lona, Observatório do
-  morro, Câmara do bairro, Clube de várzea e Brigada de socorro, cada uma com
-  dez cargos, horário, dias, salário e exigências de três habilidades **e de
-  amigos da família**. O jornal traz quatro vagas por dia.
-- **Amigos da família (bloco 8)**: gente de fora de quem alguém da casa gosta
-  de verdade (amizade 50 ou mais), contada uma vez só. Aparece no cartão de
-  relações (com ★ em quem conta) e nas exigências do próximo cargo. Amizade e
-  romance **esfriam** a cada dia sem contato, mais depressa para quem tem pouco
-  Afeto; quem está esfriando ganha a marca "esfriando".
-- **Carona (bloco 8)**: uma hora antes do turno a carona da carreira encosta na
-  calçada e buzina; o folk veste o uniforme e vai. Ela buzina de novo quinze
-  minutos antes de partir e vai embora dez minutos depois da hora: quem não
-  embarcou perde o turno. Na volta, a carona deixa o folk na calçada. Carona e
-  uniforme (com chapéu, capacete, touca de chef...) mudam nos cargos 5 e 8.
-  Depois do banho ou do sono o uniforme vai para o cabide.
-- **Recompensas de carreira (bloco 8)**: no sexto cargo cada carreira libera um
-  objeto no catálogo (ábaco, carrinho de temperos, prensa de gravura,
-  esqueleto, torno, monociclo, planetário de mesa, púlpito, barra fixa, painel
-  de nós) que treina uma habilidade da área mais depressa. Antes disso aparece
-  trancado, dizendo onde se libera.
-- **Expediente mais vivo (bloco 8)**: eventos próprios das carreiras novas e
-  **eventos em cadeia** (um empréstimo cobrado dias depois, um atalho que cai
-  numa conferência, um cometa a confirmar, uma promessa de campanha cobrada).
-  Toda semana colegas sobem de cargo, alguém é demitido e arruma outro
-  emprego, e chefe demitido é substituído pelo colega mais graduado.
-- **Assuntos (bloco 9)**: dez assuntos (tempo, bichos, receitas, esporte,
-  dinheiro, estrelas, música, fofoca, engenhocas e romance). Cada pessoa gosta
-  de uns e detesta outros; o "papear" escolhe um assunto que aparece no balão,
-  com selo verde ou vermelho pela reação de quem ouve. Assunto em comum rende
-  mais amizade e diversão, e o gosto pega um pouco de quem fala. "Puxar
-  assunto ›" no menu social deixa escolher.
-- **Roda de conversa (bloco 9)**: até quatro pessoas em círculo, com turnos de
-  fala: quem fala escolhe o assunto pela Lábia e cada ouvinte reage. Dá para
-  chamar alguém para uma roda ou entrar numa que já existe; os folks também
-  formam rodas sozinhos, mais ainda numa festa.
-- **Telefone social (bloco 9)**: ligar para alguém (a ligação conta como
-  contato e evita que a amizade esfrie), receber ligações (o telefone toca e
-  balança; quem não atende perde a chamada) com fofoca, convite ou só papo.
-- **Festa (bloco 9)**: no telefone, "Dar uma festa" convida até oito pessoas
-  (com aviso de rivais e atalho para chamar a turma). A mesa de buffet serve
-  petiscos, a música anima, e a festa dura quatro horas. A nota (1 a 5) sai da
-  animação média dos convidados: festa boa dá fama, festa ruim vira fofoca.
-  Depois das 22h o vizinho reclama do barulho, e duas reclamações encerram a
-  festa.
-- **Panelinhas (bloco 9)**: o jogo acha turmas de amigos e pares de rivais no
-  bairro (painel de relações). Rivais na mesma festa brigam e viram notícia.
-- **Mais conversas (bloco 9)**: relembrar (amizade 70+), aperto de mão,
-  esnobar (para quem não se gosta) e mandar embora uma visita; na porta, o
-  cumprimento varia com a relação (beijo, abraço, aperto de mão ou aceno).
-  Folks param de se atravessar: esperam, contornam e se afastam de quem está
-  parado no mesmo lugar.
-- **Pedido de casamento (bloco 10)**: compre um estojo de aliança (decoração,
-  450 ⟡) e, namorando com romance 70 ou mais, use "Pedir em casamento". A
-  chance sobe com o romance, a amizade e o humor de quem ouve. O sim leva o
-  estojo (a aliança aparece na mão dos dois) e vira notícia; o não dói, deixa
-  lembrança e também corre de boca em boca. Noivado pode ser desfeito com
-  "Terminar".
-- **Casamento em casa (bloco 10)**: com noivos, o menu de conversa mostra
-  "Marcar o casamento ›": escolha os convidados (a festa do bloco 9) e o
-  sobrenome (o de um, o do outro, os dois juntos ou cada um o seu). Uns 40
-  minutos depois de a festa começar, os noivos se vestem de gala, vão para a
-  frente do arco de flores (se houver) e trocam os votos. Convidados guardam a
-  lembrança, a notícia corre e a festa ganha pontos (mais ainda com arco).
-  Casou com alguém de fora: a pessoa se muda junto.
-- **Morar junto (bloco 10)**: quem se muda traz as economias (somadas ao caixa),
-  o emprego e uma mala que fica no chão até ser desfeita; ao desfazer, saem os
-  móveis dela (um pelo gosto, como cavalete ou tabuleiro, e uma planta). O que
-  não couber é vendido.
-- **Mudar alguém para fora (bloco 10)**: "Pedir para se mudar" manda um
-  morador embora (menos o último): ele vira vizinho, leva o emprego, sai pela
-  calçada com a mala e pode voltar de visita.
-- **Divórcio (bloco 10)**: casado não "termina", pede o divórcio. Quem foi
-  deixado sai de casa levando metade do caixa e volta ao nome de solteiro; os
-  dois guardam lembrança amarga, a fofoca corre e o painel passa a mostrar
-  "ex-cônjuge". Casamento não acaba sozinho quando o romance esfria.
-- **Cama de casal (bloco 10)**: a "Dois Travesseiros" (640 ⟡) e a estofada
-  têm "Deitar abraçadinho", que chama o par para junto e sobe o romance.
-  Dormir na mesma cama também aproxima o casal e deixa a lembrança da primeira
-  noite. Conversas novas de casal: aconchego, falar manso, massagem nos
-  ombros e dançar coladinho.
-- **Bebês (bloco 11)**: compre um berço (260 ⟡, categoria camas). Um casal
-  que mora junto e namora com romance 45+ pode "Tentar ter um bebê"; se der
-  certo, o painel mostra "bebê a caminho" e ele chega umas 20 horas depois,
-  direto no berço. Pelo telefone dá para adotar (250 ⟡, a assistente traz o
-  bebê às 10h do dia seguinte). O bebê não anda nem recebe ordens: chora
-  quando tem fome, está sujo ou quer companhia, e no berço aparecem "Dar
-  mamadeira", "Trocar fralda", "Pegar no colo" e "Ninar". Adultos com vontade
-  própria cuidam sozinhos, e o choro acorda alguém de noite. Depois de três
-  dias ele vira criança.
-- **Descaso (bloco 11)**: bebê ou criança com fome ou sujeira no fundo por
-  muito tempo chama a visitadora social. Na primeira visita ela avisa; na
-  segunda, leva a criança embora.
-- **Crianças e escola (bloco 11)**: criança é menor, não cozinha, não
-  trabalha, não namora. Nos dias úteis o ônibus escolar amarelo para na
-  calçada das 7h às 7h40; quem perde o ônibus falta e a nota cai. Na volta,
-  às 15h, há lição de casa (mesa com estante de livros ou escrivaninha) que
-  um adulto pode "Ajudar na lição". O boletim (0 a 10) sobe com lição feita e
-  humor bom e desce com lição esquecida e falta; sai toda sexta. Nota 8,5+
-  dá quadro de honra; nota abaixo de 2,5 por cinco dias manda a criança para
-  o colégio interno.
-- **Brinquedos (bloco 11)**: casinha de bonecas (criatividade, qualquer um
-  brinca), pião (jeito) e cavalinho de balanço (preparo), os dois últimos só
-  de criança.
-- **Herança e convivência (bloco 11)**: o bebê nasce com o temperamento
-  médio dos pais mais um empurrão aleatório, e traços e aparência de um ou
-  do outro. Aos domingos, quem mais cuidou da criança na semana (colo,
-  mamadeira, conversa, lição) passa para ela um ponto do eixo em que mais
-  diferem.
-- **Andares e escada (bloco 12)**: todo lote tem térreo e mais dois andares.
-  Os botões ▾ e ▴ ao lado de "Paredes" (ou PageUp e PageDown) trocam o andar
-  que se vê; os de cima somem e os de baixo ficam com as paredes inteiras. A
-  vista acompanha o morador selecionado quando ele sobe ou desce. Piso de
-  cima só vai em cima de cômodo de baixo; parede de cima precisa de piso de
-  um dos lados ou de parede embaixo. A escada (650 ⟡, aba Paredes, R gira)
-  ocupa três tiles, abre o vão no andar de cima e precisa de piso livre no
-  patamar; clicar numa escada com a ferramenta a tira. No andar de cima,
-  "Sem piso" no lugar da grama tira o piso.
-- **Telhado (bloco 12, refeito no plano 2, bloco 3)**: toda casa tem telhado.
-  Ele se monta sozinho sobre toda a área construída: cômodo fechado com piso
-  de dentro e, no térreo, a varanda coberta (piso de dentro sem paredes,
-  grudado num cômodo); o que tem piso no andar de cima não ganha telhado, e o
-  pátio cercado de grama fica a céu aberto. Aba Telhado: quatro águas, duas
-  águas (oitões nas pontas) ou uma água (alta atrás, baixa na frente), três
-  inclinações e seis cores (2 ⟡ por tile coberto); **Laje** (6 ⟡ o tile)
-  troca a telha por laje plana com platibanda num retângulo arrastado, e
-  **Tirar laje** volta a telha.
-- **Modos de vista (plano 2, bloco 3)**: no canto de cima, quatro botões:
-  telhado à vista (a casa inteira, todos os andares), paredes inteiras (sem
-  telhado), paredes recortadas (o padrão) e paredes baixas. Home sobe e End
-  desce. Com o telhado à vista, ele some sozinho ao abrir a obra ou ao
-  aproximar a câmera de um cômodo, e volta ao afastar; o alfinete (P) fixa o
-  modo. A ferramenta de telhado e a de laje sempre mostram o telhado. O modo
-  escolhido fica guardado no navegador.
-- **Sentar e assistir (plano 2, bloco 4)**: todo assento tem lugares; o
-  folk escolhe um livre, senta (1 min) e fica sentado depois que a ação
-  acaba, até a próxima ordem que não se faça dali (aí levanta, 1 min). "Assistir"
-  leva ao melhor assento livre virado para a TV dentro da área de visão (de pé
-  na frente, se não houver). A TV tem canais (novela, esporte, culinária, que
-  ensina a cozinhar, e desenho), fica ligada até alguém desligar e quem está
-  sentado em frente segue vendo enquanto conversa com quem está ao lado ou
-  come o prato que trouxe. "Chamar para ver junto" no menu de outra pessoa.
-  Clicar no próprio folk sentado: Levantar, Ler um livro aqui, Ligar daqui.
-  Som ("Ouvir música") e lareira ("Olhar o fogo") seguem a mesma lógica.
-- **Cozinha, mesa, banheiro e cama (plano 2, bloco 6)**: o fogão mostra um
-  "Cozinhar" por prato (sanduíche, ovos, macarrão, sopa, panqueca, arroz com
-  frango, peixada e torta de palmito), liberado pela habilidade. O folk pega
-  os ingredientes na geladeira, pica na bancada, mexe a panela e deixa a
-  travessa na bancada ou mesa mais perto, com porções; ela esfria em 1h30 e
-  estraga em 12 h. Clicar na travessa: Servir-se, Chamar a família, Esquentar,
-  Jogar fora. Come-se à mesa com garfo, e o prato sujo vai para a pia, onde a
-  louça empilha até alguém lavar. Privada com tampa, descarga e lavar as mãos;
-  chuveiro em fases e toalha; escovar os dentes e se arrumar no espelho. O
-  casal dorme de lados opostos sob a coberta, a cama fica desfeita até alguém
-  arrumar, e dá para cochilar deitado no sofá.
-- **Lazer, estudo e convívio (plano 2, bloco 7)**: computador de mesa novo
-  (navegar, jogar, conversar pela rede, procurar emprego, escrever romance,
-  programar, frilas e negócio), com a tela mostrando o que se faz. Livros de
-  habilidade (lógica, receitas, manual, arte, oratória e treino) com o
-  progresso salvo no folk e bônus no fim; pega o livro na estante, lê sentado
-  ou deitado na cama e devolve, ou deixa largado se for desleixado. Romance,
-  programa e música andam aos poucos e rendem quando ficam prontos; o quadro
-  aparece no cavalete conforme a pintura avança, e dá para vender ou
-  descartar. Violão, piano com dedilhado, ioga no tapete, abdominais,
-  alongar, correr pela calçada, caixa de blocos para as crianças, peças do
-  xadrez que mexem. Conversas com gesto por tipo (aperto de mão, piada com
-  tapa nas costas, dedo em riste, abraço com tapinha, ajoelhar no pedido,
-  dança lenta), "Sentar e conversar" no menu de outra pessoa, acompanhar a
-  visita até a porta. Fala com sílabas que mexem a boca, olhar puxado pela TV
-  e por quem passa, e "Olhar pela janela" no menu do próprio folk.
-- **Objetos modulares (plano 2, bloco 8)**: sofás, poltronas, cadeiras,
-  camas, mesas, estantes e armários são montados por peças (estrutura,
-  assento, encosto, braços, pés, tampo, portas) e cada parte tem material,
-  cor e padrão; o botão "✎ Personalizar" do modo comprar abre o editor de
-  estilo, que também salva estilos para usar de novo. Enfeites (abajur,
-  vaso, livros, fruteira, porta-retrato, castiçal, estatueta) vão em cima de
-  mesas e bancadas, girados em 8 direções; objetos de parede sobem e descem
-  com PageUp/PageDown. Banheira com banho de espuma, lava-louças e máquina
-  de lavar.
-- **Roupas por peças (plano 2, bloco 9)**: cada folk tem guarda-roupa com
-  até 3 conjuntos para cada ocasião (dia a dia, festa, dormir, nadar,
-  exercício, frio, calor), montados peça por peça (parte de cima, de baixo
-  ou inteira, sapatos, meias e acessórios), com material, cor e padrão em
-  cada área. "Montar roupas…" no guarda-roupa ou no espelho abre o painel,
-  com prévia e loja de peças; dormir, nadar e malhar trocam de roupa
-  sozinhos na entrada. Crianças, jovens e idosos têm peças próprias.
-- **Criador em sete passos (plano 2, bloco 10)**: membros (idade, mês,
-  voz e gostos), aparência (controles de pele, cabelo e olhos em escala
-  contínua, corpo, altura, musculatura e medidas do rosto, com sortear e
-  herdar dos pais), roupas, traços, sonho, laços e revisão. Cada adulto tem
-  **5 traços** de uma lista de 40 (criança 3, jovem 4, bebê 1), com pares
-  proibidos (madrugador e coruja, sortudo e desastrado...) e efeitos de
-  verdade: treino mais rápido, humor em certas situações (ao ar livre, na
-  bagunça, com gente, de manhã), sorte com quebras, nota no trabalho e na
-  cozinha, conversas e interações só de quem tem o traço (assaltar a
-  geladeira, mostrar uns passos, maratona de novela). Quem cresce ganha os
-  traços que faltam, puxados por quem cuidou e pelo que treinou.
-- **Sonho de vida, pontos e benefícios (plano 2, bloco 10)**: 14 sonhos
-  (chegar ao topo, casa cheia, amigo de todos, pé-de-meia, galeria...) que
-  dão pontos de satisfação; desejos cumpridos também dão. Os pontos compram
-  9 benefícios (sono de pedra, tempero de mãe, aprende rápido, firme...).
-  Comida, música e cor favoritas mexem no humor. Bebês misturam a aparência
-  dos pais. O espelho ganhou "Mudar o cabelo…" (penteado e cor).
-- **Família na cidade (plano 2, bloco 11)**: Cidade › Família (ou o botão
-  "Gente, fundos e bens…" no modo família) abre a tela da família em jogo.
-  Aba Gente: "Mudar…" abre o criador no folk (aparência e roupas; traços só
-  com o benefício "Página virada", 60 pontos, que some depois de usado) e
-  marcar quem sai forma outra família na gaveta, levando o dinheiro escolhido
-  (bebê fica; quem sai e quem fica precisam de um adulto). Aba Fundos e bens:
-  caixa, terreno, construção, móveis, inventário, contas, patrimônio, quanto
-  entra por semana e herança; o inventário recebe o que você guarda no modo
-  compra ("Guardar no inventário") e devolve com "Pôr na casa". Aba Juntar:
-  chamar parente, par ou amigo do peito (50 dos dois lados) para morar junto,
-  ou juntar outra família aqui (a casa dela é vendida) ou na casa dela (a sua é
-  vendida). No bairro, a aba "Famílias e gaveta" lista todas as famílias,
-  manda uma para a gaveta (a casa fica à venda, os móveis são vendidos) e cria
-  família nova direto na gaveta. Família na gaveta não envelhece nem gasta;
-  num terreno vago ou casa à venda aparece "Da gaveta: Mudar para cá". Casa à
-  venda pode ser comprada com os móveis ou só a casa (terreno e construção), e
-  a mudança pode levar os móveis para o inventário em vez de vendê-los.
-- **Cidade aberta (plano 2, bloco 12)**: a Vila Taramela agora é um dos três
-  bairros da cidade de Arribada (com o Jardim Cambará e o Alto do Moinho, 30
-  lotes ao todo), ligados por avenidas; o centro fica do outro lado do Rio
-  Manso, pela ponte, e há a Praça do Coreto e a área cercada dos lugares
-  públicos (bloco 13). Não há mais tela de bairro: role o mouse para trás e a
-  câmera sai da casa, passa pela rua e chega na cidade inteira; o botão
-  Cidade faz o mesmo. Afastado, aparecem os nomes dos bairros e lugares e o
-  ícone de cada um da família (clique para ir até ele). No mapa, clique num
-  lote para o cartão: jogar com aquela família, mudar, comprar, gaveta, e
-  agora **visitar** (quem vai e como: a pé, de bicicleta, de carro ou de
-  táxi, com tempo e preço de cada jeito; uma hora e meia de café e conversa,
-  a amizade sobe; visitas das 8h às 21h). O passeio ao centro também deixa
-  escolher o jeito, e quem sai anda pela rua até lá, com a câmera junto; a
-  volta é igual (sem dinheiro, a pé). Bicicletas (⟡ 160, uma por pessoa,
-  criança na garupa) e carro (⟡ 3.400, cinco lugares, um adulto dirige) se
-  compram no cartão do lote da família, em "Na garagem". As casas dos outros
-  lotes são montadas de verdade quando a câmera chega perto e viram caixas
-  simples de longe; o relógio segue no mapa.
-- **Lugares da cidade (plano 2, bloco 13)**: no mapa, clique no nome de um
-  lugar para o cartão dele: horário, se está aberto, quanta gente tem, preço
-  da entrada. Escolha quem vai, o que fazer ao chegar e o jeito de ir. Lugares
-  abertos (praça, biblioteca, academia com piscina, mercado, loja de roupas e
-  móveis, cinema, bar com palco, parque com lago de pesca e o centro) abrem
-  como lote; o passeio do menu também deixa escolher o lugar, e um encontro
-  pode ser em qualquer um deles. No mercado se compra comida em pessoa (mais
-  barato que pelo telefone; as sacolas vão para a despensa na volta, e
-  estragam se a volta demorar). No parque se pesca, no bar se toca por
-  gorjeta. Prédios fechados (trabalho, escola, prefeitura, hospital,
-  delegacia) mostram quem está lá e até quando; no trabalho escolha o jeito
-  (normal, trabalhar duro, puxar o saco do chefe, ir com calma: muda a nota
-  do turno, o cansaço e o chefe) e na escola (estudar ou fazer amigos). Na
-  prefeitura se pagam contas e procura emprego, no hospital se faz consulta,
-  na delegacia se dá queixa do que o ladrão levou. Com a cidade ligada, a
-  roupa comprada no guarda-roupa chega em casa no dia seguinte às 9h (frete
-  ⟡ 6) ou fica esperando na loja.
-- **Cidade viva (plano 2, bloco 14)**: os outros moradores de Arribada têm
-  rotina. Chegue a câmera perto das ruas e se vê gente indo e voltando do
-  trabalho e da escola, passeando com o cachorro, entrando na praça, na
-  biblioteca ou no bar; nos lugares abertos quem aparece é essa mesma gente.
-  As famílias que você não está jogando seguem a vida sozinhas: namoram,
-  noivam, casam (e um vai morar com o outro), têm filhos, arrumam e trocam de
-  emprego, mudam para uma casa maior e reformam a casa. Quando sobram casas
-  vazias chegam famílias novas. Tudo isso sai no **Jornal** (menu Cidade →
-  Jornal, ou a aba no painel do mapa): números da cidade, agenda e as
-  notícias dos últimos dias. No jornal há a chave "Cidade parada" para quem
-  prefere que nada mude fora da família jogada.
-- **Eventos (bloco 14)**: feira todo sábado de manhã na praça (barracas com
-  sacolas de comida mais baratas; com a cidade, a feira não vem mais em
-  casa), concurso de culinária na churrasqueira da praça e campeonato de
-  xadrez no parque em domingos alternados (cozinhar e lógica contam; prêmio
-  em dinheiro do 1º ao 3º lugar) e a festa junina na praça no último sábado
-  do ciclo de quatro semanas, à noite, com bandeirinhas, quitutes, pescaria
-  e quadrilha no coreto. O cartão do lugar mostra o evento de hoje ou o
-  próximo, e o plano do evento aparece até 3 horas antes.
-- **Celular (bloco 14)**: menu Cidade → Celular. Mostra onde está cada
-  conhecido agora (em casa, no trabalho, num lugar, andando pela rua, fora
-  da cidade). "Ver no mapa" marca a pessoa no mapa; "Chamar para…" escolhe
-  um lugar aberto e o jeito de ir. A pessoa topa conforme a amizade e se
-  estiver livre, e espera lá.
-- **Peças novas (bloco 12)**: meia parede (fecha o passo sem dividir o
-  cômodo), coluna nos cantos, porta de vidro, porta dupla, arco (passagem sem
-  folha), janela alta (+6 de ambiente) e basculante (+2).
-- **Quintal (bloco 13)**: aba Quintal no modo construção, só no térreo. A
-  piscina se cava tile a tile (35 ⟡ o tile; "Grama (aterrar)" desfaz); dentro
-  dela só vão a escadinha (220 ⟡, onde se entra e sai para nadar) e, na borda,
-  o trampolim (380 ⟡). Nadar diverte e treina Fôlego, com roupa de banho;
-  mergulhar numa piscina sem escadinha assusta e cansa. Caminho de pedra e
-  deck de madeira enfeitam o chão de fora. Cerca de ripas, mureta e portão:
-  arraste de um canto a outro; ninguém passa pela cerca, só pelo portão
-  (num trecho de cerca ou num vão deixado nela), e cerca não fecha cômodo.
-- **Jardim vivo (bloco 13)**: canteiro de flores, roseira, cerca viva,
-  horta, laranjeira e ipê (categoria Ao ar livre) nascem mudas, crescem,
-  florescem, pedem água, murcham e morrem sem rega; o vaso de dentro de casa
-  também. Regar, cheirar flor, colher (horta e laranjeira enchem a despensa)
-  e replantar a planta morta. De madrugada sai a previsão: em 30% dos dias
-  chove por algumas horas, molhando o que está ao ar livre (o vaso de dentro,
-  não). Plantas bonitas somam ao ambiente do cômodo. O jardineiro Tião
-  Mangueira (telefone, serviços, 30 ⟡ por visita) passa às 8h, rega e colhe.
-  Churrasqueira, mesa de jardim para três e rede completam o quintal.
-- **Perigos (bloco 14)**: cozinhar no fogão com pouca Culinária, a lareira
-  acesa colada em móvel de madeira ou tecido e o choque de quem conserta sem
-  Jeito podem começar um fogo. O fogo esquenta, pula para o vizinho que
-  queima (parede segura), vira cinza e assusta quem está perto. Extintor de
-  parede (120 ⟡): o morador corre, pega e apaga. Detector de fumaça (60 ⟡)
-  chama Bia Hidrante e Juca Mangote, que chegam com a mangueira; sem ele,
-  alguém liga do telefone. De madrugada, Lalau Ferrolho pode entrar para
-  levar o objeto mais caro: o alarme (250 ⟡) chama Dorival Guarita na hora,
-  que corre atrás, devolve o que foi levado e deixa 250 ⟡ de recompensa;
-  sem alarme, só se alguém acordar e ligar. Lareira (900 ⟡) aquece e junta a
-  família em volta.
-- **Morte (bloco 14)**: fogo, fome extrema e cair na piscina sem escadinha
-  derrubam o folk. Seu Sereno (terno cor de anoitecer, cartola, lanterna e
-  livro de registro) vem buscar; o jogo pausa e quem está na casa pode
-  desafiá-lo no par ou ímpar: ganhando, ele fecha o livro e o folk se
-  levanta. Quem se vai deixa lápide no quintal (ou urna dentro de casa), luto
-  de três dias em quem gostava dele e, à noite, um vulto azulado que vaga e
-  assusta. Homenagear na lápide acalma até ele descansar. A opção "Perigos
-  podem matar" no criador desliga a morte (quem cairia escapa por um triz);
-  casa vazia mostra o fim e oferece família nova ou carregar.
-- **Bairro (bloco 15)**: o botão "Bairro" mostra a Vila Taramela de cima,
-  com as casas de verdade dos dez lotes da Rua das Taramelas. Clicando num
-  lote: jogar com a família que mora lá (a de agora fica guardada do jeito
-  que estava), mudar a família para um terreno vago ou casa à venda (a casa
-  de agora é vendida pelo terreno, obra e móveis) ou trazer uma família nova
-  (chega com ⟡ 6.000 e paga o lote). As famílias fora de jogo recebem
-  salário nos dias de turno, pagam as contas e se visitam; o mural "Pelo
-  bairro" conta o que aconteceu. Visitas do bairro chegam a pé pela calçada,
-  do lado da casa delas, e voltam para lá.
-- **Centro e encontros (bloco 16)**: o botão "Centro" chama um táxi (⟡ 25 a
-  ida, ⟡ 25 a volta) para o Centro de Taramela: o Largo do Coreto (chafariz
-  dos desejos, bancos, ipês e lampiões), a Cantina Forno Velho (mesas de
-  toalha xadrez, cardápio com quatro pratos e o garçom Tadeu Travessa, que
-  anota a mesa inteira, espera a cozinha e traz os pratos), o Café Xícara
-  Torta (cafezinho e bolo) e o Bazar Fita Métrica (roupa nova e de gala,
-  presentes e encomendas que chegam em casa na volta: aquário, globo, vaso
-  de flores). Escolhe-se quem vai e, se quiser, com quem sair: alguém da
-  casa ou um conhecido (que pode recusar). O encontro ganha nota de 1 a 5
-  estrelas pelo humor dos dois, as conversas, o jantar a dois, presentes
-  ("Dar presente") e moedas no chafariz, e a nota muda romance e amizade.
-  O tempo corre lá também; quem fica em casa segue trabalhando e estudando.
-  O centro fecha às 2h (todo mundo volta de táxi) e quem cai de sono volta
-  antes. Figurantes do centro passeiam pelo largo e, depois de conhecidos,
-  viram vizinhos como os outros.
-- **Gerações (bloco 17)**: no jogo novo dá para ligar o "Relógio da vida"
-  (vida curta, média ou longa; desligado, ninguém envelhece, como no
-  clássico). Ligado, o bebê vira criança, a criança vira jovem, o jovem vira
-  adulto e o adulto vira idoso; no fim da velhice, com a morte ligada, o Seu
-  Sereno vem buscar com calma (sem par ou ímpar). O jovem continua na
-  escola e pode pegar um meio período depois da aula (17h às 20h, menos da
-  metade do salário, sem promoção); ao virar adulto, se forma (a nota vai
-  para o álbum) e fica efetivado. Quem vira idoso se aposenta com pensão
-  por dia tirada do último cargo. Quem morre deixa um pecúlio que cresce com
-  o cargo: vai para o cônjuge e os filhos, mesmo os que moram em outra casa
-  do bairro, e os objetos queridos passam para o herdeiro da casa. O botão
-  "Família" mostra a árvore (avós em cima, casais lado a lado, quem se foi em
-  sépia) e o álbum: "Tirar foto" cola a vista de agora com legenda, e os
-  grandes momentos entram sozinhos (nascimento, casamento, cargo mais alto,
-  formatura, aposentadoria, herança, despedida). O criador de família já
-  faz jovens e idosos, e as famílias do bairro fora de jogo também
-  envelhecem.
+### Os primeiros minutos
+
+1. **Crie uma família** (ou use a pronta, Tomé Varanda e Lia Sacada). O
+   criador tem sete passos: membros, aparência, roupas, traços, sonho de
+   vida, gostos e laços. Na revisão, escolha se a morte vale e se o relógio
+   da vida anda.
+2. A família aparece na casa dela, na **Vila Taramela**, um dos três bairros
+   de **Arribada**. O cartão **Primeiros passos**, no canto de cima, ensina o
+   básico em seis dicas que somem quando você faz o que elas pedem; dá para
+   pular e rever depois em Opções.
+3. **Ninguém age sozinho.** Sem ordem, o folk espera com gestos (olha em
+   volta, boceja, põe a mão na barriga) e um balão mostra o que ele quer. Se
+   ninguém cuidar, ele passa fome, sono e vontade de banheiro de verdade.
+4. Arrume logo um **trabalho**: pelo jornal (chega às 6h na calçada) ou no
+   computador. Sem renda, o dinheiro do começo dura umas três semanas; depois
+   disso só a cesta da prefeitura impede a fome.
+
+### Comandar
+
+- **Clique num objeto ou numa pessoa**: abre o menu em anel com o que dá para
+  fazer. O que não dá aparece em cinza com o motivo. Mais de seis opções viram
+  grupos.
+- A escolha **substitui** o que o folk fazia, com saída limpa (levanta,
+  deixa o prato, encerra a conversa). Com **`Shift`**, vai para o fim da
+  **fila** (até 8 ações). A fila fica em ícones em cima do painel: clique num
+  ícone para cancelar, arraste para mudar a ordem.
+- **Clique no chão** para mandar andar até ali.
+- **Quem você comanda**: clique no morador, no retrato da coluna da esquerda
+  (clique duplo leva a câmera até ele) ou use `Tab`.
+- Visitas, prestadores, bebês e as outras famílias da cidade têm vida
+  própria. A carona do trabalho e o ônibus da escola chamam sozinhos; os
+  reflexos (ouvir quem puxou conversa, correr do fogo) aparecem tracejados na
+  fila.
+
+### Tempo
+
+- O relógio fica embaixo: **pausa** (`Espaço` ou `0`), **1** (um minuto de jogo
+  por segundo), **2** (três), **3** (dez) e **pular** (`4`, uma hora por
+  segundo), que só acende quando todos dormem, estão fora ou fazem algo longo
+  e volta sozinho quando alguém fica livre.
+- O dia é lento de propósito: dá tempo de mandar cada passo. Comprar e
+  construir param o tempo.
+- Eventos do trabalho pausam o jogo para você escolher.
+
+### Câmera e vista
+
+- **Arraste** para mover, **role** para aproximar e afastar. O zoom vai da casa
+  até a cidade inteira sem trocar de tela.
+- `Q` e `E` (ou ⟲ ⟳) giram em passos de 90°.
+- Quatro **modos de vista** no canto de cima: telhado, paredes inteiras,
+  recortadas e baixas (`Home` e `End` trocam, `P` fixa). O telhado some
+  sozinho de perto e na obra.
+- `PageUp` e `PageDown` (ou ▲ ▼) mudam o andar que se vê.
+
+### Necessidades, humor e o painel do folk
+
+- Oito necessidades: fome, energia, higiene, banheiro, conforto, diversão,
+  social e ambiente. O humor sai delas, das sensações (bom papo, cama boa,
+  conta atrasada) e dos traços.
+- O **painel** no canto tem oito abas: necessidades, sensações, habilidades,
+  trabalho e escola, relações, traços e sonho, desejos e inventário.
+- De mau humor, ou muito apertado, o folk **recusa** esforço (estudar,
+  limpar, malhar) e diz por quê.
+- **Desejos do dia**: até três por manhã; cumpridos, dão ânimo e pontos para os
+  **benefícios** do sonho de vida.
+
+### Atividades
+
+- Tudo é feito em etapas que se veem: sentar, cozinhar (pegar na geladeira,
+  picar na bancada, mexer no fogão, servir na travessa), comer à mesa ou com o
+  prato no colo, lavar a louça, tomar banho, deitar.
+- **TV** tem canais e é vista do melhor assento; dá para conversar sentado.
+- Computador, livros (o progresso fica salvo), cavalete, instrumentos,
+  exercícios e jogos de mesa treinam **habilidades**. O menu de cada objeto
+  diz qual.
+- A casa suja, enche o lixo e quebra: clique no objeto para **Limpar**,
+  **Consertar** ou **Fazer revisão**, e na bagunça para recolher.
+
+### Dinheiro e comida
+
+- O saldo fica ao lado do relógio; passe o mouse para ver as contas. Um selo
+  ✉ avisa que tem conta na caixa de correio: mande alguém pagar. Conta
+  atrasada demais traz o oficial para levar móveis.
+- As contas chegam a cada três dias: uma parte fixa, uma parte pelo valor dos
+  móveis e a luz que ficou acesa. Com a casa do começo, ficam perto de
+  ⟡ 80 a ⟡ 100.
+- **Comida**: a geladeira guarda porções. Peça mercado pelo telefone, compre no
+  mercado do centro ou na feira de sábado, ou colha do jardim.
+- **Cesta da prefeitura**: casa sem comida, sem nada a caminho e sem dinheiro
+  para o mercado recebe uma cesta de graça durante o dia, no máximo a cada
+  dois dias. É uma rede, não um salário: o aviso lembra de arrumar trabalho.
+- Um emprego no primeiro cargo mais ou menos empata com as contas e a comida
+  de um casal; dois empregos, ou uma promoção, fazem sobrar.
+
+### Trabalho e escola
+
+- Dez carreiras de dez cargos. Uma hora antes do turno a carona encosta na
+  calçada; o folk vai sozinho, some durante o turno e volta pago.
+- **Promoção** pede desempenho, habilidades, amigos da família e o respeito
+  do chefe. No painel Trabalho dá para **pedir aumento**, mudar o **jeito** do
+  turno (caprichar, ir com calma, fazer amigos) e ver a equipe.
+- Quase todo turno tem um **evento** com escolhas (prazo apertado, colega que
+  rouba o crédito, fiscalização).
+- **Frilas** no mural de cada manhã e **negócio próprio** são caminhos sem
+  patrão. Jovens pegam meio período; idosos se aposentam com pensão.
+- Crianças vão de ônibus para a escola, trazem lição e boletim.
+
+### Gente
+
+- Clique em alguém para conversar: amizade, trabalho, romance e provocação.
+  O que aparece depende de como o seu folk vê o outro; a resposta, de como o
+  outro vê o seu folk, dos traços, das lembranças, do humor e dos **assuntos**
+  de que cada um gosta.
+- Três barras por relação (amizade, romance, respeito) e lembranças que
+  ficam. Sem contato, esfria.
+- Telefone e **celular** (Cidade › Celular): ligar, convidar para vir, marcar
+  encontro num lugar da cidade, dar festa.
+- Namoro, noivado com aliança, casamento em casa, morar junto, bebê ou
+  adoção, divórcio. Fofoca anda pela cidade e mexe na fama.
+
+### Família
+
+- **Cidade › Família**: quem mora junto, fundos e bens, dividir a família,
+  juntar com outra, chamar alguém para morar, mandar para a gaveta.
+- A **gaveta de famílias** guarda famílias fora de casa; dá para pôr uma num
+  lote vago ou numa casa à venda, com ou sem móveis, e trocar de família
+  jogada (o tempo das outras segue resumido).
+- O criador abre também num folk em jogo (cabelo e roupa no espelho, traços
+  com o benefício certo).
+- Com o **relógio da vida** ligado, todos envelhecem (bebê, criança, jovem,
+  adulto, idoso) e a família tem árvore e álbum.
+
+### Comprar
+
+- **Comprar** (`B`). Escolha no catálogo, clique no chão: verde cabe,
+  vermelho não. `R` gira, `Esc` desiste, `Ctrl+Z` desfaz a compra.
+- Muitos objetos são **por peças** (braço, encosto, pé, tampo) com estilo
+  por parte; enfeites vão em cima de tampos e na parede.
+- Clicar num objeto da casa abre mover, girar, guardar no inventário e
+  vender (vale menos com o tempo e o uso).
+- Roupas se compram no guarda-roupa (chegam em casa) ou na loja do centro.
+
+### Construir
+
+- **Construir** (`C`). Abas de paredes, portas e janelas, pisos,
+  revestimentos, telhado, escada e andares, quintal (piscina, cerca, caminho,
+  jardim). A prévia mostra verde ou vermelho, o custo e o motivo. `Ctrl+Z`
+  desfaz até 40 obras e devolve o dinheiro.
+- O jogo recusa obra que prenda alguém, tranque um objeto ou corte um móvel.
+
+### Cidade
+
+- Afaste o zoom até o mapa de **Arribada**: três bairros, centro, praça,
+  biblioteca, academia com piscina, mercado, loja, cinema, bar, parque com
+  lago, escola, prefeitura, hospital e delegacia.
+- Clique no nome de um lugar: horário, lotação, preço e o que fazer lá. Vá a
+  pé, de bicicleta, de carro (garagem) ou de táxi. Visite vizinhos pelo lote
+  deles.
+- A cidade tem vida: os outros namoram, casam, têm filhos, mudam de emprego e
+  de casa. O **jornal** conta; a **feira** é aos sábados, há xadrez e concurso
+  de culinária aos domingos e festa junina no fim do mês. Dá para deixar a
+  cidade **parada** (no Jornal, "História da cidade") se quiser só a sua
+  família andando.
+
+### Perigos
+
+- Fogo (fogão com pouca Culinária, lareira, choque), gatuno à noite (leva
+  objetos de valor que cabem nos braços: nunca geladeira, fogão, cama ou
+  vaso), afogamento e fome. Extintor, detector de fumaça e alarme ajudam;
+  bombeiros e polícia vêm pelo telefone.
+- Com a morte ligada, **Seu Sereno** vem buscar, e às vezes aceita uma
+  barganha no par ou ímpar. Sem morte, quem passa do limite desmaia, escapa por um triz e fica um tempo
+  de molho.
+
+### Opções
+
+- **Opções**: salvar, três vagas de jogo com miniatura (exportar e importar),
+  som e volumes, tamanho da letra, tabela de atalhos (`H`) e rever os
+  primeiros passos.
+- **Imagem**: **Automática** (bonita enquanto o jogo anda bem; se engasgar
+  por alguns segundos, fica leve sozinha e avisa), **Bonita** ou **Leve** (sem
+  sombras e só os vizinhos de porta detalhados). "Mostrar quadros por
+  segundo" põe um contador no alto da tela. As sombras só aparecem de perto
+  em qualquer modo.
+
+### Atalhos
+
+| Tecla | Faz |
+| --- | --- |
+| `Espaço`, `0` | pausa e volta |
+| `1` `2` `3` `4` | velocidades (4 = pular) |
+| `Shift` + clique | põe na fila |
+| `Tab` | próximo morador |
+| `Q` `E` | gira a câmera |
+| `Home` `End` `P` | modos de vista e fixar |
+| `PageUp` `PageDown` | andar de cima e de baixo |
+| `B` `C` | comprar e construir |
+| `R` | gira o objeto na mão |
+| `Ctrl+Z` | desfaz compra ou obra |
+| `Esc` | fecha o menu ou desiste |
+| `H` | tabela de atalhos |
 
 ## Deploy na Vercel
 
@@ -1068,6 +597,21 @@ Decisões principais do núcleo:
   para comparar: antes da cidade, 3,3 quadros por segundo na vista da casa;
   com a cidade, 2,8 na vista da casa, 2,4 na vista intermediária e 4,1 no
   mapa inteiro. Numa placa de vídeo comum o jogo fica no teto da tela.
+- **Acabamento (plano 2, bloco 15)**: `mergeByMaterial(g, true)` em
+  `game/city.ts` junta cada lote vizinho detalhado numa malha por material
+  (caixas de várias cores viram um pedaço por face; o que a casa escondeu
+  fica de fora). Chamadas de desenho por quadro, mesma medição: casa 2.742 →
+  1.949, bairro (altura 60) 6.873 → 2.278. `GameView.applyQuality` desliga a
+  sombra do sol acima da altura 44 (volta abaixo de 36), aplica a imagem
+  leve (`CityLayer.lite`: raio de detalhe 24 em vez de 48) e mede os quadros
+  para a qualidade automática; preferências `quality` e `fps` em `UiPrefs`.
+  Equilíbrio: `carryable` em `sim/peril.ts` (o gatuno só leva o que cabe nos
+  braços), `needsAid`/`sendAid` em `sim/services.ts` (cesta grátis, no
+  máximo a cada dois dias, `household.aidAt` opcional, sem save novo),
+  `BILL_BASE` 20, `BILL_RATE` 0,008 e `LIGHT_RATE` 0,006; teste de quatro
+  semanas em `tests/balance.test.ts`. Primeiros passos em `ui/tour.ts`
+  (passos puros em `stepOfCommand`/`nextTourStep`, estado em
+  `localStorage` `thefolk.tour`).
 - **Centro (bloco 16)** mora em `sim/downtown.ts` (regras puras: horário,
   quem pode ir, chance de topar sair, nota e efeito do encontro) e nos
   métodos `goDowntown`, `goHome`, `stepOuting`, `stepWaiter`, `dineWait`,
@@ -1378,12 +922,31 @@ traços e cidade aberta com o bairro dentro dela).
   praça, festa junina, concurso de culinária, xadrez no parque e celular
   (save v34).
 
+- **Bloco 15 (feito)**: acabamento. Lotes vizinhos detalhados juntados por
+  material (bem menos chamadas de desenho), sombras só de perto, imagem
+  automática, bonita ou leve, contador de quadros; gatuno que não leva
+  geladeira, fogão, cama nem vaso, contas mais leves e cesta da prefeitura
+  para a casa sem comida e sem dinheiro; primeiros passos em seis dicas;
+  revisão de originalidade e este "Como jogar" novo (sem save novo). Com ele
+  o segundo plano está completo.
+
+## Limitações conhecidas do bloco 15 (plano 2)
+
+- O desempenho foi medido em navegador sem placa de vídeo (desenho por
+  software): o número de chamadas de desenho caiu, mas a meta de 30 quadros
+  no mapa e 60 em casa não foi conferida num notebook de verdade. A
+  qualidade automática cobre o caso de máquina fraca.
+- A casa jogada continua desenhada peça por peça (precisa disso para
+  animar e reagir), e é ela que pesa mais na vista de perto.
+- As dicas de primeiros passos ficam no navegador, não no save: valem para
+  todos os jogos daquele navegador.
+- O jogador de teste não treina habilidades de propósito, então o equilíbrio
+  das promoções foi conferido só no primeiro e segundo cargo.
+
 ## Limitações conhecidas do bloco 14 (plano 2)
 
 - Os moradores na rua são bonecos simples (sem rosto nem animação de
   passos) e só aparecem com a câmera perto; os cachorros são só de enfeite.
-- Na simulação de 30 dias a família jogada parada passa fome por volta do
-  dia 20 (já acontecia antes do bloco): fica para o equilíbrio do bloco 15.
 - O celular só marca encontro em lugar aberto (não em casa de ninguém).
 - A festa junina não tem fogueira nem roupa própria; os concursos não têm
   plateia ou jurados que se vejam.

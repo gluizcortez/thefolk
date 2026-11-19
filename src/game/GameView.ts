@@ -99,6 +99,16 @@ const CAMERA_DISTANCE = 400;
  */
 const TARGET_LINES = 600;
 const MAX_STEPS_PER_FRAME = 60;
+/**
+ * Plano 2, bloco 15: as sombras só valem de perto (a câmera de sombra cobre
+ * uns 34 tiles); acima desta altura de vista desligam, com folga para não
+ * piscar no limite.
+ */
+const SHADOW_OFF_ZOOM = 44;
+const SHADOW_ON_ZOOM = 36;
+/** Qualidade automática: abaixo disto (média de alguns segundos), a imagem fica leve. */
+const AUTO_LOW_FPS = 24;
+const AUTO_WINDOW_S = 4;
 
 /** Plano 2, bloco 1: moldura retangular fina (contorno do objeto sob o mouse), deitada no chão. */
 function outlineGeometry(w: number, h: number, line: number): THREE.BufferGeometry {
@@ -393,6 +403,9 @@ export class GameView {
   private acc = 0;
   private animTime = 0;
   private hudClock = 0;
+  /** plano 2, bloco 15: medidor de quadros (janela da qualidade automática e o contador) */
+  private perf: { frames: number; time: number; calls: number; fps: number; autoLow: boolean; shadows: boolean; warm: number; slow?: number } = { frames: 0, time: 0, calls: 0, fps: 0, autoLow: false, shadows: true, warm: 0 };
+  private fpsEl: HTMLElement | null = null;
   private last = 0;
   private lastSpeed: Speed = 1;
   private hover: Hover = {};
@@ -1424,8 +1437,10 @@ export class GameView {
       this.clearBuildPreview();
     }
 
+    this.applyQuality(dt);
     this.renderer.setRenderTarget(this.frameBuffer);
     this.renderer.render(this.scene, this.camera);
+    this.perf.calls = this.renderer.info.render.calls;
     this.renderer.setRenderTarget(null);
     this.renderer.render(this.post, this.postCamera);
 
@@ -1433,6 +1448,52 @@ export class GameView {
     if (this.hudClock > 0.09) {
       this.hudClock = 0;
       this.hud.update();
+    }
+  }
+
+  /**
+   * Plano 2, bloco 15: qualidade da imagem. Sombras só de perto; "leve" tira
+   * as sombras e encurta o raio das casas detalhadas; "automático" mede os
+   * quadros por segundo e passa para leve (uma vez, com aviso) se o jogo
+   * engasgar por alguns segundos. O contador fica no canto, se pedido.
+   */
+  private applyQuality(dt: number): void {
+    const p = this.perf;
+    p.frames++;
+    p.time += dt;
+    p.warm += dt;
+    const quality = this.hud.quality;
+    if (p.time >= AUTO_WINDOW_S / 4) {
+      p.fps = p.frames / p.time;
+      // os primeiros segundos (montagem da cidade) não contam
+      if (quality === 'auto' && !p.autoLow && p.warm > 8 && p.fps < AUTO_LOW_FPS && document.visibilityState === 'visible') {
+        p.slow = (p.slow ?? 0) + 1;
+        if (p.slow >= 4) {
+          p.autoLow = true;
+          this.ctrl.notice(t('notice.autoLow'), 'gear');
+        }
+      } else p.slow = 0;
+      p.frames = 0;
+      p.time = 0;
+    }
+    const lite = quality === 'low' || (quality === 'auto' && p.autoLow);
+    this.city.lite = lite;
+    const near = p.shadows ? this.viewHeight < SHADOW_OFF_ZOOM : this.viewHeight < SHADOW_ON_ZOOM;
+    const shadows = !lite && near;
+    if (shadows !== p.shadows) {
+      p.shadows = shadows;
+      this.sun.castShadow = shadows;
+    }
+    if (this.hud.showFps) {
+      if (!this.fpsEl) {
+        this.fpsEl = document.createElement('div');
+        this.fpsEl.className = 'fps-meter';
+        this.container.append(this.fpsEl);
+      }
+      this.fpsEl.textContent = t('hud.fps', { fps: Math.round(p.fps), calls: p.calls });
+    } else if (this.fpsEl) {
+      this.fpsEl.remove();
+      this.fpsEl = null;
     }
   }
 

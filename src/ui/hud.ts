@@ -171,6 +171,7 @@ import { travelPicker, usableMode } from './travel';
 import { cue } from '../audio/cues';
 import type { AudioEngine } from '../audio/engine';
 import type { IconId } from './icons';
+import { Tour } from './tour';
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -265,11 +266,17 @@ interface UiPrefs {
   /** plano 2, bloco 3: modo de vista escolhido e se está fixo */
   walls: WallMode;
   pin: boolean;
+  /** plano 2, bloco 15: qualidade da imagem e o contador de quadros */
+  quality: Quality;
+  fps: boolean;
 }
+/** Plano 2, bloco 15: automático baixa sozinho se o jogo engasgar; leve tira sombras e encurta o detalhe da cidade. */
+export type Quality = 'auto' | 'high' | 'low';
+const QUALITIES: Quality[] = ['auto', 'high', 'low'];
 const PREFS_KEY = 'thefolk.ui';
 
 function loadUiPrefs(): UiPrefs {
-  const base: UiPrefs = { scale: 'm', tab: 'needs', help: false, walls: 'cutaway', pin: false };
+  const base: UiPrefs = { scale: 'm', tab: 'needs', help: false, walls: 'cutaway', pin: false, quality: 'auto', fps: false };
   try {
     const raw = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<UiPrefs>;
     if (raw.scale && raw.scale in UI_SCALES) base.scale = raw.scale;
@@ -277,6 +284,8 @@ function loadUiPrefs(): UiPrefs {
     if (typeof raw.help === 'boolean') base.help = raw.help;
     if (isWallMode(raw.walls)) base.walls = raw.walls;
     if (typeof raw.pin === 'boolean') base.pin = raw.pin;
+    if (raw.quality && QUALITIES.includes(raw.quality)) base.quality = raw.quality;
+    if (typeof raw.fps === 'boolean') base.fps = raw.fps;
   } catch {
     // sem armazenamento (janela privada): fica no padrão
   }
@@ -570,12 +579,29 @@ export class Hud {
   /** bloco 7: cartões de jogos salvos e de som */
   private system: SystemCards;
   private prefs: UiPrefs = loadUiPrefs();
+  /** plano 2, bloco 15: primeiros passos */
+  private tour: Tour;
+
+  /** Recomeça as dicas de primeiros passos. */
+  restartTour(): void {
+    this.tour.restart();
+  }
+
+  /** Plano 2, bloco 15: a tela lê a qualidade pedida e se mostra o contador. */
+  get quality(): Quality {
+    return this.prefs.quality;
+  }
+
+  get showFps(): boolean {
+    return this.prefs.fps;
+  }
 
   constructor(
     private readonly root: HTMLElement,
     private readonly ctrl: GameController,
   ) {
     this.system = new SystemCards(ctrl);
+    this.tour = new Tour(ctrl);
     this.system.onChange = () => this.renderPop();
     this.styleEditor = new StyleEditor(ctrl);
     this.wardrobe = new WardrobePanel(ctrl);
@@ -601,6 +627,7 @@ export class Hud {
     this.historyButton.addEventListener('click', () => this.togglePop('history'));
     this.renderHistoryButton();
     notices.append(this.historyButton, this.noticesEl);
+    this.root.append(this.tour.el);
     this.root.append(this.wevEl, this.bargainEl, this.overEl, this.floatsEl, notices, this.toastsEl, this.ringEl, this.menuEl, this.bubbleEl, this.tooltipEl);
     this.wevEl.hidden = true;
     this.bargainEl.hidden = true;
@@ -1348,6 +1375,7 @@ export class Hud {
     const world = this.ctrl.world;
     // bloco 14: casa vazia: só o aviso (não há a quem mostrar)
     if (this.renderOver()) return;
+    this.tour.update();
     const folk = this.ctrl.folk;
     const clock = clockOf(world.tick);
     this.root.dataset.mode = this.ctrl.mode;
@@ -2782,7 +2810,34 @@ export class Hud {
       this.popSig = '';
       this.renderPop();
     });
-    this.panelEl.append(scales, el('div', 'panel-sub', t('opt.keys')), help);
+    // plano 2, bloco 15: imagem (automática, bonita ou leve) e o contador de quadros
+    const looks = el('div', 'catalog-tabs');
+    for (const q of QUALITIES) {
+      const b = el('button', 'tab', t(`opt.quality.${q}`));
+      b.title = t(`opt.quality.${q}Tip`);
+      b.classList.toggle('on', this.prefs.quality === q);
+      b.addEventListener('click', () => {
+        this.prefs.quality = q;
+        saveUiPrefs(this.prefs);
+        this.popSig = '';
+        this.renderPop();
+      });
+      looks.append(b);
+    }
+    const fps = el('button', 'btn btn-small', t(this.prefs.fps ? 'opt.fpsHide' : 'opt.fpsShow'));
+    fps.addEventListener('click', () => {
+      this.prefs.fps = !this.prefs.fps;
+      saveUiPrefs(this.prefs);
+      this.popSig = '';
+      this.renderPop();
+    });
+    const tour = el('button', 'btn btn-small', t('opt.tour'));
+    tour.title = t('opt.tourTip');
+    tour.addEventListener('click', () => {
+      this.togglePop('options');
+      this.restartTour();
+    });
+    this.panelEl.append(scales, el('div', 'panel-sub', t('opt.quality')), looks, fps, el('div', 'panel-sub', t('opt.keys')), help, tour);
   }
 
   /** Plano 2, bloco 2: cidade (o bairro e o táxi para o centro); no bloco 12 vira o mapa. */

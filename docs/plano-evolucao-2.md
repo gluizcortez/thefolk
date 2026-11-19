@@ -5,6 +5,9 @@ Pedido do Cortez (18/11/2026), depois do fim do primeiro plano
 continua perto do primeiro simulador de vida clássico, mas a jogabilidade
 passa a ser um misto inspirado no terceiro e no quarto jogos da série.**
 
+**Situação: concluído em 19/11/2026** (blocos 1 a 15 na `main`, save v34; o
+bloco 15 não precisou de save novo).
+
 O que ele pediu, item por item, e onde cada pedido entra:
 
 | Pedido | Bloco |
@@ -709,6 +712,15 @@ encontro só em lugar aberto, sem fogueira.
 - **Revisão de originalidade**: passar por todos os textos, ícones e telas
   novos conferindo que nada lembra nomes ou desenhos dos jogos de referência.
 - **README**: "Como jogar" reescrito do zero para o jogo novo.
+
+**Feito (19/11/2026).** Desempenho: lotes vizinhos detalhados juntados por
+material (a vista do bairro caiu de cerca de 5.700 para 2.300 chamadas de
+desenho por quadro), sombras só de perto, imagem automática, bonita ou leve e
+contador de quadros nas opções. Equilíbrio: a fome do dia 20 vinha do gatuno
+levando a geladeira; o gatuno agora só leva o que cabe nos braços, as contas
+ficaram mais leves (um emprego no primeiro cargo quase empata) e a casa sem
+comida e sem dinheiro recebe a cesta da prefeitura. Primeiros passos em seis
+dicas. Originalidade revisada. "Como jogar" reescrito.
 
 ## Como as threads seguem
 

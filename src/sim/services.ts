@@ -37,6 +37,13 @@ import type {
 export const START_PANTRY = 16;
 /** mercado por telefone: porções e preço (pago na hora da ligação) */
 export const GROCERIES = { portions: 12, price: 55 };
+/**
+ * Plano 2, bloco 15: cesta da prefeitura. Casa sem comida, sem nada a caminho
+ * e sem dinheiro para o mercado recebe uma cesta de graça durante o dia, no
+ * máximo uma a cada dois dias. Sem jogo sozinho, a família esquecida não morre de fome sem
+ * aviso: o jogador vê a cesta chegar e o aviso de procurar trabalho.
+ */
+export const AID = { from: 8, to: 18, everyDays: 2 };
 /** feira de sábado na calçada: mais barata para quem vai a pé */
 export const FAIR = { portions: 12, price: 36, day: 5, from: 6, to: 10 };
 /** comida pronta: porções, preço, prazo prometido (minutos) e gorjeta */
@@ -624,4 +631,20 @@ export function houseOptions(world: World, catalog: Catalog, folk: Folk): HouseO
     }
   }
   return out;
+}
+
+/** Plano 2, bloco 15: a casa precisa da cesta da prefeitura agora? */
+export function needsAid(world: World, catalog: Catalog): boolean {
+  const house = world.household;
+  if (house.pantry > 0 || house.takeout > 0 || incomingPortions(world) > 0) return false;
+  if (house.funds >= GROCERIES.price) return false;
+  if (pantryCapacity(world, catalog) <= 0) return false;
+  return house.aidAt === undefined || world.tick - house.aidAt >= AID.everyDays * MINUTES_PER_DAY;
+}
+
+/** Pede a cesta (entregue pelo mesmo entregador do mercado, de graça). */
+export function sendAid(world: World): void {
+  const tick = world.tick;
+  world.household.aidAt = tick;
+  world.household.orders.push({ id: world.nextId++, kind: 'groceries', at: tick + 30, promised: 0, by: -1, price: 0 });
 }

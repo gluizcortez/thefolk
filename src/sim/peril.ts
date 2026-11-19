@@ -5,6 +5,7 @@ import { edgeKey, footprint, inBounds, isWallLike, levelOfRow } from './grid';
 import { computeRooms } from './rooms';
 import { nextFloat, nextInt } from './rng';
 import { stateOf } from './upkeep';
+import { isSleep } from './will';
 import type { Catalog, DeathCause, Fire, Folk, ObjectDef, Vec, World, WorldObject } from './types';
 
 // Bloco 14: perigos. Fogo que começa no fogão (de quem cozinha mal), na
@@ -311,13 +312,26 @@ export function blazing(world: World, obj: WorldObject): boolean {
 
 // ---------- gatuno ----------
 
+/**
+ * Plano 2, bloco 15: o gatuno só leva o que cabe nos braços. Geladeira, fogão,
+ * cama, vaso e móvel de mais de um tile ficam: sem eles a casa não come, não
+ * dorme e não vai ao banheiro, e a família parada morria de fome sem saber.
+ */
+export function carryable(def: ObjectDef): boolean {
+  if (def.fixture || def.memorial || def.buyable === false || def.layer === 'ceiling' || def.pool || def.plant) return false;
+  if (def.pantry || def.size.w * def.size.h > 1) return false;
+  return !def.interactions.some(
+    (it) => isSleep(it) || (it.effects.bladder ?? 0) > 0 || (it.effects.hunger ?? 0) > 0 || !!it.cook,
+  );
+}
+
 /** O que o gatuno levaria: o objeto de mais valor que se carrega (sem obra, sem lápide). */
 export function lootTarget(world: World, catalog: Catalog, reachable: (obj: WorldObject) => boolean): WorldObject | null {
   let best: WorldObject | null = null;
   let bestV = BURGLAR_MIN_VALUE - 1;
   for (const obj of world.objects) {
     const def = catalog.objects[obj.defId];
-    if (!def || def.fixture || def.memorial || def.buyable === false || def.layer === 'ceiling' || def.pool || def.plant) continue;
+    if (!def || !carryable(def)) continue;
     if (objectBusy(world, obj.id)) continue;
     const v = sellValue(world, obj, def);
     if (v <= bestV || !reachable(obj)) continue;
@@ -333,7 +347,7 @@ export function burglarNight(world: World, catalog: Catalog): boolean {
   if (world.party) return false;
   const worth = world.objects.some((o) => {
     const def = catalog.objects[o.defId];
-    return !!def && !def.fixture && def.buyable !== false && sellValue(world, o, def) >= BURGLAR_MIN_VALUE;
+    return !!def && carryable(def) && sellValue(world, o, def) >= BURGLAR_MIN_VALUE;
   });
   return worth && nextFloat(world) < BURGLAR_CHANCE;
 }

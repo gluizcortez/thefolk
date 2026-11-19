@@ -2142,6 +2142,8 @@ export interface Household {
   readDay: number;
   /** bloco 3: minutos de lâmpada acesa desde a última conta */
   lightMinutes: number;
+  /** plano 2, bloco 15: tick da última cesta da prefeitura (casa sem comida e sem dinheiro) */
+  aidAt?: number;
   /** bloco 8: recompensas de carreira liberadas no catálogo (ids de objeto) */
   unlocked: string[];
   /** bloco 11: bebê a caminho */

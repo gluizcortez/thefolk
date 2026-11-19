@@ -4513,3 +4513,74 @@ body.town-open .dock > *:not(.timewrap) {
 .place-styles .tab {
   font-size: 11px;
 }
+
+/* ---------- plano 2, bloco 15: contador de quadros ---------- */
+
+.fps-meter {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(42, 35, 32, 0.8);
+  color: var(--cream);
+  font: 11px/1.4 ui-monospace, 'Consolas', monospace;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* ---------- plano 2, bloco 15: primeiros passos ---------- */
+
+.tour {
+  position: absolute;
+  top: 84px;
+  left: 18px;
+  width: 300px;
+  padding: 10px 14px 12px;
+  background: var(--cream);
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  line-height: 1.4;
+  pointer-events: auto;
+  animation: toast-in 0.2s ease-out;
+}
+
+.tour-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  color: var(--teal);
+}
+
+.tour-head span {
+  font-size: 11px;
+  color: #7a6a58;
+}
+
+.tour p {
+  margin: 6px 0 8px;
+}
+
+.tour-dots {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.tour-dots i {
+  width: 22px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--paper);
+}
+
+.tour-dots i.on {
+  background: var(--moss);
+}
+
+.tour-dots i.now {
+  background: var(--mustard);
+}
